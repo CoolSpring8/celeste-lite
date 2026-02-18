@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import * as C from "../constants";
+import { COLORS, PLAYER_GEOMETRY } from "../constants";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 
 interface Afterimage {
@@ -24,7 +24,7 @@ export class PlayerView {
     this.ensurePixelTexture();
 
     this.body = this.scene.add
-      .rectangle(0, 0, C.P_DRAW_W, C.P_DRAW_H, C.COLOR_PLAYER)
+      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.player)
       .setOrigin(0.5, 1)
       .setDepth(5);
 
@@ -34,7 +34,7 @@ export class PlayerView {
       quantity: 0,
       scale: { start: 1.1, end: 0.2 },
       alpha: { start: 0.8, end: 0 },
-      tint: C.COLOR_PLAYER_DASH,
+      tint: COLORS.playerDash,
       gravityY: 0,
       emitting: false,
       blendMode: "ADD",
@@ -47,7 +47,7 @@ export class PlayerView {
       quantity: 0,
       scale: { start: 1, end: 0.1 },
       alpha: { start: 0.7, end: 0 },
-      tint: C.COLOR_TILE_EDGE,
+      tint: COLORS.tileEdge,
       gravityY: 100,
       emitting: false,
     });
@@ -59,8 +59,8 @@ export class PlayerView {
     this.updateAfterimages(dt);
     this.updateTrail(snapshot, dt);
 
-    const drawX = snapshot.x + C.PW / 2;
-    const drawY = snapshot.y + C.PH;
+    const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const drawY = snapshot.y + PLAYER_GEOMETRY.hitboxH;
 
     this.body.setPosition(drawX, drawY);
     this.body.setFillStyle(this.resolveColor(snapshot), 1);
@@ -129,8 +129,8 @@ export class PlayerView {
       this.wallDustTimer -= dt;
       if (this.wallDustTimer <= 0) {
         this.wallDustTimer = 0.04;
-        const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + C.PW + 1;
-        const py = snapshot.y + Math.random() * C.PH;
+        const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
+        const py = snapshot.y + Math.random() * PLAYER_GEOMETRY.hitboxH;
         this.wallEmitter.emitParticleAt(px, py, 1);
       }
     }
@@ -143,8 +143,8 @@ export class PlayerView {
     this.trailTimer = 0.02;
     this.spawnAfterimage(snapshot.x, snapshot.y, this.resolveColor(snapshot));
 
-    const cx = snapshot.x + C.PW / 2;
-    const cy = snapshot.y + C.PH / 2;
+    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const cy = snapshot.y + PLAYER_GEOMETRY.hitboxH / 2;
     this.dashEmitter.emitParticleAt(cx, cy, 1);
   }
 
@@ -165,8 +165,8 @@ export class PlayerView {
   }
 
   private spawnAfterimage(x: number, y: number, color: number): void {
-    const drawX = x + C.PW / 2;
-    const drawY = y + C.PH;
+    const drawX = x + PLAYER_GEOMETRY.hitboxW / 2;
+    const drawY = y + PLAYER_GEOMETRY.hitboxH;
     const rect = this.getAfterimageRect();
 
     rect
@@ -187,7 +187,7 @@ export class PlayerView {
     if (rect) return rect;
 
     return this.scene.add
-      .rectangle(0, 0, C.P_DRAW_W, C.P_DRAW_H, C.COLOR_PLAYER_DASH)
+      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.playerDash)
       .setOrigin(0.5, 1)
       .setDepth(4)
       .setVisible(false);
@@ -205,27 +205,27 @@ export class PlayerView {
   }
 
   private emitDashBurst(snapshot: PlayerSnapshot, count: number): void {
-    const cx = snapshot.x + C.PW / 2;
-    const cy = snapshot.y + C.PH / 2;
+    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const cy = snapshot.y + PLAYER_GEOMETRY.hitboxH / 2;
     this.dashEmitter.emitParticleAt(cx, cy, count);
   }
 
   private emitWallBurst(snapshot: PlayerSnapshot): void {
-    const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + C.PW + 1;
-    const py = snapshot.y + C.PH * 0.5;
+    const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
+    const py = snapshot.y + PLAYER_GEOMETRY.hitboxH * 0.5;
     this.wallEmitter.emitParticleAt(px, py, 8);
   }
 
   private resolveColor(snapshot: PlayerSnapshot): number {
     if (snapshot.state === "dash" || snapshot.state === "freeze") {
-      return C.COLOR_PLAYER_DASH;
+      return COLORS.playerDash;
     }
 
     if (snapshot.dashesLeft <= 0) {
-      return C.COLOR_PLAYER_NO_DASH;
+      return COLORS.playerNoDash;
     }
 
-    return C.COLOR_PLAYER;
+    return COLORS.player;
   }
 
   private ensurePixelTexture(): void {

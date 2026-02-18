@@ -1,4 +1,4 @@
-import * as C from "../constants";
+import { WORLD } from "../constants";
 import { SolidGrid, solidAt } from "../grid";
 
 export function collideAt(
@@ -8,10 +8,10 @@ export function collideAt(
   h: number,
   grid: SolidGrid,
 ): boolean {
-  const left = Math.floor(x / C.TILE);
-  const right = Math.floor((x + w - 1) / C.TILE);
-  const top = Math.floor(y / C.TILE);
-  const bottom = Math.floor((y + h - 1) / C.TILE);
+  const left = Math.floor(x / WORLD.tile);
+  const right = Math.floor((x + w - 1) / WORLD.tile);
+  const top = Math.floor(y / WORLD.tile);
+  const bottom = Math.floor((y + h - 1) / WORLD.tile);
 
   for (let r = top; r <= bottom; r++) {
     for (let c = left; c <= right; c++) {

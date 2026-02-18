@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import * as C from "./constants";
+import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
 import { solidAt } from "./grid";
 import { parseLevel } from "./level";
 import { Player } from "./player/Player";
@@ -38,7 +38,7 @@ export class GameScene extends Phaser.Scene {
     this.tileGfx = this.add.graphics();
     this.drawTiles();
 
-    this.player = new Player(this.spawnX, this.spawnY, this.grid);
+    this.player = new Player(this.spawnX, this.spawnY, this.grid, PLAYER_CONFIG);
     this.playerView = new PlayerView(this);
 
     this.cameraTarget = this.add.zone(this.spawnX, this.spawnY, 1, 1);
@@ -75,8 +75,8 @@ export class GameScene extends Phaser.Scene {
 
     this.add
       .text(
-        C.GAME_W - 8,
-        C.GAME_H - 8,
+        VIEWPORT.width - 8,
+        VIEWPORT.height - 8,
         "← → ↑ ↓  |  Z/C/Space: Jump  |  X/Shift: Dash  |  R: Reset",
         {
           fontFamily: "monospace",
@@ -128,7 +128,10 @@ export class GameScene extends Phaser.Scene {
     const snapshot = this.player.getSnapshot();
     this.playerView.render(snapshot, effects, frameDt);
 
-    this.cameraTarget.setPosition(snapshot.x + C.PW / 2, snapshot.y + C.PH / 2);
+    this.cameraTarget.setPosition(
+      snapshot.x + PLAYER_GEOMETRY.hitboxW / 2,
+      snapshot.y + PLAYER_GEOMETRY.hitboxH / 2,
+    );
 
     this.prevJump = input.jump;
     this.prevDash = this.keys.dashX.isDown || this.keys.dashShift.isDown;
@@ -163,19 +166,19 @@ export class GameScene extends Phaser.Scene {
 
   private drawTiles(): void {
     const g = this.tileGfx;
-    for (let r = 0; r < C.ROWS; r++) {
-      for (let c = 0; c < C.COLS; c++) {
+    for (let r = 0; r < WORLD.rows; r++) {
+      for (let c = 0; c < WORLD.cols; c++) {
         if (!solidAt(this.grid, c, r)) continue;
 
-        const x = c * C.TILE;
-        const y = r * C.TILE;
+        const x = c * WORLD.tile;
+        const y = r * WORLD.tile;
 
-        g.fillStyle(C.COLOR_TILE, 1);
-        g.fillRect(x, y, C.TILE, C.TILE);
+        g.fillStyle(COLORS.tile, 1);
+        g.fillRect(x, y, WORLD.tile, WORLD.tile);
 
         if (!solidAt(this.grid, c, r - 1)) {
-          g.fillStyle(C.COLOR_TILE_EDGE, 1);
-          g.fillRect(x, y, C.TILE, 2);
+          g.fillStyle(COLORS.tileEdge, 1);
+          g.fillRect(x, y, WORLD.tile, 2);
         }
       }
     }

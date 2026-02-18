@@ -1,12 +1,12 @@
 import Phaser from "phaser";
 import { GameScene } from "./GameScene";
-import { GAME_W, GAME_H } from "./constants";
+import { COLORS, VIEWPORT } from "./constants";
 
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
-  width: GAME_W,
-  height: GAME_H,
-  backgroundColor: "#1a1a2e",
+  width: VIEWPORT.width,
+  height: VIEWPORT.height,
+  backgroundColor: `#${COLORS.background.toString(16).padStart(6, "0")}`,
   pixelArt: true,
   scale: {
     mode: Phaser.Scale.FIT,
