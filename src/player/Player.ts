@@ -35,6 +35,7 @@ export class Player {
   private isFastFalling = false;
 
   private duckDashActive = false;
+  private dashStartedOnGround = false;
 
   private liftVx = 0;
   private liftVy = 0;
@@ -178,6 +179,7 @@ export class Player {
     this.state = "normal";
     this.isFastFalling = false;
     this.duckDashActive = false;
+    this.dashStartedOnGround = false;
     this.dashesLeft = this.cfg.dash.maxDashes;
     this.stamina = this.cfg.stamina.max;
     this.coyoteTimer = 0;
@@ -366,14 +368,8 @@ export class Player {
     this.vx = this.dashDir.x * this.cfg.dash.speed;
     this.vy = this.dashDir.y * this.cfg.dash.speed;
 
-    if (input.jumpPressed && this.dashDir.y > 0.1) {
-      this.state = "normal";
-      this.duckDashActive = false;
-      this.vx = this.facing * this.cfg.dash.hyperHBoost;
-      this.vy = this.cfg.dash.hyperVSpeed;
-      this.jumpBufferTimer = 0;
-      this.emit({ type: "hyper", dirX: this.facing, dirY: -1 });
-      return;
+    if (input.jumpPressed) {
+      if (this.trySuperDashTech()) return;
     }
 
     if (input.jumpPressed && this.wallDir !== 0) {
@@ -458,6 +454,7 @@ export class Player {
       this.dashDir = dashDirection(input.x, input.y, this.facing);
     }
 
+    this.dashStartedOnGround = this.onGround;
     this.duckDashActive = keepDuck;
     this.state = "freeze";
     this.dashFreezeTimer = this.cfg.dash.freezeTime;
@@ -543,6 +540,21 @@ export class Player {
     this.remX = 0;
     this.vy = 0;
     this.tryStand();
+    return true;
+  }
+
+  private trySuperDashTech(): boolean {
+    if (!this.onGround) return false;
+    if (!this.dashStartedOnGround) return false;
+    if (Math.abs(this.dashDir.y) > 0.1) return false;
+
+    const dir = this.dashDir.x !== 0 ? Math.sign(this.dashDir.x) : this.facing;
+    this.state = "normal";
+    this.duckDashActive = false;
+    this.vx = dir * this.cfg.dash.superSpeed;
+    this.vy = this.cfg.jump.speed;
+    this.jumpBufferTimer = 0;
+    this.emit({ type: "super", dirX: dir, dirY: -1 });
     return true;
   }
 

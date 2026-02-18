@@ -11,10 +11,10 @@ export interface InputState {
 }
 
 export type PlayerEffectType =
+  | "super"
   | "jump"
   | "wall_jump"
   | "dash_start"
-  | "hyper"
   | "wall_bounce"
   | "land"
   | "fell_out"

@@ -69,8 +69,7 @@ export interface PlayerConfig {
     attackTime: number;
     carryTime: number;
     maxDashes: number;
-    hyperHBoost: number;
-    hyperVSpeed: number;
+    superSpeed: number;
   };
   lift: {
     momentumStoreTime: number;
@@ -125,14 +124,13 @@ export const PLAYER_CONFIG: PlayerConfig = {
     exhaustedSlipSpeed: 110,
   },
   dash: {
-    speed: 320,
+    speed: 240,
     duration: 0.13,
     freezeTime: 0.04,
     attackTime: 0.08,
     carryTime: 0.12,
     maxDashes: 1,
-    hyperHBoost: 325,
-    hyperVSpeed: -200,
+    superSpeed: 260,
   },
   lift: {
     momentumStoreTime: 0.12,

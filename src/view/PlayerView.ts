@@ -86,6 +86,10 @@ export class PlayerView {
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
     for (const effect of effects) {
       switch (effect.type) {
+        case "super":
+          this.squash(0.7, 1.32, 95);
+          this.emitDashBurst(snapshot, 10);
+          break;
         case "jump":
           this.squash(0.72, 1.28, 90);
           break;
@@ -97,10 +101,6 @@ export class PlayerView {
           this.squash(1.35, 0.7, 80);
           this.emitDashBurst(snapshot, 8);
           this.scene.cameras.main.shake(50, 0.002);
-          break;
-        case "hyper":
-          this.squash(0.62, 1.42, 90);
-          this.emitDashBurst(snapshot, 12);
           break;
         case "wall_bounce":
           this.squash(0.55, 1.5, 100);
