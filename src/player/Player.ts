@@ -139,6 +139,27 @@ export class Player {
     return out;
   }
 
+  getHitboxBounds(): { x: number; y: number; w: number; h: number } {
+    const h = this.getHitboxH();
+    return { x: this.x, y: this.y, w: PLAYER_GEOMETRY.hitboxW, h };
+  }
+
+  tryRefill(targetDashes: number | "max"): boolean {
+    const maxStamina = this.cfg.stamina.max;
+    const target = targetDashes === "max"
+      ? this.cfg.dash.maxDashes
+      : Math.max(0, targetDashes);
+
+    const needsDashRefill = this.dashesLeft < target;
+    const needsStaminaRefill = this.stamina < maxStamina;
+    if (!needsDashRefill && !needsStaminaRefill) return false;
+
+    this.dashesLeft = Math.max(this.dashesLeft, target);
+    this.stamina = maxStamina;
+    this.dashRefillTimer = 0;
+    return true;
+  }
+
   getSnapshot(): PlayerSnapshot {
     const hitboxH = this.getHitboxH();
     const isCrouched = this.state === "duck" || this.duckDashActive;
