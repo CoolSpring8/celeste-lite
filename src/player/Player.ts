@@ -75,6 +75,10 @@ export class Player {
       this.dashesLeft = this.cfg.dash.maxDashes;
       this.stamina = this.cfg.stamina.max;
       this.liftTimer = 0;
+      if (this.state !== "dash") {
+        this.vy = 0;
+        this.remY = 0;
+      }
     } else if (this.liftTimer > 0) {
       this.liftTimer -= dt;
     }
@@ -227,11 +231,15 @@ export class Player {
       input.y > 0 &&
       this.vy >= 0;
 
-    let grav = this.isFastFalling ? this.cfg.gravity.fastFall : this.cfg.gravity.normal;
-    if (!this.isFastFalling && Math.abs(this.vy) < this.cfg.gravity.peakThreshold) {
-      grav = this.cfg.gravity.peak;
+    if (this.onGround && this.vy >= 0) {
+      this.vy = 0;
+    } else {
+      let grav = this.isFastFalling ? this.cfg.gravity.fastFall : this.cfg.gravity.normal;
+      if (!this.isFastFalling && Math.abs(this.vy) < this.cfg.gravity.peakThreshold) {
+        grav = this.cfg.gravity.peak;
+      }
+      this.vy = approach(this.vy, this.cfg.gravity.maxFall, grav * dt);
     }
-    this.vy = approach(this.vy, this.cfg.gravity.maxFall, grav * dt);
 
     if (!this.onGround && this.wallDir !== 0 && ix === this.wallDir && this.vy > 0) {
       this.vy = approach(this.vy, this.cfg.wall.slideMax, this.cfg.gravity.normal * dt);
