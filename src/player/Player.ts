@@ -27,6 +27,7 @@ export class Player {
   dashFreezeTimer = 0;
   dashAttackTimer = 0;
   dashCarryTimer = 0;
+  climbHopTimer = 0;
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
@@ -180,6 +181,7 @@ export class Player {
     this.dashFreezeTimer = 0;
     this.dashAttackTimer = 0;
     this.dashCarryTimer = 0;
+    this.climbHopTimer = 0;
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
@@ -316,6 +318,12 @@ export class Player {
     this.remX = 0;
     this.facing = (-this.wallDir) as 1 | -1;
 
+    if (this.climbHopTimer > 0) {
+      this.climbHopTimer -= dt;
+      this.vy = this.cfg.grab.climbHopSpeedY;
+      return;
+    }
+
     if (input.jumpPressed) {
       if (input.y < 0) {
         this.doClimbHop();
@@ -422,6 +430,7 @@ export class Player {
     this.remX = 0;
     this.remY = 0;
     this.vy = this.cfg.grab.climbHopSpeedY;
+    this.climbHopTimer = this.cfg.grab.climbHopTime;
     this.consumeStamina(this.cfg.stamina.grabHopCost);
     this.emit({ type: "jump", dirX: 0, dirY: -1 });
   }
