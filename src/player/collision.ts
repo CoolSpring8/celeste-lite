@@ -1,11 +1,12 @@
 import * as C from "../constants";
+import { SolidGrid, solidAt } from "../grid";
 
 export function collideAt(
   x: number,
   y: number,
   w: number,
   h: number,
-  grid: number[][],
+  grid: SolidGrid,
 ): boolean {
   const left = Math.floor(x / C.TILE);
   const right = Math.floor((x + w - 1) / C.TILE);
@@ -14,7 +15,7 @@ export function collideAt(
 
   for (let r = top; r <= bottom; r++) {
     for (let c = left; c <= right; c++) {
-      if (grid[r]?.[c] === 1) return true;
+      if (solidAt(grid, c, r)) return true;
     }
   }
 
@@ -26,7 +27,7 @@ export function wallDirAt(
   y: number,
   w: number,
   h: number,
-  grid: number[][],
+  grid: SolidGrid,
 ): number {
   if (collideAt(x - 1, y, w, h, grid)) return -1;
   if (collideAt(x + 1, y, w, h, grid)) return 1;

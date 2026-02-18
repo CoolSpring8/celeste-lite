@@ -12,6 +12,7 @@ export class PlayerView {
   private scene: Phaser.Scene;
   private body: Phaser.GameObjects.Rectangle;
   private afterimages: Afterimage[] = [];
+  private afterimagePool: Phaser.GameObjects.Rectangle[] = [];
   private trailTimer = 0;
   private wallDustTimer = 0;
 
@@ -69,10 +70,16 @@ export class PlayerView {
     this.body.destroy();
     this.dashEmitter.destroy();
     this.wallEmitter.destroy();
+
     for (const a of this.afterimages) {
       a.rect.destroy();
     }
+    for (const rect of this.afterimagePool) {
+      rect.destroy();
+    }
+
     this.afterimages = [];
+    this.afterimagePool = [];
   }
 
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
@@ -146,8 +153,10 @@ export class PlayerView {
       const a = this.afterimages[i];
       a.life -= dt;
       if (a.life <= 0) {
-        a.rect.destroy();
-        this.afterimages.splice(i, 1);
+        a.rect.setVisible(false);
+        this.afterimagePool.push(a.rect);
+        this.afterimages[i] = this.afterimages[this.afterimages.length - 1];
+        this.afterimages.pop();
         continue;
       }
 
@@ -158,17 +167,30 @@ export class PlayerView {
   private spawnAfterimage(x: number, y: number, color: number): void {
     const drawX = x + C.PW / 2;
     const drawY = y + C.PH;
-    const rect = this.scene.add
-      .rectangle(drawX, drawY, C.P_DRAW_W, C.P_DRAW_H, color)
-      .setOrigin(0.5, 1)
-      .setDepth(4)
-      .setAlpha(0.55);
+    const rect = this.getAfterimageRect();
+
+    rect
+      .setPosition(drawX, drawY)
+      .setFillStyle(color, 1)
+      .setAlpha(0.55)
+      .setVisible(true);
 
     this.afterimages.push({
       rect,
       life: 0.14,
       maxLife: 0.14,
     });
+  }
+
+  private getAfterimageRect(): Phaser.GameObjects.Rectangle {
+    const rect = this.afterimagePool.pop();
+    if (rect) return rect;
+
+    return this.scene.add
+      .rectangle(0, 0, C.P_DRAW_W, C.P_DRAW_H, C.COLOR_PLAYER_DASH)
+      .setOrigin(0.5, 1)
+      .setDepth(4)
+      .setVisible(false);
   }
 
   private squash(scaleX: number, scaleY: number, duration: number): void {

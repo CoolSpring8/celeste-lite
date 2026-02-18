@@ -1,4 +1,5 @@
 import * as C from "../constants";
+import { SolidGrid } from "../grid";
 import { collideAt, wallDirAt } from "./collision";
 import { approach, dashDirection } from "./math";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
@@ -30,9 +31,9 @@ export class Player {
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
 
-  private grid: number[][];
+  private grid: SolidGrid;
 
-  constructor(x: number, y: number, grid: number[][]) {
+  constructor(x: number, y: number, grid: SolidGrid) {
     this.x = x;
     this.y = y;
     this.grid = grid;

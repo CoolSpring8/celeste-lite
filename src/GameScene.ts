@@ -1,20 +1,25 @@
 import Phaser from "phaser";
 import * as C from "./constants";
+import { solidAt } from "./grid";
+import { parseLevel } from "./level";
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
-import { parseLevel } from "./level";
 import { PlayerView } from "./view/PlayerView";
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
   private playerView!: PlayerView;
-  private grid!: number[][];
+  private grid!: ReturnType<typeof parseLevel>["grid"];
   private spawnX!: number;
   private spawnY!: number;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private prevJump = false;
   private prevDash = false;
+
+  private accumulator = 0;
+  private readonly fixedDt = 1 / 120;
+  private readonly maxSteps = 6;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
@@ -85,29 +90,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    const dt = delta / 1000;
-    const clampedDt = Math.min(dt, 0.033);
+    const frameDt = Math.min(delta / 1000, 0.1);
+    this.accumulator += frameDt;
 
     const input = this.gatherInput();
 
     if (this.keys.restart.isDown) {
       this.player.hardRespawn(this.spawnX, this.spawnY);
       this.cameras.main.fadeIn(80, 10, 10, 20);
+      this.accumulator = 0;
     }
 
-    this.player.update(clampedDt, input);
+    const effects: PlayerEffect[] = [];
+    let steps = 0;
 
-    let effects = this.player.consumeEffects();
-    const fellOut = effects.some((e) => e.type === "fell_out");
+    while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.player.update(this.fixedDt, input);
 
-    if (fellOut) {
-      this.player.hardRespawn(this.spawnX, this.spawnY);
-      this.cameras.main.fadeIn(120, 10, 10, 20);
-      effects = effects.concat(this.player.consumeEffects());
+      let stepEffects = this.player.consumeEffects();
+      const fellOut = stepEffects.some((e) => e.type === "fell_out");
+      if (fellOut) {
+        this.player.hardRespawn(this.spawnX, this.spawnY);
+        this.cameras.main.fadeIn(120, 10, 10, 20);
+        stepEffects = stepEffects.concat(this.player.consumeEffects());
+        this.accumulator = 0;
+      }
+
+      effects.push(...stepEffects);
+      this.accumulator -= this.fixedDt;
+      steps++;
+    }
+
+    if (steps === this.maxSteps) {
+      this.accumulator = 0;
     }
 
     const snapshot = this.player.getSnapshot();
-    this.playerView.render(snapshot, effects, clampedDt);
+    this.playerView.render(snapshot, effects, frameDt);
 
     this.cameraTarget.setPosition(snapshot.x + C.PW / 2, snapshot.y + C.PH / 2);
 
@@ -146,7 +165,7 @@ export class GameScene extends Phaser.Scene {
     const g = this.tileGfx;
     for (let r = 0; r < C.ROWS; r++) {
       for (let c = 0; c < C.COLS; c++) {
-        if (this.grid[r][c] !== 1) continue;
+        if (!solidAt(this.grid, c, r)) continue;
 
         const x = c * C.TILE;
         const y = r * C.TILE;
@@ -154,8 +173,7 @@ export class GameScene extends Phaser.Scene {
         g.fillStyle(C.COLOR_TILE, 1);
         g.fillRect(x, y, C.TILE, C.TILE);
 
-        const above = this.grid[r - 1]?.[c] ?? 0;
-        if (above === 0) {
+        if (!solidAt(this.grid, c, r - 1)) {
           g.fillStyle(C.COLOR_TILE_EDGE, 1);
           g.fillRect(x, y, C.TILE, 2);
         }
