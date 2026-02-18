@@ -73,7 +73,7 @@ export class Player {
     this.wallDir = wallDirAt(this.x, this.y, h, this.grid);
 
     if (this.onGround) {
-      if (!this.wasOnGround) {
+      if (this.state !== "dash") {
         this.dashesLeft = this.cfg.dash.maxDashes;
       }
       this.stamina = this.cfg.stamina.max;
