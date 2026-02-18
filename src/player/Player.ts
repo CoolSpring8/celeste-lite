@@ -270,7 +270,8 @@ export class Player {
       if (this.onGround || this.coyoteTimer > 0) {
         this.doJump();
       } else if (this.wallStickTimer > 0 || this.wallDir !== 0) {
-        this.doWallJump();
+        const neutral = input.x === 0 && !input.grab;
+        this.doWallJump(neutral);
       }
     }
 
@@ -343,7 +344,7 @@ export class Player {
         this.doClimbHop();
       } else {
         this.state = "normal";
-        this.doWallJump();
+        this.doWallJump(false);
       }
       return;
     }
@@ -434,12 +435,14 @@ export class Player {
     this.emit({ type: "jump", dirX: Math.sign(this.vx), dirY: -1 });
   }
 
-  private doWallJump(): void {
+  private doWallJump(neutral = false): void {
     const dir = this.wallDir !== 0 ? -this.wallDir : -this.facing;
-    this.vx = dir * this.cfg.wall.jumpH;
+    this.vx = dir * (neutral ? this.cfg.wall.neutralJumpH : this.cfg.wall.jumpH);
     this.vy = this.cfg.wall.jumpV;
     this.facing = dir as 1 | -1;
-    this.wallJumpLockTimer = this.cfg.wall.jumpLockTime;
+    this.wallJumpLockTimer = neutral
+      ? this.cfg.wall.neutralJumpLockTime
+      : this.cfg.wall.jumpLockTime;
     this.wallStickTimer = 0;
     this.jumpBufferTimer = 0;
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });

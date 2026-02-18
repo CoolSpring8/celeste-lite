@@ -44,6 +44,8 @@ export interface PlayerConfig {
     slideMax: number;
     jumpH: number;
     jumpV: number;
+    neutralJumpH: number;
+    neutralJumpLockTime: number;
     jumpLockTime: number;
     stickTime: number;
     bounceH: number;
@@ -106,8 +108,10 @@ export const PLAYER_CONFIG: PlayerConfig = {
   },
   wall: {
     slideMax: 60,
-    jumpH: 200,
+    jumpH: 170,
     jumpV: -280,
+    neutralJumpH: 115,
+    neutralJumpLockTime: 0.03,
     jumpLockTime: 0.13,
     stickTime: 0.06,
     bounceH: 280,
