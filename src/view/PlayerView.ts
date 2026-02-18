@@ -24,7 +24,7 @@ export class PlayerView {
     this.ensurePixelTexture();
 
     this.body = this.scene.add
-      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.player)
+      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.playerOneDash)
       .setOrigin(0.5, 1)
       .setDepth(5);
 
@@ -34,7 +34,7 @@ export class PlayerView {
       quantity: 0,
       scale: { start: 1.1, end: 0.2 },
       alpha: { start: 0.8, end: 0 },
-      tint: COLORS.playerDash,
+      tint: COLORS.playerCooldown,
       gravityY: 0,
       emitting: false,
       blendMode: "ADD",
@@ -191,7 +191,7 @@ export class PlayerView {
     }
 
     return this.scene.add
-      .rectangle(0, 0, drawW, drawH, COLORS.playerDash)
+      .rectangle(0, 0, drawW, drawH, COLORS.playerCooldown)
       .setOrigin(0.5, 1)
       .setDepth(4)
       .setVisible(false);
@@ -224,16 +224,23 @@ export class PlayerView {
     if (
       snapshot.state === "dash" ||
       snapshot.state === "dashAttack" ||
-      snapshot.state === "freeze"
+      snapshot.state === "freeze" ||
+      snapshot.dashCooldownActive
     ) {
-      return COLORS.playerDash;
+      return COLORS.playerCooldown;
     }
 
     if (snapshot.dashesLeft <= 0) {
       return COLORS.playerNoDash;
     }
+    if (snapshot.dashesLeft === 1) {
+      return COLORS.playerOneDash;
+    }
+    if (snapshot.dashesLeft === 2) {
+      return COLORS.playerTwoDash;
+    }
 
-    return COLORS.player;
+    return COLORS.playerManyDash;
   }
 
   private ensurePixelTexture(): void {

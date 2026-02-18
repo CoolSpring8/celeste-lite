@@ -37,6 +37,7 @@ export interface PlayerSnapshot {
   onGround: boolean;
   wallDir: number;
   dashesLeft: number;
+  dashCooldownActive: boolean;
   stamina: number;
   drawW: number;
   hitboxH: number;

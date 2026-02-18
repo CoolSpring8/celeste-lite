@@ -68,6 +68,7 @@ export interface PlayerConfig {
     straightSpeed: number;
     diagonalComponentSpeed: number;
     duration: number;
+    refillCooldown: number;
     freezeTime: number;
     attackTime: number;
     carryTime: number;
@@ -133,7 +134,8 @@ export const PLAYER_CONFIG: PlayerConfig = {
   dash: {
     straightSpeed: 240,
     diagonalComponentSpeed: 170,
-    duration: 0.13,
+    duration: 15 / 60,
+    refillCooldown: 10 / 60,
     freezeTime: 0.04,
     attackTime: 0.08,
     carryTime: 0.12,
@@ -150,9 +152,11 @@ export const PLAYER_CONFIG: PlayerConfig = {
 };
 
 export const COLORS = {
-  player: 0x5bcefa,
-  playerDash: 0xf5a9b8,
-  playerNoDash: 0x4466aa,
+  playerNoDash: 0x5bc0eb, // cyan
+  playerOneDash: 0xb24139, // auburn-ish red
+  playerTwoDash: 0xf08ad6, // pink
+  playerManyDash: 0x62c462, // green
+  playerCooldown: 0xffffff, // white
   tile: 0x3a3a5c,
   tileEdge: 0x5a5a8c,
   background: 0x16213e,

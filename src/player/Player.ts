@@ -27,6 +27,7 @@ export class Player {
   dashFreezeTimer = 0;
   dashAttackTimer = 0;
   dashCarryTimer = 0;
+  dashRefillTimer = 0;
   climbHopTimer = 0;
 
   dashesLeft: number;
@@ -59,6 +60,11 @@ export class Player {
   }
 
   update(dt: number, input: InputState): void {
+    if (this.dashRefillTimer > 0) {
+      this.dashRefillTimer -= dt;
+      if (this.dashRefillTimer < 0) this.dashRefillTimer = 0;
+    }
+
     if (this.state === "freeze") {
       this.dashFreezeTimer -= dt;
       if (this.dashFreezeTimer <= 0) {
@@ -75,7 +81,7 @@ export class Player {
     this.wallDir = wallDirAt(this.x, this.y, h, this.grid);
 
     if (this.onGround) {
-      if (this.state !== "dash") {
+      if (this.state !== "dash" && this.dashesLeft < this.cfg.dash.maxDashes && this.dashRefillTimer <= 0) {
         this.dashesLeft = this.cfg.dash.maxDashes;
       }
       this.stamina = this.cfg.stamina.max;
@@ -156,6 +162,7 @@ export class Player {
       onGround: this.onGround,
       wallDir: this.wallDir,
       dashesLeft: this.dashesLeft,
+      dashCooldownActive: this.dashRefillTimer > 0,
       stamina: this.stamina,
       drawW,
       hitboxH,
@@ -191,6 +198,7 @@ export class Player {
     this.dashFreezeTimer = 0;
     this.dashAttackTimer = 0;
     this.dashCarryTimer = 0;
+    this.dashRefillTimer = 0;
     this.climbHopTimer = 0;
     this.onGround = false;
     this.onJumpThrough = false;
@@ -376,6 +384,7 @@ export class Player {
     }
 
     if (input.jumpPressed && this.wallDir !== 0) {
+      this.beginDashRefillCooldown();
       this.state = "normal";
       this.duckDashActive = false;
       this.vx = -this.wallDir * this.cfg.wall.bounceH;
@@ -389,6 +398,7 @@ export class Player {
     }
 
     if (this.dashTimer <= 0) {
+      this.beginDashRefillCooldown();
       if (this.duckDashActive) {
         this.state = "duck";
         this.vx *= 0.6;
@@ -592,6 +602,7 @@ export class Player {
     this.vx = dir * this.cfg.dash.superSpeed;
     this.vy = this.cfg.jump.speed;
     this.jumpBufferTimer = 0;
+    this.beginDashRefillCooldown();
     this.emit({ type: "super", dirX: dir, dirY: -1 });
     return true;
   }
@@ -686,6 +697,10 @@ export class Player {
 
   private consumeStamina(amount: number): void {
     this.stamina = Math.max(0, this.stamina - amount);
+  }
+
+  private beginDashRefillCooldown(): void {
+    this.dashRefillTimer = Math.max(this.dashRefillTimer, this.cfg.dash.refillCooldown);
   }
 
   private emit(effect: PlayerEffect): void {
