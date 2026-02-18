@@ -217,7 +217,11 @@ export class PlayerView {
   }
 
   private resolveColor(snapshot: PlayerSnapshot): number {
-    if (snapshot.state === "dash" || snapshot.state === "freeze") {
+    if (
+      snapshot.state === "dash" ||
+      snapshot.state === "dashAttack" ||
+      snapshot.state === "freeze"
+    ) {
       return COLORS.playerDash;
     }
 

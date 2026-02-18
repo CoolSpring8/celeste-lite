@@ -23,6 +23,7 @@ export interface PlayerConfig {
     runDecel: number;
     airAccel: number;
     airDecel: number;
+    cornerCorrection: number;
   };
   gravity: {
     normal: number;
@@ -50,9 +51,16 @@ export interface PlayerConfig {
     speed: number;
     duration: number;
     freezeTime: number;
+    attackTime: number;
+    carryTime: number;
     maxDashes: number;
     hyperHBoost: number;
     hyperVSpeed: number;
+  };
+  lift: {
+    momentumStoreTime: number;
+    maxBoostX: number;
+    maxBoostY: number;
   };
 } 
 
@@ -63,6 +71,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     runDecel: 1800,
     airAccel: 1100,
     airDecel: 700,
+    cornerCorrection: 4,
   },
   gravity: {
     normal: 1200,
@@ -90,9 +99,16 @@ export const PLAYER_CONFIG: PlayerConfig = {
     speed: 320,
     duration: 0.13,
     freezeTime: 0.04,
+    attackTime: 0.08,
+    carryTime: 0.12,
     maxDashes: 1,
     hyperHBoost: 325,
     hyperVSpeed: -200,
+  },
+  lift: {
+    momentumStoreTime: 0.12,
+    maxBoostX: 80,
+    maxBoostY: 60,
   },
 };
 

@@ -1,6 +1,6 @@
 import { PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
 import { SolidGrid } from "../grid";
-import { collideAt, wallDirAt } from "./collision";
+import { collideAt, collideSolidAt, probeGround, wallDirAt } from "./collision";
 import { approach, dashDirection } from "./math";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
@@ -16,6 +16,7 @@ export class Player {
   facing: 1 | -1 = 1;
 
   onGround = false;
+  onJumpThrough = false;
   wallDir = 0;
 
   coyoteTimer = 0;
@@ -24,9 +25,15 @@ export class Player {
   wallStickTimer = 0;
   dashTimer = 0;
   dashFreezeTimer = 0;
+  dashAttackTimer = 0;
+  dashCarryTimer = 0;
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
+
+  private liftVx = 0;
+  private liftVy = 0;
+  private liftTimer = 0;
 
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
@@ -52,15 +59,29 @@ export class Player {
       return;
     }
 
-    this.onGround = collideAt(this.x, this.y + 1, PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH, this.grid);
-    this.wallDir = wallDirAt(this.x, this.y, PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH, this.grid);
+    const ground = probeGround(this.x, this.y, this.grid);
+    this.onGround = ground.onGround;
+    this.onJumpThrough = ground.onJumpThrough;
+    this.wallDir = wallDirAt(this.x, this.y, this.grid);
 
     if (this.onGround) {
       this.dashesLeft = this.cfg.dash.maxDashes;
+      this.liftTimer = 0;
+    } else {
+      if (this.liftTimer > 0) this.liftTimer -= dt;
     }
+
+    if (this.dashAttackTimer > 0) {
+      this.dashAttackTimer -= dt;
+      if (this.dashAttackTimer <= 0 && this.state === "dashAttack") {
+        this.state = "normal";
+      }
+    }
+    if (this.dashCarryTimer > 0) this.dashCarryTimer -= dt;
 
     switch (this.state) {
       case "normal":
+      case "dashAttack":
         this.normalUpdate(dt, input);
         break;
       case "dash":
@@ -98,6 +119,12 @@ export class Player {
     };
   }
 
+  setLiftVelocity(vx: number, vy: number): void {
+    this.liftVx = Math.max(-this.cfg.lift.maxBoostX, Math.min(this.cfg.lift.maxBoostX, vx));
+    this.liftVy = Math.max(-this.cfg.lift.maxBoostY, Math.min(this.cfg.lift.maxBoostY, vy));
+    this.liftTimer = this.cfg.lift.momentumStoreTime;
+  }
+
   hardRespawn(x: number, y: number): void {
     this.x = x;
     this.y = y;
@@ -112,7 +139,10 @@ export class Player {
     this.wallJumpLockTimer = 0;
     this.dashTimer = 0;
     this.dashFreezeTimer = 0;
+    this.dashAttackTimer = 0;
+    this.dashCarryTimer = 0;
     this.onGround = false;
+    this.onJumpThrough = false;
     this.wallDir = 0;
     this.wasOnGround = false;
     this.emit({ type: "respawn" });
@@ -126,8 +156,13 @@ export class Player {
     if (this.wallJumpLockTimer > 0) {
       this.wallJumpLockTimer -= dt;
     } else {
+      const carryNoInput = this.dashCarryTimer > 0 && ix === 0;
       const accel = this.onGround ? this.cfg.movement.runAccel : this.cfg.movement.airAccel;
-      const decel = this.onGround ? this.cfg.movement.runDecel : this.cfg.movement.airDecel;
+      const decel = carryNoInput
+        ? this.cfg.movement.airDecel * 0.2
+        : this.onGround
+          ? this.cfg.movement.runDecel
+          : this.cfg.movement.airDecel;
 
       if (ix !== 0) {
         this.vx = approach(this.vx, this.cfg.movement.maxRun * ix, accel * dt);
@@ -206,7 +241,9 @@ export class Player {
     }
 
     if (this.dashTimer <= 0) {
-      this.state = "normal";
+      this.state = "dashAttack";
+      this.dashAttackTimer = this.cfg.dash.attackTime;
+      this.dashCarryTimer = this.cfg.dash.carryTime;
       this.vx *= 0.6;
       if (this.dashDir.y < 0) {
         this.vy *= 0.4;
@@ -219,6 +256,13 @@ export class Player {
     if (Math.abs(this.vx) > this.cfg.movement.maxRun * 0.5) {
       this.vx += Math.sign(this.vx) * this.cfg.jump.hBoost;
     }
+
+    if (this.liftTimer > 0) {
+      this.vx += this.liftVx;
+      this.vy += Math.min(0, this.liftVy);
+      this.liftTimer = 0;
+    }
+
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.emit({ type: "jump", dirX: Math.sign(this.vx), dirY: -1 });
@@ -252,8 +296,21 @@ export class Player {
     const sign = Math.sign(move);
 
     while (move !== 0) {
-      if (!collideAt(this.x + sign, this.y, PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH, this.grid)) {
-        this.x += sign;
+      const nextX = this.x + sign;
+      if (
+        !collideAt(
+          nextX,
+          this.y,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+          this.y,
+          false,
+        )
+      ) {
+        this.x = nextX;
+        move -= sign;
+      } else if (this.tryDashCornerCorrectionX(sign)) {
         move -= sign;
       } else {
         this.vx = 0;
@@ -270,8 +327,21 @@ export class Player {
     const sign = Math.sign(move);
 
     while (move !== 0) {
-      if (!collideAt(this.x, this.y + sign, PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH, this.grid)) {
-        this.y += sign;
+      const nextY = this.y + sign;
+      if (
+        !collideAt(
+          this.x,
+          nextY,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+          this.y,
+          sign > 0,
+        )
+      ) {
+        this.y = nextY;
+        move -= sign;
+      } else if (sign < 0 && this.tryUpCornerCorrectionY()) {
         move -= sign;
       } else {
         if (sign > 0 && !this.onGround) {
@@ -282,6 +352,76 @@ export class Player {
         break;
       }
     }
+  }
+
+  private tryDashCornerCorrectionX(sign: number): boolean {
+    if (this.state !== "dash" && this.state !== "dashAttack") return false;
+
+    for (let i = 1; i <= this.cfg.movement.cornerCorrection; i++) {
+      if (
+        collideSolidAt(
+          this.x,
+          this.y - i,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+        )
+      ) {
+        continue;
+      }
+
+      if (
+        collideSolidAt(
+          this.x + sign,
+          this.y - i,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+        )
+      ) {
+        continue;
+      }
+
+      this.y -= i;
+      this.x += sign;
+      return true;
+    }
+
+    return false;
+  }
+
+  private tryUpCornerCorrectionY(): boolean {
+    for (let i = 1; i <= this.cfg.movement.cornerCorrection; i++) {
+      if (
+        !collideSolidAt(
+          this.x + i,
+          this.y - 1,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+        )
+      ) {
+        this.x += i;
+        this.y -= 1;
+        return true;
+      }
+
+      if (
+        !collideSolidAt(
+          this.x - i,
+          this.y - 1,
+          PLAYER_GEOMETRY.hitboxW,
+          PLAYER_GEOMETRY.hitboxH,
+          this.grid,
+        )
+      ) {
+        this.x -= i;
+        this.y -= 1;
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private emit(effect: PlayerEffect): void {

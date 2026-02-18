@@ -1,6 +1,6 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
-import { solidAt } from "./grid";
+import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import { parseLevel } from "./level";
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
@@ -168,17 +168,23 @@ export class GameScene extends Phaser.Scene {
     const g = this.tileGfx;
     for (let r = 0; r < WORLD.rows; r++) {
       for (let c = 0; c < WORLD.cols; c++) {
-        if (!solidAt(this.grid, c, r)) continue;
-
         const x = c * WORLD.tile;
         const y = r * WORLD.tile;
+        const tile = tileAt(this.grid, c, r);
+        if (tile === 0) continue;
 
-        g.fillStyle(COLORS.tile, 1);
-        g.fillRect(x, y, WORLD.tile, WORLD.tile);
-
-        if (!solidAt(this.grid, c, r - 1)) {
+        if (tile === TILE_JUMP_THROUGH) {
+          g.fillStyle(COLORS.tile, 1);
+          g.fillRect(x, y + 2, WORLD.tile, 3);
           g.fillStyle(COLORS.tileEdge, 1);
           g.fillRect(x, y, WORLD.tile, 2);
+        } else {
+          g.fillStyle(COLORS.tile, 1);
+          g.fillRect(x, y, WORLD.tile, WORLD.tile);
+          if (tileAt(this.grid, c, r - 1) === 0) {
+            g.fillStyle(COLORS.tileEdge, 1);
+            g.fillRect(x, y, WORLD.tile, 2);
+          }
         }
       }
     }
