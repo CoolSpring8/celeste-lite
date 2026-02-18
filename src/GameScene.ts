@@ -25,8 +25,8 @@ export class GameScene extends Phaser.Scene {
   private spawnY!: number;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private prevJump = false;
-  private prevDash = false;
+  private pendingJumpEdges: Array<"down" | "up"> = [];
+  private pendingDashPresses = 0;
 
   private accumulator = 0;
   private readonly fixedDt = 1 / 120;
@@ -89,6 +89,9 @@ export class GameScene extends Phaser.Scene {
       jump: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
       restart: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
+    this.keys.jump.on("down", this.onJumpDown, this);
+    this.keys.jump.on("up", this.onJumpUp, this);
+    this.keys.dash.on("down", this.onDashDown, this);
 
     this.hudText = this.add
       .text(8, 8, "", {
@@ -119,11 +122,10 @@ export class GameScene extends Phaser.Scene {
     const frameDt = Math.min(delta / 1000, 0.1);
     this.accumulator += frameDt;
 
-    const input = this.gatherInput();
-
     if (this.keys.restart.isDown) {
       this.player.hardRespawn(this.spawnX, this.spawnY);
       this.resetRefills();
+      this.clearInputEdgeQueues();
       this.cameras.main.fadeIn(80, 10, 10, 20);
       this.accumulator = 0;
     }
@@ -132,7 +134,7 @@ export class GameScene extends Phaser.Scene {
     let steps = 0;
 
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
-      this.player.update(this.fixedDt, input);
+      this.player.update(this.fixedDt, this.gatherStepInput());
       this.updateRefills(this.fixedDt);
 
       let stepEffects = this.player.consumeEffects();
@@ -140,6 +142,7 @@ export class GameScene extends Phaser.Scene {
       if (fellOut) {
         this.player.hardRespawn(this.spawnX, this.spawnY);
         this.resetRefills();
+        this.clearInputEdgeQueues();
         this.cameras.main.fadeIn(120, 10, 10, 20);
         stepEffects = stepEffects.concat(this.player.consumeEffects());
         this.accumulator = 0;
@@ -162,13 +165,16 @@ export class GameScene extends Phaser.Scene {
       snapshot.y + snapshot.hitboxH / 2,
     );
 
-    this.prevJump = input.jump;
-    this.prevDash = this.keys.dash.isDown;
-
     this.updateHUD(snapshot, effects);
   }
 
   shutdown(): void {
+    if (this.keys) {
+      this.keys.jump.off("down", this.onJumpDown, this);
+      this.keys.jump.off("up", this.onJumpUp, this);
+      this.keys.dash.off("down", this.onDashDown, this);
+    }
+    this.clearInputEdgeQueues();
     this.playerView?.destroy();
     this.refillEmitter?.destroy();
     for (const refill of this.refills) {
@@ -178,7 +184,7 @@ export class GameScene extends Phaser.Scene {
     this.refills = [];
   }
 
-  private gatherInput(): InputState {
+  private gatherStepInput(): InputState {
     let x = 0;
     let y = 0;
     if (this.keys.left.isDown || this.keys.a.isDown) x -= 1;
@@ -187,18 +193,41 @@ export class GameScene extends Phaser.Scene {
     if (this.keys.down.isDown || this.keys.s.isDown) y += 1;
 
     const jump = this.keys.jump.isDown;
-    const dash = this.keys.dash.isDown;
+    const jumpEdge = this.pendingJumpEdges.shift();
+    const jumpPressed = jumpEdge === "down";
+    const jumpReleased = jumpEdge === "up";
+    const dashPressed = this.pendingDashPresses > 0;
+    if (dashPressed) this.pendingDashPresses--;
     const grab = this.keys.grab.isDown;
 
     return {
       x,
       y,
       jump,
-      jumpPressed: jump && !this.prevJump,
-      jumpReleased: !jump && this.prevJump,
-      dashPressed: dash && !this.prevDash,
+      jumpPressed,
+      jumpReleased,
+      dashPressed,
       grab,
     };
+  }
+
+  private onJumpDown(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    this.pendingJumpEdges.push("down");
+  }
+
+  private onJumpUp(): void {
+    this.pendingJumpEdges.push("up");
+  }
+
+  private onDashDown(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    this.pendingDashPresses++;
+  }
+
+  private clearInputEdgeQueues(): void {
+    this.pendingJumpEdges.length = 0;
+    this.pendingDashPresses = 0;
   }
 
   private drawTiles(): void {
