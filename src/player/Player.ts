@@ -31,6 +31,8 @@ export class Player {
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
+  private dashVelX = 0;
+  private dashVelY = 0;
   stamina: number;
   private isFastFalling = false;
 
@@ -365,8 +367,8 @@ export class Player {
   private dashUpdate(dt: number, input: InputState): void {
     this.dashTimer -= dt;
 
-    this.vx = this.dashDir.x * this.cfg.dash.speed;
-    this.vy = this.dashDir.y * this.cfg.dash.speed;
+    this.vx = this.dashVelX;
+    this.vy = this.dashVelY;
 
     if (input.jumpPressed) {
       if (this.trySuperDashTech()) return;
@@ -393,12 +395,24 @@ export class Player {
         return;
       }
 
+      const horizontalDash = Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) <= 0.1;
+      const diagonalDash = Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) > 0.1;
+      const upDiagonalDash = diagonalDash && this.dashDir.y < -0.1;
+      const downDiagonalDash = diagonalDash && this.dashDir.y > 0.1;
+      const verticalDash = Math.abs(this.dashDir.x) <= 0.1 && Math.abs(this.dashDir.y) > 0.1;
+
       this.state = "dashAttack";
       this.dashAttackTimer = this.cfg.dash.attackTime;
       this.dashCarryTimer = this.cfg.dash.carryTime;
-      this.vx *= 0.6;
-      if (this.dashDir.y < 0) {
-        this.vy *= 0.4;
+
+      if (horizontalDash || upDiagonalDash) {
+        const dir = this.dashDir.x !== 0 ? Math.sign(this.dashDir.x) : Math.sign(this.vx || this.facing);
+        this.vx = dir * Math.max(this.cfg.dash.postHorizontalSpeed, Math.abs(this.vx));
+      } else if (verticalDash) {
+        const dir = this.dashDir.y !== 0 ? Math.sign(this.dashDir.y) : Math.sign(this.vy || 1);
+        this.vy = dir * this.cfg.dash.postVerticalSpeed;
+      } else if (!downDiagonalDash) {
+        this.vx *= 0.6;
       }
     }
   }
@@ -453,6 +467,27 @@ export class Player {
     } else {
       this.dashDir = dashDirection(input.x, input.y, this.facing);
     }
+
+    const diagonal =
+      Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) > 0.1;
+    const baseX = this.dashDir.x === 0
+      ? 0
+      : Math.sign(this.dashDir.x) *
+        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
+    const baseY = this.dashDir.y === 0
+      ? 0
+      : Math.sign(this.dashDir.y) *
+        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
+
+    // Preserve already-faster momentum in the same direction at dash start.
+    this.dashVelX =
+      baseX !== 0 && Math.sign(this.vx) === Math.sign(baseX) && Math.abs(this.vx) > Math.abs(baseX)
+        ? this.vx
+        : baseX;
+    this.dashVelY =
+      baseY !== 0 && Math.sign(this.vy) === Math.sign(baseY) && Math.abs(this.vy) > Math.abs(baseY)
+        ? this.vy
+        : baseY;
 
     this.dashStartedOnGround = this.onGround;
     this.duckDashActive = keepDuck;

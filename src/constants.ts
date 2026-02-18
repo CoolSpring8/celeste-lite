@@ -63,11 +63,14 @@ export interface PlayerConfig {
     exhaustedSlipSpeed: number;
   };
   dash: {
-    speed: number;
+    straightSpeed: number;
+    diagonalComponentSpeed: number;
     duration: number;
     freezeTime: number;
     attackTime: number;
     carryTime: number;
+    postHorizontalSpeed: number;
+    postVerticalSpeed: number;
     maxDashes: number;
     superSpeed: number;
   };
@@ -124,11 +127,14 @@ export const PLAYER_CONFIG: PlayerConfig = {
     exhaustedSlipSpeed: 110,
   },
   dash: {
-    speed: 240,
+    straightSpeed: 240,
+    diagonalComponentSpeed: 170,
     duration: 0.13,
     freezeTime: 0.04,
     attackTime: 0.08,
     carryTime: 0.12,
+    postHorizontalSpeed: 160,
+    postVerticalSpeed: 120,
     maxDashes: 1,
     superSpeed: 260,
   },
