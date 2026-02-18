@@ -38,7 +38,9 @@ export interface PlayerSnapshot {
   wallDir: number;
   dashesLeft: number;
   stamina: number;
+  drawW: number;
   hitboxH: number;
   drawH: number;
   isCrouched: boolean;
+  isFastFalling: boolean;
 }

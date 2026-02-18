@@ -31,6 +31,7 @@ export class Player {
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
   stamina: number;
+  private isFastFalling = false;
 
   private duckDashActive = false;
 
@@ -88,6 +89,7 @@ export class Player {
       }
     }
     if (this.dashCarryTimer > 0) this.dashCarryTimer -= dt;
+    this.isFastFalling = false;
 
     switch (this.state) {
       case "normal":
@@ -124,9 +126,15 @@ export class Player {
   getSnapshot(): PlayerSnapshot {
     const hitboxH = this.getHitboxH();
     const isCrouched = this.state === "duck" || this.duckDashActive;
-    const drawH = isCrouched
+    let drawW = PLAYER_GEOMETRY.drawW;
+    let drawH = isCrouched
       ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
       : PLAYER_GEOMETRY.drawH;
+
+    if (this.isFastFalling && !isCrouched) {
+      drawW *= 0.82;
+      drawH *= 1.2;
+    }
 
     return {
       x: this.x,
@@ -139,9 +147,11 @@ export class Player {
       wallDir: this.wallDir,
       dashesLeft: this.dashesLeft,
       stamina: this.stamina,
+      drawW,
       hitboxH,
       drawH,
       isCrouched,
+      isFastFalling: this.isFastFalling,
     };
   }
 
@@ -159,6 +169,7 @@ export class Player {
     this.remX = 0;
     this.remY = 0;
     this.state = "normal";
+    this.isFastFalling = false;
     this.duckDashActive = false;
     this.dashesLeft = this.cfg.dash.maxDashes;
     this.stamina = this.cfg.stamina.max;
@@ -208,8 +219,14 @@ export class Player {
       }
     }
 
-    let grav = this.cfg.gravity.normal;
-    if (Math.abs(this.vy) < this.cfg.gravity.peakThreshold) {
+    this.isFastFalling =
+      !this.onGround &&
+      (this.state === "normal" || this.state === "dashAttack") &&
+      input.y > 0 &&
+      this.vy >= 0;
+
+    let grav = this.isFastFalling ? this.cfg.gravity.fastFall : this.cfg.gravity.normal;
+    if (!this.isFastFalling && Math.abs(this.vy) < this.cfg.gravity.peakThreshold) {
       grav = this.cfg.gravity.peak;
     }
     this.vy = approach(this.vy, this.cfg.gravity.maxFall, grav * dt);

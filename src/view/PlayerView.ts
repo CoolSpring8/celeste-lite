@@ -62,7 +62,7 @@ export class PlayerView {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
 
-    this.body.setSize(PLAYER_GEOMETRY.drawW, snapshot.drawH);
+    this.body.setSize(snapshot.drawW, snapshot.drawH);
     this.body.setPosition(drawX, drawY);
     this.body.setFillStyle(this.resolveColor(snapshot), 1);
   }
@@ -168,7 +168,7 @@ export class PlayerView {
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
-    const rect = this.getAfterimageRect(snapshot.drawH);
+    const rect = this.getAfterimageRect(snapshot.drawW, snapshot.drawH);
 
     rect
       .setPosition(drawX, drawY)
@@ -183,15 +183,15 @@ export class PlayerView {
     });
   }
 
-  private getAfterimageRect(drawH: number): Phaser.GameObjects.Rectangle {
+  private getAfterimageRect(drawW: number, drawH: number): Phaser.GameObjects.Rectangle {
     const rect = this.afterimagePool.pop();
     if (rect) {
-      rect.setSize(PLAYER_GEOMETRY.drawW, drawH);
+      rect.setSize(drawW, drawH);
       return rect;
     }
 
     return this.scene.add
-      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, drawH, COLORS.playerDash)
+      .rectangle(0, 0, drawW, drawH, COLORS.playerDash)
       .setOrigin(0.5, 1)
       .setDepth(4)
       .setVisible(false);

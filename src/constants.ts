@@ -29,6 +29,7 @@ export interface PlayerConfig {
   gravity: {
     normal: number;
     peak: number;
+    fastFall: number;
     peakThreshold: number;
     maxFall: number;
   };
@@ -90,6 +91,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
   gravity: {
     normal: 1200,
     peak: 500,
+    fastFall: 2100,
     peakThreshold: 50,
     maxFall: 300,
   },
