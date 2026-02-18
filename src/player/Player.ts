@@ -384,7 +384,6 @@ export class Player {
     }
 
     if (input.jumpPressed && this.wallDir !== 0) {
-      this.beginDashRefillCooldown();
       this.state = "normal";
       this.duckDashActive = false;
       this.vx = -this.wallDir * this.cfg.wall.bounceH;
@@ -398,7 +397,6 @@ export class Player {
     }
 
     if (this.dashTimer <= 0) {
-      this.beginDashRefillCooldown();
       if (this.duckDashActive) {
         this.state = "duck";
         this.vx *= 0.6;
@@ -474,6 +472,7 @@ export class Player {
     keepDuck = false,
   ): void {
     this.dashesLeft--;
+    this.beginDashRefillCooldown();
 
     if (forcedDir) {
       this.dashDir = forcedDir;
@@ -602,7 +601,6 @@ export class Player {
     this.vx = dir * this.cfg.dash.superSpeed;
     this.vy = this.cfg.jump.speed;
     this.jumpBufferTimer = 0;
-    this.beginDashRefillCooldown();
     this.emit({ type: "super", dirX: dir, dirY: -1 });
     return true;
   }

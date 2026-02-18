@@ -15,6 +15,9 @@ export class PlayerView {
   private afterimagePool: Phaser.GameObjects.Rectangle[] = [];
   private trailTimer = 0;
   private wallDustTimer = 0;
+  private dashTrailColor: number = COLORS.playerOneDash;
+  private dashDirX = 1;
+  private dashDirY = 0;
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   private wallEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -29,17 +32,17 @@ export class PlayerView {
       .setDepth(5);
 
     this.dashEmitter = this.scene.add.particles(0, 0, "pixel", {
-      speed: { min: 30, max: 100 },
-      lifespan: { min: 80, max: 160 },
+      speed: { min: 10, max: 45 },
+      lifespan: { min: 3200, max: 5000 },
       quantity: 0,
-      scale: { start: 1.1, end: 0.2 },
-      alpha: { start: 0.8, end: 0 },
+      scale: { start: 1, end: 0.1 },
+      alpha: { start: 0.35, end: 0 },
       tint: COLORS.playerCooldown,
-      gravityY: 0,
+      gravityY: 20,
       emitting: false,
-      blendMode: "ADD",
+      blendMode: "NORMAL",
     });
-    this.dashEmitter.setDepth(3);
+    this.dashEmitter.setDepth(4);
 
     this.wallEmitter = this.scene.add.particles(0, 0, "pixel", {
       speed: { min: 10, max: 40 },
@@ -98,8 +101,9 @@ export class PlayerView {
           this.emitWallBurst(snapshot);
           break;
         case "dash_start":
+          this.captureDashVisuals(snapshot, effect);
           this.squash(1.35, 0.7, 80);
-          this.emitDashBurst(snapshot, 8);
+          this.emitDashBurst(snapshot, 5, this.dashTrailColor);
           this.scene.cameras.main.shake(50, 0.002);
           break;
         case "wall_bounce":
@@ -141,11 +145,17 @@ export class PlayerView {
     this.trailTimer -= dt;
     if (this.trailTimer > 0) return;
 
-    this.trailTimer = 0.02;
-    this.spawnAfterimage(snapshot, this.resolveColor(snapshot));
+    this.trailTimer = 0.04;
+    this.spawnAfterimage(snapshot, this.dashTrailColor);
 
     const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const cy = snapshot.y + snapshot.hitboxH / 2;
+    const baseSpeed = 45;
+    const spread = 35;
+    const xBias = this.dashDirX * baseSpeed;
+    const yBias = this.dashDirY * baseSpeed;
+    this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
+    this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
     this.dashEmitter.emitParticleAt(cx, cy, 1);
   }
 
@@ -208,9 +218,12 @@ export class PlayerView {
     });
   }
 
-  private emitDashBurst(snapshot: PlayerSnapshot, count: number): void {
+  private emitDashBurst(snapshot: PlayerSnapshot, count: number, color?: number): void {
     const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const cy = snapshot.y + snapshot.hitboxH / 2;
+    if (color !== undefined) {
+      this.dashEmitter.setParticleTint(color);
+    }
     this.dashEmitter.emitParticleAt(cx, cy, count);
   }
 
@@ -221,26 +234,37 @@ export class PlayerView {
   }
 
   private resolveColor(snapshot: PlayerSnapshot): number {
-    if (
-      snapshot.state === "dash" ||
-      snapshot.state === "dashAttack" ||
-      snapshot.state === "freeze" ||
-      snapshot.dashCooldownActive
-    ) {
+    if (snapshot.dashCooldownActive) {
       return COLORS.playerCooldown;
     }
 
-    if (snapshot.dashesLeft <= 0) {
-      return COLORS.playerNoDash;
-    }
-    if (snapshot.dashesLeft === 1) {
-      return COLORS.playerOneDash;
-    }
-    if (snapshot.dashesLeft === 2) {
-      return COLORS.playerTwoDash;
-    }
+    return this.resolveHairColorByDashCount(snapshot.dashesLeft);
+  }
 
+  private resolveHairColorByDashCount(dashesLeft: number): number {
+    if (dashesLeft <= 0) return COLORS.playerNoDash;
+    if (dashesLeft === 1) return COLORS.playerOneDash;
+    if (dashesLeft === 2) return COLORS.playerTwoDash;
     return COLORS.playerManyDash;
+  }
+
+  private captureDashVisuals(snapshot: PlayerSnapshot, effect: PlayerEffect): void {
+    const preDashCount = snapshot.dashesLeft + 1;
+    this.dashTrailColor = this.resolveHairColorByDashCount(preDashCount);
+    this.dashEmitter.setParticleTint(this.dashTrailColor);
+
+    const dx = effect.dirX ?? snapshot.facing;
+    const dy = effect.dirY ?? 0;
+    const len = Math.hypot(dx, dy);
+    this.dashDirX = len > 0.0001 ? dx / len : snapshot.facing;
+    this.dashDirY = len > 0.0001 ? dy / len : 0;
+
+    const baseSpeed = 70;
+    const spread = 55;
+    const xBias = this.dashDirX * baseSpeed;
+    const yBias = this.dashDirY * baseSpeed;
+    this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
+    this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
   }
 
   private ensurePixelTexture(): void {
