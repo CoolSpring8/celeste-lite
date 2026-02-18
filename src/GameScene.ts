@@ -1,46 +1,46 @@
 import Phaser from "phaser";
 import * as C from "./constants";
-import { Player, InputState } from "./Player";
+import { Player } from "./player/Player";
+import { InputState, PlayerEffect } from "./player/types";
 import { parseLevel } from "./level";
+import { PlayerView } from "./view/PlayerView";
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
+  private playerView!: PlayerView;
   private grid!: number[][];
   private spawnX!: number;
   private spawnY!: number;
 
-  // 输入
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private prevJump = false;
   private prevDash = false;
 
-  // 绘图
-  private gfx!: Phaser.GameObjects.Graphics;
   private tileGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
+  private cameraTarget!: Phaser.GameObjects.Zone;
 
   constructor() {
     super("GameScene");
   }
 
   create(): void {
-    // ── 解析关卡 ──
     const level = parseLevel();
     this.grid = level.grid;
     this.spawnX = level.spawnX;
     this.spawnY = level.spawnY;
 
-    // ── 绘制静态瓦片（只画一次） ──
     this.tileGfx = this.add.graphics();
     this.drawTiles();
 
-    // ── 动态图形层（每帧重绘） ──
-    this.gfx = this.add.graphics();
-
-    // ── 创建玩家 ──
     this.player = new Player(this.spawnX, this.spawnY, this.grid);
+    this.playerView = new PlayerView(this);
 
-    // ── 注册按键 ──
+    this.cameraTarget = this.add.zone(this.spawnX, this.spawnY, 1, 1);
+    this.cameras.main.startFollow(this.cameraTarget, true, 0.15, 0.15);
+    this.cameras.main.setDeadzone(80, 50);
+    this.cameras.main.roundPixels = true;
+
     const kb = this.input.keyboard!;
     this.keys = {
       left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
@@ -59,56 +59,67 @@ export class GameScene extends Phaser.Scene {
       restart: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
 
-    // ── HUD ──
     this.hudText = this.add
       .text(8, 8, "", {
         fontFamily: "monospace",
         fontSize: "13px",
         color: "#8888bb",
       })
-      .setDepth(10);
+      .setDepth(10)
+      .setScrollFactor(0);
 
-    // ── 控制提示 ──
     this.add
-      .text(C.GAME_W - 8, C.GAME_H - 8, "← → ↑ ↓  |  Z/C/Space: Jump  |  X/Shift: Dash  |  R: Reset", {
-        fontFamily: "monospace",
-        fontSize: "11px",
-        color: "#444466",
-      })
+      .text(
+        C.GAME_W - 8,
+        C.GAME_H - 8,
+        "← → ↑ ↓  |  Z/C/Space: Jump  |  X/Shift: Dash  |  R: Reset",
+        {
+          fontFamily: "monospace",
+          fontSize: "11px",
+          color: "#444466",
+        },
+      )
       .setOrigin(1, 1)
-      .setDepth(10);
+      .setDepth(10)
+      .setScrollFactor(0);
   }
 
   update(_time: number, delta: number): void {
-    const dt = delta / 1000; // ms → s
-    const clampedDt = Math.min(dt, 0.033); // 防止 dt 过大（切窗口回来）
+    const dt = delta / 1000;
+    const clampedDt = Math.min(dt, 0.033);
 
-    // ── 收集输入 ──
     const input = this.gatherInput();
 
-    // ── 重生 ──
     if (this.keys.restart.isDown) {
-      this.player.x = this.spawnX;
-      this.player.y = this.spawnY;
-      this.player.respawn();
+      this.player.hardRespawn(this.spawnX, this.spawnY);
+      this.cameras.main.fadeIn(80, 10, 10, 20);
     }
 
-    // ── 更新玩家 ──
     this.player.update(clampedDt, input);
 
-    // ── 保存上帧输入 ──
-    this.prevJump = input.jump;
-    this.prevDash =
-      this.keys.dashX.isDown || this.keys.dashShift.isDown;
+    let effects = this.player.consumeEffects();
+    const fellOut = effects.some((e) => e.type === "fell_out");
 
-    // ── 绘制 ──
-    this.draw();
-    this.updateHUD();
+    if (fellOut) {
+      this.player.hardRespawn(this.spawnX, this.spawnY);
+      this.cameras.main.fadeIn(120, 10, 10, 20);
+      effects = effects.concat(this.player.consumeEffects());
+    }
+
+    const snapshot = this.player.getSnapshot();
+    this.playerView.render(snapshot, effects, clampedDt);
+
+    this.cameraTarget.setPosition(snapshot.x + C.PW / 2, snapshot.y + C.PH / 2);
+
+    this.prevJump = input.jump;
+    this.prevDash = this.keys.dashX.isDown || this.keys.dashShift.isDown;
+
+    this.updateHUD(snapshot, effects);
   }
 
-  // ================================================================
-  //  输入
-  // ================================================================
+  shutdown(): void {
+    this.playerView?.destroy();
+  }
 
   private gatherInput(): InputState {
     let x = 0;
@@ -118,11 +129,7 @@ export class GameScene extends Phaser.Scene {
     if (this.keys.up.isDown || this.keys.w.isDown) y -= 1;
     if (this.keys.down.isDown || this.keys.s.isDown) y += 1;
 
-    const jump =
-      this.keys.jumpZ.isDown ||
-      this.keys.jumpC.isDown ||
-      this.keys.jumpSpace.isDown;
-
+    const jump = this.keys.jumpZ.isDown || this.keys.jumpC.isDown || this.keys.jumpSpace.isDown;
     const dash = this.keys.dashX.isDown || this.keys.dashShift.isDown;
 
     return {
@@ -130,13 +137,10 @@ export class GameScene extends Phaser.Scene {
       y,
       jump,
       jumpPressed: jump && !this.prevJump,
+      jumpReleased: !jump && this.prevJump,
       dashPressed: dash && !this.prevDash,
     };
   }
-
-  // ================================================================
-  //  渲染
-  // ================================================================
 
   private drawTiles(): void {
     const g = this.tileGfx;
@@ -147,11 +151,9 @@ export class GameScene extends Phaser.Scene {
         const x = c * C.TILE;
         const y = r * C.TILE;
 
-        // 主体
         g.fillStyle(C.COLOR_TILE, 1);
         g.fillRect(x, y, C.TILE, C.TILE);
 
-        // 顶边高光（如果上方是空气）
         const above = this.grid[r - 1]?.[c] ?? 0;
         if (above === 0) {
           g.fillStyle(C.COLOR_TILE_EDGE, 1);
@@ -161,83 +163,20 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private draw(): void {
-    const g = this.gfx;
-    g.clear();
-
-    const p = this.player;
-
-    // ── 后像 ──
-    for (const a of p.afterimages) {
-      g.fillStyle(a.color, a.alpha * 0.6);
-      g.fillRect(
-        a.x - (C.P_DRAW_W - C.PW) / 2,
-        a.y - (C.P_DRAW_H - C.PH),
-        C.P_DRAW_W,
-        C.P_DRAW_H,
-      );
-    }
-
-    // ── 玩家（带挤压拉伸） ──
-    const drawW = C.P_DRAW_W * p.squashX;
-    const drawH = C.P_DRAW_H * p.squashY;
-    // 以底部中心为锚点进行挤压
-    const drawX = p.x + C.PW / 2 - drawW / 2;
-    const drawY = p.y + C.PH - drawH;
-
-    g.fillStyle(p.color, 1);
-    g.fillRect(drawX, drawY, drawW, drawH);
-
-    // ── 冲刺中的速度线 ──
-    if (p.state === "dash") {
-      g.lineStyle(1, C.COLOR_PLAYER_DASH, 0.5);
-      for (let i = 0; i < 3; i++) {
-        const ox = (Math.random() - 0.5) * 6;
-        const oy = (Math.random() - 0.5) * 6;
-        const cx = p.x + C.PW / 2;
-        const cy = p.y + C.PH / 2;
-        g.lineBetween(
-          cx + ox,
-          cy + oy,
-          cx + ox - p.vx * 0.04,
-          cy + oy - p.vy * 0.04,
-        );
-      }
-    }
-
-    // ── 滑墙粒子 ──
-    if (
-      !p.onGround &&
-      p.wallDir !== 0 &&
-      p.vy > 0 &&
-      p.state === "normal"
-    ) {
-      for (let i = 0; i < 2; i++) {
-        const px =
-          p.wallDir < 0 ? p.x - 1 : p.x + C.PW;
-        const py = p.y + Math.random() * C.PH;
-        g.fillStyle(C.COLOR_TILE_EDGE, 0.6);
-        g.fillRect(px, py, 1, 1);
-      }
-    }
-  }
-
-  // ================================================================
-  //  HUD
-  // ================================================================
-
-  private updateHUD(): void {
-    const p = this.player;
-    const state = p.state.toUpperCase();
+  private updateHUD(snapshot: ReturnType<Player["getSnapshot"]>, effects: PlayerEffect[]): void {
+    const state = snapshot.state.toUpperCase();
     const wallSliding =
-      !p.onGround && p.wallDir !== 0 && p.vy > 0 && p.state === "normal"
+      !snapshot.onGround && snapshot.wallDir !== 0 && snapshot.vy > 0 && snapshot.state === "normal"
         ? "  WALL-SLIDE"
         : "";
+    const events = effects.map((e) => e.type).join(", ");
+
     this.hudText.setText(
       `State: ${state}${wallSliding}` +
-      `  |  Dashes: ${p.dashesLeft}` +
-      `  |  Vel: (${p.vx.toFixed(0)}, ${p.vy.toFixed(0)})` +
-      `  |  ${p.onGround ? "GROUND" : "AIR"}`,
+        `  |  Dashes: ${snapshot.dashesLeft}` +
+        `  |  Vel: (${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)})` +
+        `  |  ${snapshot.onGround ? "GROUND" : "AIR"}` +
+        `${events ? `\nEffects: ${events}` : ""}`,
     );
   }
 }
