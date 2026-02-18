@@ -25,6 +25,7 @@ export interface PlayerConfig {
     airAccel: number;
     airDecel: number;
     cornerCorrection: number;
+    bunnyhopGroundDecelMultiplier: number;
   };
   gravity: {
     normal: number;
@@ -39,6 +40,7 @@ export interface PlayerConfig {
     cutMultiplier: number;
     coyoteTime: number;
     bufferTime: number;
+    bunnyhopWindow: number;
   };
   wall: {
     slideMax: number;
@@ -76,6 +78,9 @@ export interface PlayerConfig {
     postVerticalSpeed: number;
     maxDashes: number;
     superSpeed: number;
+    hyperSpeed: number;
+    hyperJumpYMultiplier: number;
+    ultraSpeedMultiplier: number;
   };
   lift: {
     momentumStoreTime: number;
@@ -92,6 +97,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     airAccel: 1100,
     airDecel: 700,
     cornerCorrection: 4,
+    bunnyhopGroundDecelMultiplier: 0.2,
   },
   gravity: {
     normal: 1200,
@@ -102,10 +108,11 @@ export const PLAYER_CONFIG: PlayerConfig = {
   },
   jump: {
     speed: -310,
-    hBoost: 20,
+    hBoost: 40,
     cutMultiplier: 0.45,
     coyoteTime: 0.08,
     bufferTime: 0.1,
+    bunnyhopWindow: 4 / 120,
   },
   wall: {
     slideMax: 60,
@@ -143,6 +150,9 @@ export const PLAYER_CONFIG: PlayerConfig = {
     postVerticalSpeed: 120,
     maxDashes: 1,
     superSpeed: 260,
+    hyperSpeed: 325,
+    hyperJumpYMultiplier: 0.5,
+    ultraSpeedMultiplier: 1.2,
   },
   lift: {
     momentumStoreTime: 0.12,

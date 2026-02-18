@@ -39,6 +39,8 @@ export class Player {
 
   private duckDashActive = false;
   private dashStartedOnGround = false;
+  private downDiagonalDashSlideActive = false;
+  private bunnyhopWindowTimer = 0;
 
   private liftVx = 0;
   private liftVy = 0;
@@ -63,6 +65,10 @@ export class Player {
     if (this.dashRefillTimer > 0) {
       this.dashRefillTimer -= dt;
       if (this.dashRefillTimer < 0) this.dashRefillTimer = 0;
+    }
+    if (this.bunnyhopWindowTimer > 0) {
+      this.bunnyhopWindowTimer -= dt;
+      if (this.bunnyhopWindowTimer < 0) this.bunnyhopWindowTimer = 0;
     }
 
     if (this.state === "freeze") {
@@ -210,6 +216,8 @@ export class Player {
     this.isFastFalling = false;
     this.duckDashActive = false;
     this.dashStartedOnGround = false;
+    this.downDiagonalDashSlideActive = false;
+    this.bunnyhopWindowTimer = 0;
     this.dashesLeft = this.cfg.dash.maxDashes;
     this.stamina = this.cfg.stamina.max;
     this.coyoteTimer = 0;
@@ -247,10 +255,14 @@ export class Player {
     } else {
       const carryNoInput = this.dashCarryTimer > 0 && ix === 0;
       const accel = this.onGround ? this.cfg.movement.runAccel : this.cfg.movement.airAccel;
+      const bunnyhopFrictionMult =
+        this.onGround && this.bunnyhopWindowTimer > 0
+          ? this.cfg.movement.bunnyhopGroundDecelMultiplier
+          : 1;
       const decel = carryNoInput
         ? this.cfg.movement.airDecel * 0.2
         : this.onGround
-          ? this.cfg.movement.runDecel
+          ? this.cfg.movement.runDecel * bunnyhopFrictionMult
           : this.cfg.movement.airDecel;
 
       if (ix !== 0) {
@@ -297,7 +309,7 @@ export class Player {
 
     if (this.jumpBufferTimer > 0) {
       if (this.onGround || this.coyoteTimer > 0) {
-        this.doJump();
+        this.doJump(ix);
       } else if (this.wallStickTimer > 0 || this.wallDir !== 0) {
         const neutral = input.x === 0 && !input.grab;
         this.doWallJump(neutral);
@@ -328,12 +340,15 @@ export class Player {
     if (input.jumpPressed) {
       if (this.tryStand()) {
         this.state = "normal";
-        this.doJump();
+        this.doJump(input.x);
       }
       return;
     }
 
-    this.vx = approach(this.vx, 0, this.cfg.movement.runDecel * 2.6 * dt);
+    const bunnyhopFrictionMult = this.bunnyhopWindowTimer > 0
+      ? this.cfg.movement.bunnyhopGroundDecelMultiplier
+      : 1;
+    this.vx = approach(this.vx, 0, this.cfg.movement.runDecel * 2.6 * bunnyhopFrictionMult * dt);
     this.vy = Math.max(this.vy, 0);
 
     if (input.y <= 0 && this.tryStand()) {
@@ -400,13 +415,25 @@ export class Player {
     this.vx = this.dashVelX;
     this.vy = this.dashVelY;
 
+    if (input.x !== 0) {
+      this.facing = input.x as 1 | -1;
+    }
+
     if (input.jumpPressed) {
-      if (this.trySuperDashTech()) return;
+      this.jumpBufferTimer = this.cfg.jump.bufferTime;
+    }
+    if (this.jumpBufferTimer > 0) {
+      this.jumpBufferTimer -= dt;
+    }
+
+    if (this.jumpBufferTimer > 0) {
+      if (this.tryDashJumpTech()) return;
     }
 
     if (input.jumpPressed && this.wallDir !== 0) {
       this.state = "normal";
       this.duckDashActive = false;
+      this.downDiagonalDashSlideActive = false;
       this.vx = -this.wallDir * this.cfg.wall.bounceH;
       this.vy = this.cfg.wall.bounceV;
       this.facing = -this.wallDir as 1 | -1;
@@ -422,6 +449,7 @@ export class Player {
         this.state = "duck";
         this.vx *= 0.6;
         this.vy = Math.max(0, this.vy);
+        this.downDiagonalDashSlideActive = false;
         return;
       }
 
@@ -434,6 +462,7 @@ export class Player {
       this.state = "dashAttack";
       this.dashAttackTimer = this.cfg.dash.attackTime;
       this.dashCarryTimer = this.cfg.dash.carryTime;
+      this.downDiagonalDashSlideActive = false;
 
       if (horizontalDash || upDiagonalDash) {
         const dir = this.dashDir.x !== 0 ? Math.sign(this.dashDir.x) : Math.sign(this.vx || this.facing);
@@ -447,20 +476,21 @@ export class Player {
     }
   }
 
-  private doJump(): void {
+  private doJump(moveX = 0): void {
+    const bunnyhop = this.onGround && this.bunnyhopWindowTimer > 0;
     this.vy = this.cfg.jump.speed;
-    if (Math.abs(this.vx) > this.cfg.movement.maxRun * 0.5) {
-      this.vx += Math.sign(this.vx) * this.cfg.jump.hBoost;
+    if (moveX !== 0) {
+      this.vx += this.cfg.jump.hBoost * Math.sign(moveX);
     }
 
-    if (this.liftTimer > 0) {
-      this.vx += this.liftVx;
-      this.vy += Math.min(0, this.liftVy);
-      this.liftTimer = 0;
-    }
+    this.applyLiftBoostToJump();
 
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
+    if (bunnyhop) {
+      this.bunnyhopWindowTimer = 0;
+      this.emit({ type: "bunnyhop", dirX: Math.sign(this.vx), dirY: -1 });
+    }
     this.emit({ type: "jump", dirX: Math.sign(this.vx), dirY: -1 });
   }
 
@@ -523,7 +553,17 @@ export class Player {
         : baseY;
 
     this.dashStartedOnGround = this.onGround;
+    this.downDiagonalDashSlideActive = false;
     this.duckDashActive = keepDuck;
+    if (this.dashDir.x !== 0) {
+      this.facing = Math.sign(this.dashDir.x) as 1 | -1;
+    }
+    this.jumpBufferTimer = 0;
+
+    if (!keepDuck && this.onGround && this.isDownDiagonalDashDir() && this.dashVelY > 0) {
+      this.convertDownDiagonalDashToSlide();
+    }
+
     this.state = "freeze";
     this.dashFreezeTimer = this.cfg.dash.freezeTime;
     this.vx = 0;
@@ -588,7 +628,12 @@ export class Player {
       } else if (sign < 0 && this.tryUpCornerCorrectionY(h)) {
         move -= sign;
       } else {
-        if (sign > 0 && !this.onGround) {
+        const landedThisFrame = sign > 0 && !this.onGround;
+        if (sign > 0 && this.isDownDiagonalDashDir() && this.vy > 0) {
+          this.convertDownDiagonalDashToSlide();
+        }
+        if (landedThisFrame) {
+          this.bunnyhopWindowTimer = this.cfg.jump.bunnyhopWindow;
           this.emit({ type: "land" });
         }
         this.vy = 0;
@@ -611,18 +656,71 @@ export class Player {
     return true;
   }
 
-  private trySuperDashTech(): boolean {
+  private tryDashJumpTech(): boolean {
     if (!this.onGround) return false;
-    if (!this.dashStartedOnGround) return false;
-    if (Math.abs(this.dashDir.y) > 0.1) return false;
 
-    const dir = this.dashDir.x !== 0 ? Math.sign(this.dashDir.x) : this.facing;
+    if (this.isHorizontalDashDir() && this.dashStartedOnGround && !this.downDiagonalDashSlideActive) {
+      return this.performDashJumpTech("super");
+    }
+
+    if (this.downDiagonalDashSlideActive || this.isDownDiagonalDashDir()) {
+      return this.performDashJumpTech(this.dashStartedOnGround ? "hyper" : "wavedash");
+    }
+
+    return false;
+  }
+
+  private performDashJumpTech(type: "super" | "hyper" | "wavedash"): boolean {
+    const dir = this.facing;
+    const reverse = this.dashDir.x !== 0 && Math.sign(this.dashDir.x) !== dir;
+    const extended = this.tryGrantExtendedDash();
+
     this.state = "normal";
     this.duckDashActive = false;
-    this.vx = dir * this.cfg.dash.superSpeed;
-    this.vy = this.cfg.jump.speed;
+    this.downDiagonalDashSlideActive = false;
+    this.dashTimer = 0;
+    this.dashAttackTimer = 0;
+
+    this.vx = dir * (type === "super" ? this.cfg.dash.superSpeed : this.cfg.dash.hyperSpeed);
+    this.vy = type === "super"
+      ? this.cfg.jump.speed
+      : this.cfg.jump.speed * this.cfg.dash.hyperJumpYMultiplier;
+    this.applyLiftBoostToJump();
+
+    this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
-    this.emit({ type: "super", dirX: dir, dirY: -1 });
+    this.emit({ type, dirX: dir, dirY: -1, extended, reverse });
+    return true;
+  }
+
+  private isHorizontalDashDir(): boolean {
+    return Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) <= 0.1;
+  }
+
+  private isDownDiagonalDashDir(): boolean {
+    return Math.abs(this.dashDir.x) > 0.1 && this.dashDir.y > 0.1;
+  }
+
+  private convertDownDiagonalDashToSlide(): void {
+    if (this.downDiagonalDashSlideActive) return;
+
+    const dashDirX = this.dashDir.x !== 0 ? Math.sign(this.dashDir.x) : Math.sign(this.vx || this.facing);
+    const baseX = this.dashVelX !== 0 ? this.dashVelX : this.vx;
+    const boostedX = baseX * this.cfg.dash.ultraSpeedMultiplier;
+
+    this.downDiagonalDashSlideActive = true;
+    this.dashDir = { x: dashDirX, y: 0 };
+    this.dashVelX = boostedX;
+    this.dashVelY = 0;
+    this.vx = boostedX;
+    this.vy = 0;
+    this.emit({ type: "ultra", dirX: dashDirX, dirY: 0 });
+  }
+
+  private tryGrantExtendedDash(): boolean {
+    if (this.dashRefillTimer > 0) return false;
+    if (this.dashesLeft >= this.cfg.dash.maxDashes) return false;
+    this.dashesLeft = this.cfg.dash.maxDashes;
     return true;
   }
 
@@ -716,6 +814,13 @@ export class Player {
 
   private consumeStamina(amount: number): void {
     this.stamina = Math.max(0, this.stamina - amount);
+  }
+
+  private applyLiftBoostToJump(): void {
+    if (this.liftTimer <= 0) return;
+    this.vx += this.liftVx;
+    this.vy += Math.min(0, this.liftVy);
+    this.liftTimer = 0;
   }
 
   private beginDashRefillCooldown(): void {

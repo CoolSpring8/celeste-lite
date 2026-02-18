@@ -12,6 +12,10 @@ export interface InputState {
 
 export type PlayerEffectType =
   | "super"
+  | "hyper"
+  | "wavedash"
+  | "ultra"
+  | "bunnyhop"
   | "jump"
   | "wall_jump"
   | "dash_start"
@@ -25,6 +29,8 @@ export interface PlayerEffect {
   dirX?: number;
   dirY?: number;
   wallDir?: number;
+  extended?: boolean;
+  reverse?: boolean;
 }
 
 export interface PlayerSnapshot {

@@ -339,7 +339,14 @@ export class GameScene extends Phaser.Scene {
       !snapshot.onGround && snapshot.wallDir !== 0 && snapshot.vy > 0 && snapshot.state === "normal"
         ? "  WALL-SLIDE"
         : "";
-    const events = effects.map((e) => e.type).join(", ");
+    const events = effects
+      .map((e) => {
+        let suffix = "";
+        if (e.extended) suffix += "+ext";
+        if (e.reverse) suffix += "+rev";
+        return `${e.type}${suffix}`;
+      })
+      .join(", ");
 
     this.hudText.setText(
       `State: ${state}${wallSliding}` +
