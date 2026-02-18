@@ -1,4 +1,4 @@
-export type PlayerState = "normal" | "grab" | "dash" | "dashAttack" | "freeze";
+export type PlayerState = "normal" | "duck" | "grab" | "dash" | "dashAttack" | "freeze";
 
 export interface InputState {
   x: number;
@@ -38,4 +38,7 @@ export interface PlayerSnapshot {
   wallDir: number;
   dashesLeft: number;
   stamina: number;
+  hitboxH: number;
+  drawH: number;
+  isCrouched: boolean;
 }

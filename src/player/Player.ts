@@ -27,11 +27,12 @@ export class Player {
   dashFreezeTimer = 0;
   dashAttackTimer = 0;
   dashCarryTimer = 0;
-  climbHopTimer = 0;
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
   stamina: number;
+
+  private duckDashActive = false;
 
   private liftVx = 0;
   private liftVy = 0;
@@ -62,10 +63,11 @@ export class Player {
       return;
     }
 
-    const ground = probeGround(this.x, this.y, this.grid);
+    const h = this.getHitboxH();
+    const ground = probeGround(this.x, this.y, h, this.grid);
     this.onGround = ground.onGround;
     this.onJumpThrough = ground.onJumpThrough;
-    this.wallDir = wallDirAt(this.x, this.y, this.grid);
+    this.wallDir = wallDirAt(this.x, this.y, h, this.grid);
 
     if (this.onGround) {
       this.dashesLeft = this.cfg.dash.maxDashes;
@@ -78,7 +80,11 @@ export class Player {
     if (this.dashAttackTimer > 0) {
       this.dashAttackTimer -= dt;
       if (this.dashAttackTimer <= 0 && this.state === "dashAttack") {
-        this.state = "normal";
+        if (this.duckDashActive) {
+          this.state = "duck";
+        } else {
+          this.state = "normal";
+        }
       }
     }
     if (this.dashCarryTimer > 0) this.dashCarryTimer -= dt;
@@ -93,6 +99,9 @@ export class Player {
         break;
       case "grab":
         this.grabUpdate(dt, input);
+        break;
+      case "duck":
+        this.duckUpdate(dt, input);
         break;
     }
 
@@ -113,6 +122,12 @@ export class Player {
   }
 
   getSnapshot(): PlayerSnapshot {
+    const hitboxH = this.getHitboxH();
+    const isCrouched = this.state === "duck" || this.duckDashActive;
+    const drawH = isCrouched
+      ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
+      : PLAYER_GEOMETRY.drawH;
+
     return {
       x: this.x,
       y: this.y,
@@ -124,6 +139,9 @@ export class Player {
       wallDir: this.wallDir,
       dashesLeft: this.dashesLeft,
       stamina: this.stamina,
+      hitboxH,
+      drawH,
+      isCrouched,
     };
   }
 
@@ -141,6 +159,7 @@ export class Player {
     this.remX = 0;
     this.remY = 0;
     this.state = "normal";
+    this.duckDashActive = false;
     this.dashesLeft = this.cfg.dash.maxDashes;
     this.stamina = this.cfg.stamina.max;
     this.coyoteTimer = 0;
@@ -150,7 +169,6 @@ export class Player {
     this.dashFreezeTimer = 0;
     this.dashAttackTimer = 0;
     this.dashCarryTimer = 0;
-    this.climbHopTimer = 0;
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
@@ -162,6 +180,11 @@ export class Player {
     const ix = input.x;
 
     if (ix !== 0) this.facing = ix as 1 | -1;
+
+    if (this.onGround && input.y > 0) {
+      this.tryEnterDuck();
+      return;
+    }
 
     if (this.tryStartGrab(input)) {
       return;
@@ -227,6 +250,34 @@ export class Player {
     }
   }
 
+  private duckUpdate(dt: number, input: InputState): void {
+    if (!this.onGround) {
+      this.state = "normal";
+      this.tryStand();
+      return;
+    }
+
+    if (input.dashPressed && this.dashesLeft > 0 && input.y > 0 && input.x !== 0) {
+      this.startDash(input, { x: Math.sign(input.x), y: 0 }, true);
+      return;
+    }
+
+    if (input.jumpPressed) {
+      if (this.tryStand()) {
+        this.state = "normal";
+        this.doJump();
+      }
+      return;
+    }
+
+    this.vx = approach(this.vx, 0, this.cfg.movement.runDecel * 2.6 * dt);
+    this.vy = Math.max(this.vy, 0);
+
+    if (input.y <= 0 && this.tryStand()) {
+      this.state = "normal";
+    }
+  }
+
   private grabUpdate(dt: number, input: InputState): void {
     if (input.dashPressed && this.dashesLeft > 0) {
       this.startDash(input);
@@ -247,12 +298,6 @@ export class Player {
     this.vx = 0;
     this.remX = 0;
     this.facing = (-this.wallDir) as 1 | -1;
-
-    if (this.climbHopTimer > 0) {
-      this.climbHopTimer -= dt;
-      this.vy = this.cfg.grab.climbHopSpeedY;
-      return;
-    }
 
     if (input.jumpPressed) {
       if (input.y < 0) {
@@ -288,6 +333,7 @@ export class Player {
 
     if (input.jumpPressed && this.dashDir.y > 0.1) {
       this.state = "normal";
+      this.duckDashActive = false;
       this.vx = this.facing * this.cfg.dash.hyperHBoost;
       this.vy = this.cfg.dash.hyperVSpeed;
       this.jumpBufferTimer = 0;
@@ -297,6 +343,7 @@ export class Player {
 
     if (input.jumpPressed && this.wallDir !== 0) {
       this.state = "normal";
+      this.duckDashActive = false;
       this.vx = -this.wallDir * this.cfg.wall.bounceH;
       this.vy = this.cfg.wall.bounceV;
       this.facing = -this.wallDir as 1 | -1;
@@ -308,6 +355,13 @@ export class Player {
     }
 
     if (this.dashTimer <= 0) {
+      if (this.duckDashActive) {
+        this.state = "duck";
+        this.vx *= 0.6;
+        this.vy = Math.max(0, this.vy);
+        return;
+      }
+
       this.state = "dashAttack";
       this.dashAttackTimer = this.cfg.dash.attackTime;
       this.dashCarryTimer = this.cfg.dash.carryTime;
@@ -351,14 +405,24 @@ export class Player {
     this.remX = 0;
     this.remY = 0;
     this.vy = this.cfg.grab.climbHopSpeedY;
-    this.climbHopTimer = this.cfg.grab.climbHopTime;
     this.consumeStamina(this.cfg.stamina.grabHopCost);
     this.emit({ type: "jump", dirX: 0, dirY: -1 });
   }
 
-  private startDash(input: InputState): void {
+  private startDash(
+    input: InputState,
+    forcedDir?: { x: number; y: number },
+    keepDuck = false,
+  ): void {
     this.dashesLeft--;
-    this.dashDir = dashDirection(input.x, input.y, this.facing);
+
+    if (forcedDir) {
+      this.dashDir = forcedDir;
+    } else {
+      this.dashDir = dashDirection(input.x, input.y, this.facing);
+    }
+
+    this.duckDashActive = keepDuck;
     this.state = "freeze";
     this.dashFreezeTimer = this.cfg.dash.freezeTime;
     this.vx = 0;
@@ -371,6 +435,7 @@ export class Player {
     let move = Math.round(this.remX);
     this.remX -= move;
     const sign = Math.sign(move);
+    const h = this.getHitboxH();
 
     while (move !== 0) {
       const nextX = this.x + sign;
@@ -379,7 +444,7 @@ export class Player {
           nextX,
           this.y,
           PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
+          h,
           this.grid,
           this.y,
           false,
@@ -387,7 +452,7 @@ export class Player {
       ) {
         this.x = nextX;
         move -= sign;
-      } else if (this.tryDashCornerCorrectionX(sign)) {
+      } else if (this.tryDashCornerCorrectionX(sign, h)) {
         move -= sign;
       } else {
         this.vx = 0;
@@ -402,6 +467,7 @@ export class Player {
     let move = Math.round(this.remY);
     this.remY -= move;
     const sign = Math.sign(move);
+    const h = this.getHitboxH();
 
     while (move !== 0) {
       const nextY = this.y + sign;
@@ -410,7 +476,7 @@ export class Player {
           this.x,
           nextY,
           PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
+          h,
           this.grid,
           this.y,
           sign > 0,
@@ -418,7 +484,7 @@ export class Player {
       ) {
         this.y = nextY;
         move -= sign;
-      } else if (sign < 0 && this.tryUpCornerCorrectionY()) {
+      } else if (sign < 0 && this.tryUpCornerCorrectionY(h)) {
         move -= sign;
       } else {
         if (sign > 0 && !this.onGround) {
@@ -440,34 +506,69 @@ export class Player {
     this.vx = 0;
     this.remX = 0;
     this.vy = 0;
+    this.tryStand();
     return true;
   }
 
-  private tryDashCornerCorrectionX(sign: number): boolean {
+  private tryEnterDuck(): boolean {
+    if (this.state === "duck") return true;
+    if (!this.onGround) return false;
+
+    const standH = PLAYER_GEOMETRY.hitboxH;
+    const crouchH = PLAYER_GEOMETRY.crouchHitboxH;
+    if (crouchH >= standH) return false;
+
+    this.y += standH - crouchH;
+    this.state = "duck";
+    return true;
+  }
+
+  private tryStand(): boolean {
+    if (this.state !== "duck" && !this.duckDashActive) return true;
+
+    const standH = PLAYER_GEOMETRY.hitboxH;
+    const crouchH = PLAYER_GEOMETRY.crouchHitboxH;
+    if (crouchH >= standH) return true;
+
+    const delta = standH - crouchH;
+    const targetY = this.y - delta;
+
+    if (
+      collideAt(
+        this.x,
+        targetY,
+        PLAYER_GEOMETRY.hitboxW,
+        standH,
+        this.grid,
+        this.y,
+        false,
+      )
+    ) {
+      return false;
+    }
+
+    this.y = targetY;
+    this.duckDashActive = false;
+    if (this.state === "duck") {
+      this.state = "normal";
+    }
+    return true;
+  }
+
+  private getHitboxH(): number {
+    const crouchedBody = this.state === "duck" || this.duckDashActive;
+    return crouchedBody ? PLAYER_GEOMETRY.crouchHitboxH : PLAYER_GEOMETRY.hitboxH;
+  }
+
+  private tryDashCornerCorrectionX(sign: number, h: number): boolean {
     if (this.state !== "dash" && this.state !== "dashAttack") return false;
 
     for (let i = 1; i <= this.cfg.movement.cornerCorrection; i++) {
-      if (
-        collideSolidAt(
-          this.x,
-          this.y - i,
-          PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
-          this.grid,
-        )
-      ) {
+      if (collideSolidAt(this.x, this.y - i, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
         continue;
       }
 
-      if (
-        collideSolidAt(
-          this.x + sign,
-          this.y - i,
-          PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
-          this.grid,
-        )
-      ) {
+      if (collideSolidAt(this.x + sign, this.y - i, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
         continue;
       }
 
@@ -479,31 +580,15 @@ export class Player {
     return false;
   }
 
-  private tryUpCornerCorrectionY(): boolean {
+  private tryUpCornerCorrectionY(h: number): boolean {
     for (let i = 1; i <= this.cfg.movement.cornerCorrection; i++) {
-      if (
-        !collideSolidAt(
-          this.x + i,
-          this.y - 1,
-          PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
-          this.grid,
-        )
-      ) {
+      if (!collideSolidAt(this.x + i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
         this.x += i;
         this.y -= 1;
         return true;
       }
 
-      if (
-        !collideSolidAt(
-          this.x - i,
-          this.y - 1,
-          PLAYER_GEOMETRY.hitboxW,
-          PLAYER_GEOMETRY.hitboxH,
-          this.grid,
-        )
-      ) {
+      if (!collideSolidAt(this.x - i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
         this.x -= i;
         this.y -= 1;
         return true;

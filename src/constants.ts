@@ -12,6 +12,7 @@ export const VIEWPORT = {
 export const PLAYER_GEOMETRY = {
   hitboxW: 8,
   hitboxH: 14,
+  crouchHitboxH: 9,
   drawW: 10,
   drawH: 16,
 } as const;

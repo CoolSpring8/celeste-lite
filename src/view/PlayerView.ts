@@ -60,8 +60,9 @@ export class PlayerView {
     this.updateTrail(snapshot, dt);
 
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const drawY = snapshot.y + PLAYER_GEOMETRY.hitboxH;
+    const drawY = snapshot.y + snapshot.hitboxH;
 
+    this.body.setSize(PLAYER_GEOMETRY.drawW, snapshot.drawH);
     this.body.setPosition(drawX, drawY);
     this.body.setFillStyle(this.resolveColor(snapshot), 1);
   }
@@ -130,7 +131,7 @@ export class PlayerView {
       if (this.wallDustTimer <= 0) {
         this.wallDustTimer = 0.04;
         const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
-        const py = snapshot.y + Math.random() * PLAYER_GEOMETRY.hitboxH;
+        const py = snapshot.y + Math.random() * snapshot.hitboxH;
         this.wallEmitter.emitParticleAt(px, py, 1);
       }
     }
@@ -141,10 +142,10 @@ export class PlayerView {
     if (this.trailTimer > 0) return;
 
     this.trailTimer = 0.02;
-    this.spawnAfterimage(snapshot.x, snapshot.y, this.resolveColor(snapshot));
+    this.spawnAfterimage(snapshot, this.resolveColor(snapshot));
 
     const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + PLAYER_GEOMETRY.hitboxH / 2;
+    const cy = snapshot.y + snapshot.hitboxH / 2;
     this.dashEmitter.emitParticleAt(cx, cy, 1);
   }
 
@@ -164,10 +165,10 @@ export class PlayerView {
     }
   }
 
-  private spawnAfterimage(x: number, y: number, color: number): void {
-    const drawX = x + PLAYER_GEOMETRY.hitboxW / 2;
-    const drawY = y + PLAYER_GEOMETRY.hitboxH;
-    const rect = this.getAfterimageRect();
+  private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
+    const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const drawY = snapshot.y + snapshot.hitboxH;
+    const rect = this.getAfterimageRect(snapshot.drawH);
 
     rect
       .setPosition(drawX, drawY)
@@ -182,12 +183,15 @@ export class PlayerView {
     });
   }
 
-  private getAfterimageRect(): Phaser.GameObjects.Rectangle {
+  private getAfterimageRect(drawH: number): Phaser.GameObjects.Rectangle {
     const rect = this.afterimagePool.pop();
-    if (rect) return rect;
+    if (rect) {
+      rect.setSize(PLAYER_GEOMETRY.drawW, drawH);
+      return rect;
+    }
 
     return this.scene.add
-      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.playerDash)
+      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, drawH, COLORS.playerDash)
       .setOrigin(0.5, 1)
       .setDepth(4)
       .setVisible(false);
@@ -206,13 +210,13 @@ export class PlayerView {
 
   private emitDashBurst(snapshot: PlayerSnapshot, count: number): void {
     const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + PLAYER_GEOMETRY.hitboxH / 2;
+    const cy = snapshot.y + snapshot.hitboxH / 2;
     this.dashEmitter.emitParticleAt(cx, cy, count);
   }
 
   private emitWallBurst(snapshot: PlayerSnapshot): void {
     const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
-    const py = snapshot.y + PLAYER_GEOMETRY.hitboxH * 0.5;
+    const py = snapshot.y + snapshot.hitboxH * 0.5;
     this.wallEmitter.emitParticleAt(px, py, 8);
   }
 

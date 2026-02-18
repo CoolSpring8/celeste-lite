@@ -128,7 +128,7 @@ export class GameScene extends Phaser.Scene {
 
     this.cameraTarget.setPosition(
       snapshot.x + PLAYER_GEOMETRY.hitboxW / 2,
-      snapshot.y + PLAYER_GEOMETRY.hitboxH / 2,
+      snapshot.y + snapshot.hitboxH / 2,
     );
 
     this.prevJump = input.jump;

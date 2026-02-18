@@ -60,13 +60,13 @@ export function collideAt(
   return false;
 }
 
-export function wallDirAt(x: number, y: number, grid: SolidGrid): number {
+export function wallDirAt(x: number, y: number, h: number, grid: SolidGrid): number {
   if (
     collideSolidAt(
       x - 1,
       y,
       PLAYER_GEOMETRY.hitboxW,
-      PLAYER_GEOMETRY.hitboxH,
+      h,
       grid,
     )
   ) {
@@ -77,7 +77,7 @@ export function wallDirAt(x: number, y: number, grid: SolidGrid): number {
       x + 1,
       y,
       PLAYER_GEOMETRY.hitboxW,
-      PLAYER_GEOMETRY.hitboxH,
+      h,
       grid,
     )
   ) {
@@ -89,14 +89,15 @@ export function wallDirAt(x: number, y: number, grid: SolidGrid): number {
 export function probeGround(
   x: number,
   y: number,
+  h: number,
   grid: SolidGrid,
 ): GroundProbe {
   const nextY = y + 1;
   const left = Math.floor(x / WORLD.tile);
   const right = Math.floor((x + PLAYER_GEOMETRY.hitboxW - 1) / WORLD.tile);
-  const row = Math.floor((nextY + PLAYER_GEOMETRY.hitboxH - 1) / WORLD.tile);
-  const beforeBottom = y + PLAYER_GEOMETRY.hitboxH;
-  const afterBottom = nextY + PLAYER_GEOMETRY.hitboxH;
+  const row = Math.floor((nextY + h - 1) / WORLD.tile);
+  const beforeBottom = y + h;
+  const afterBottom = nextY + h;
 
   let onJumpThrough = false;
 
