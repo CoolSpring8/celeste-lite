@@ -1,4 +1,4 @@
-export type PlayerState = "normal" | "dash" | "dashAttack" | "freeze";
+export type PlayerState = "normal" | "grab" | "dash" | "dashAttack" | "freeze";
 
 export interface InputState {
   x: number;
@@ -7,6 +7,7 @@ export interface InputState {
   jumpPressed: boolean;
   jumpReleased: boolean;
   dashPressed: boolean;
+  grab: boolean;
 }
 
 export type PlayerEffectType =
@@ -36,4 +37,5 @@ export interface PlayerSnapshot {
   onGround: boolean;
   wallDir: number;
   dashesLeft: number;
+  stamina: number;
 }

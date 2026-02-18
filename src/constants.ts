@@ -47,6 +47,19 @@ export interface PlayerConfig {
     bounceH: number;
     bounceV: number;
   };
+  stamina: {
+    max: number;
+    holdDrainPerSec: number;
+    climbDrainPerSec: number;
+    grabHopCost: number;
+  };
+  grab: {
+    climbUpSpeed: number;
+    climbDownSpeed: number;
+    climbHopSpeedY: number;
+    climbHopTime: number;
+    exhaustedSlipSpeed: number;
+  };
   dash: {
     speed: number;
     duration: number;
@@ -94,6 +107,19 @@ export const PLAYER_CONFIG: PlayerConfig = {
     stickTime: 0.06,
     bounceH: 280,
     bounceV: -260,
+  },
+  stamina: {
+    max: 110,
+    holdDrainPerSec: 12,
+    climbDrainPerSec: 32,
+    grabHopCost: 22,
+  },
+  grab: {
+    climbUpSpeed: 52,
+    climbDownSpeed: 78,
+    climbHopSpeedY: -240,
+    climbHopTime: 0.08,
+    exhaustedSlipSpeed: 110,
   },
   dash: {
     speed: 320,

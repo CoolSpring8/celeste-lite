@@ -56,11 +56,9 @@ export class GameScene extends Phaser.Scene {
       d: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
       w: kb.addKey(Phaser.Input.Keyboard.KeyCodes.W),
       s: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
-      jumpZ: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
-      jumpC: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
-      jumpSpace: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE),
-      dashX: kb.addKey(Phaser.Input.Keyboard.KeyCodes.X),
-      dashShift: kb.addKey(Phaser.Input.Keyboard.KeyCodes.SHIFT),
+      grab: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
+      dash: kb.addKey(Phaser.Input.Keyboard.KeyCodes.X),
+      jump: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
       restart: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
 
@@ -77,7 +75,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         VIEWPORT.width - 8,
         VIEWPORT.height - 8,
-        "← → ↑ ↓  |  Z/C/Space: Jump  |  X/Shift: Dash  |  R: Reset",
+        "← → ↑ ↓  |  C: Jump  |  X: Dash  |  Z: Grab  |  R: Reset",
         {
           fontFamily: "monospace",
           fontSize: "11px",
@@ -134,7 +132,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     this.prevJump = input.jump;
-    this.prevDash = this.keys.dashX.isDown || this.keys.dashShift.isDown;
+    this.prevDash = this.keys.dash.isDown;
 
     this.updateHUD(snapshot, effects);
   }
@@ -151,8 +149,9 @@ export class GameScene extends Phaser.Scene {
     if (this.keys.up.isDown || this.keys.w.isDown) y -= 1;
     if (this.keys.down.isDown || this.keys.s.isDown) y += 1;
 
-    const jump = this.keys.jumpZ.isDown || this.keys.jumpC.isDown || this.keys.jumpSpace.isDown;
-    const dash = this.keys.dashX.isDown || this.keys.dashShift.isDown;
+    const jump = this.keys.jump.isDown;
+    const dash = this.keys.dash.isDown;
+    const grab = this.keys.grab.isDown;
 
     return {
       x,
@@ -161,6 +160,7 @@ export class GameScene extends Phaser.Scene {
       jumpPressed: jump && !this.prevJump,
       jumpReleased: !jump && this.prevJump,
       dashPressed: dash && !this.prevDash,
+      grab,
     };
   }
 
@@ -201,6 +201,7 @@ export class GameScene extends Phaser.Scene {
     this.hudText.setText(
       `State: ${state}${wallSliding}` +
         `  |  Dashes: ${snapshot.dashesLeft}` +
+        `  |  Stam: ${snapshot.stamina.toFixed(0)}` +
         `  |  Vel: (${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)})` +
         `  |  ${snapshot.onGround ? "GROUND" : "AIR"}` +
         `${events ? `\nEffects: ${events}` : ""}`,

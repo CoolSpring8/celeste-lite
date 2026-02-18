@@ -27,9 +27,11 @@ export class Player {
   dashFreezeTimer = 0;
   dashAttackTimer = 0;
   dashCarryTimer = 0;
+  climbHopTimer = 0;
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
+  stamina: number;
 
   private liftVx = 0;
   private liftVy = 0;
@@ -47,6 +49,7 @@ export class Player {
     this.grid = grid;
     this.cfg = cfg;
     this.dashesLeft = cfg.dash.maxDashes;
+    this.stamina = cfg.stamina.max;
   }
 
   update(dt: number, input: InputState): void {
@@ -66,9 +69,10 @@ export class Player {
 
     if (this.onGround) {
       this.dashesLeft = this.cfg.dash.maxDashes;
+      this.stamina = this.cfg.stamina.max;
       this.liftTimer = 0;
-    } else {
-      if (this.liftTimer > 0) this.liftTimer -= dt;
+    } else if (this.liftTimer > 0) {
+      this.liftTimer -= dt;
     }
 
     if (this.dashAttackTimer > 0) {
@@ -86,6 +90,9 @@ export class Player {
         break;
       case "dash":
         this.dashUpdate(dt, input);
+        break;
+      case "grab":
+        this.grabUpdate(dt, input);
         break;
     }
 
@@ -116,6 +123,7 @@ export class Player {
       onGround: this.onGround,
       wallDir: this.wallDir,
       dashesLeft: this.dashesLeft,
+      stamina: this.stamina,
     };
   }
 
@@ -134,6 +142,7 @@ export class Player {
     this.remY = 0;
     this.state = "normal";
     this.dashesLeft = this.cfg.dash.maxDashes;
+    this.stamina = this.cfg.stamina.max;
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
     this.wallJumpLockTimer = 0;
@@ -141,6 +150,7 @@ export class Player {
     this.dashFreezeTimer = 0;
     this.dashAttackTimer = 0;
     this.dashCarryTimer = 0;
+    this.climbHopTimer = 0;
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
@@ -152,6 +162,10 @@ export class Player {
     const ix = input.x;
 
     if (ix !== 0) this.facing = ix as 1 | -1;
+
+    if (this.tryStartGrab(input)) {
+      return;
+    }
 
     if (this.wallJumpLockTimer > 0) {
       this.wallJumpLockTimer -= dt;
@@ -210,6 +224,59 @@ export class Player {
 
     if (input.dashPressed && this.dashesLeft > 0) {
       this.startDash(input);
+    }
+  }
+
+  private grabUpdate(dt: number, input: InputState): void {
+    if (input.dashPressed && this.dashesLeft > 0) {
+      this.startDash(input);
+      return;
+    }
+
+    if (!input.grab || this.wallDir === 0) {
+      this.state = "normal";
+      return;
+    }
+
+    if (this.stamina <= 0) {
+      this.state = "normal";
+      this.vy = Math.max(this.vy, this.cfg.grab.exhaustedSlipSpeed);
+      return;
+    }
+
+    this.vx = 0;
+    this.remX = 0;
+    this.facing = (-this.wallDir) as 1 | -1;
+
+    if (this.climbHopTimer > 0) {
+      this.climbHopTimer -= dt;
+      this.vy = this.cfg.grab.climbHopSpeedY;
+      return;
+    }
+
+    if (input.jumpPressed) {
+      if (input.y < 0) {
+        this.doClimbHop();
+      } else {
+        this.state = "normal";
+        this.doWallJump();
+      }
+      return;
+    }
+
+    if (input.y < 0) {
+      this.vy = -this.cfg.grab.climbUpSpeed;
+      this.consumeStamina(this.cfg.stamina.climbDrainPerSec * dt);
+    } else if (input.y > 0) {
+      this.vy = this.cfg.grab.climbDownSpeed;
+    } else {
+      this.vy = 0;
+      this.consumeStamina(this.cfg.stamina.holdDrainPerSec * dt);
+    }
+
+    if (this.stamina <= 0) {
+      this.state = "normal";
+      this.vy = Math.max(this.vy, this.cfg.grab.exhaustedSlipSpeed);
     }
   }
 
@@ -277,6 +344,16 @@ export class Player {
     this.wallStickTimer = 0;
     this.jumpBufferTimer = 0;
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
+  }
+
+  private doClimbHop(): void {
+    this.vx = 0;
+    this.remX = 0;
+    this.remY = 0;
+    this.vy = this.cfg.grab.climbHopSpeedY;
+    this.climbHopTimer = this.cfg.grab.climbHopTime;
+    this.consumeStamina(this.cfg.stamina.grabHopCost);
+    this.emit({ type: "jump", dirX: 0, dirY: -1 });
   }
 
   private startDash(input: InputState): void {
@@ -354,6 +431,18 @@ export class Player {
     }
   }
 
+  private tryStartGrab(input: InputState): boolean {
+    if (!input.grab) return false;
+    if (this.wallDir === 0) return false;
+    if (this.stamina <= 0) return false;
+
+    this.state = "grab";
+    this.vx = 0;
+    this.remX = 0;
+    this.vy = 0;
+    return true;
+  }
+
   private tryDashCornerCorrectionX(sign: number): boolean {
     if (this.state !== "dash" && this.state !== "dashAttack") return false;
 
@@ -422,6 +511,10 @@ export class Player {
     }
 
     return false;
+  }
+
+  private consumeStamina(amount: number): void {
+    this.stamina = Math.max(0, this.stamina - amount);
   }
 
   private emit(effect: PlayerEffect): void {
