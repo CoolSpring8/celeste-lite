@@ -11,79 +11,82 @@ export const VIEWPORT = {
 
 export const PLAYER_GEOMETRY = {
   hitboxW: 8,
-  hitboxH: 14,
-  crouchHitboxH: 9,
+  hitboxH: 11,
+  crouchHitboxH: 6,
   drawW: 10,
   drawH: 16,
 } as const;
 
 export interface PlayerConfig {
   movement: {
+    walkSpeed: number;
     maxRun: number;
     runAccel: number;
-    runDecel: number;
-    airAccel: number;
-    airDecel: number;
-    airRunReduce: number;
-    cornerCorrection: number;
-    bunnyhopGroundDecelMultiplier: number;
+    runReduce: number;
+    airMult: number;
+    duckFriction: number;
+    upwardCornerCorrection: number;
+    dashCornerCorrection: number;
+    duckCorrectCheck: number;
+    duckCorrectSlide: number;
+    wallSpeedRetentionTime: number;
   };
   gravity: {
     normal: number;
-    peak: number;
-    fastFall: number;
-    peakThreshold: number;
+    halfGravThreshold: number;
     maxFall: number;
+    fastMaxFall: number;
+    fastMaxAccel: number;
+    wallSlideStartMax: number;
+    wallSlideTime: number;
   };
   jump: {
+    graceTime: number;
     speed: number;
     hBoost: number;
-    cutMultiplier: number;
     varTime: number;
-    coyoteTime: number;
-    bufferTime: number;
-    bunnyhopWindow: number;
+    ceilingVarJumpGrace: number;
+    wallJumpCheckDist: number;
+    wallJumpForceTime: number;
+    wallJumpHSpeed: number;
+    superJumpH: number;
+    duckSuperJumpXMult: number;
+    duckSuperJumpYMult: number;
+    superWallJumpSpeed: number;
+    superWallJumpVarTime: number;
+    superWallJumpH: number;
   };
-  wall: {
-    slideMax: number;
-    jumpH: number;
-    jumpV: number;
-    neutralJumpH: number;
-    neutralJumpLockTime: number;
-    jumpLockTime: number;
-    stickTime: number;
-    bounceH: number;
-    bounceV: number;
-    bounceLeniency: number;
-  };
-  stamina: {
+  climb: {
     max: number;
-    holdDrainPerSec: number;
-    climbDrainPerSec: number;
-    grabHopCost: number;
-  };
-  grab: {
+    tiredThreshold: number;
+    upCost: number;
+    stillCost: number;
+    jumpCost: number;
+    checkDist: number;
+    upCheckDist: number;
+    noMoveTime: number;
     climbUpSpeed: number;
     climbDownSpeed: number;
-    climbHopSpeedY: number;
-    climbHopTime: number;
+    climbSlipSpeed: number;
+    climbAccel: number;
+    climbGrabYMult: number;
+    climbHopY: number;
+    climbHopX: number;
+    climbHopForceTime: number;
+    climbJumpBoostTime: number;
     exhaustedSlipSpeed: number;
   };
   dash: {
-    straightSpeed: number;
-    diagonalComponentSpeed: number;
+    speed: number;
+    endSpeed: number;
+    endDashUpMult: number;
     duration: number;
+    preDelay: number;
+    cooldown: number;
     refillCooldown: number;
-    freezeTime: number;
     attackTime: number;
-    carryTime: number;
-    postHorizontalSpeed: number;
-    postVerticalSpeed: number;
+    dodgeSlideSpeedMult: number;
     maxDashes: number;
-    superSpeed: number;
-    hyperSpeed: number;
-    hyperJumpYMultiplier: number;
-    ultraSpeedMultiplier: number;
   };
   lift: {
     momentumStoreTime: number;
@@ -94,76 +97,79 @@ export interface PlayerConfig {
 
 export const PLAYER_CONFIG: PlayerConfig = {
   movement: {
-    maxRun: 160,
-    runAccel: 1400,
-    runDecel: 1800,
-    airAccel: 1100,
-    airDecel: 700,
-    airRunReduce: 450,
-    cornerCorrection: 4,
-    bunnyhopGroundDecelMultiplier: 0.2,
+    walkSpeed: 64,
+    maxRun: 90,
+    runAccel: 1000,
+    runReduce: 400,
+    airMult: 0.65,
+    duckFriction: 500,
+    upwardCornerCorrection: 4,
+    dashCornerCorrection: 4,
+    duckCorrectCheck: 4,
+    duckCorrectSlide: 50,
+    wallSpeedRetentionTime: 0.06,
   },
   gravity: {
-    normal: 1300,
-    peak: 500,
-    fastFall: 2100,
-    peakThreshold: 50,
-    maxFall: 300,
+    normal: 900,
+    halfGravThreshold: 40,
+    maxFall: 160,
+    fastMaxFall: 240,
+    fastMaxAccel: 300,
+    wallSlideStartMax: 20,
+    wallSlideTime: 1.2,
   },
   jump: {
-    speed: -150,
+    graceTime: 0.1,
+    speed: -105,
     hBoost: 40,
-    cutMultiplier: 0.45,
-    varTime: 0.12,
-    coyoteTime: 0.08,
-    bufferTime: 0.1,
-    bunnyhopWindow: 4 / 120,
+    varTime: 0.2,
+    ceilingVarJumpGrace: 0.05,
+    wallJumpCheckDist: 3,
+    wallJumpForceTime: 0.16,
+    wallJumpHSpeed: 130,
+    superJumpH: 260,
+    duckSuperJumpXMult: 1.25,
+    duckSuperJumpYMult: 0.5,
+    superWallJumpSpeed: -160,
+    superWallJumpVarTime: 0.25,
+    superWallJumpH: 170,
   },
-  wall: {
-    slideMax: 60,
-    jumpH: 170,
-    jumpV: -280,
-    neutralJumpH: 115,
-    neutralJumpLockTime: 0.03,
-    jumpLockTime: 0.13,
-    stickTime: 0.06,
-    bounceH: 170,
-    bounceV: -160,
-    bounceLeniency: 6,
-  },
-  stamina: {
+  climb: {
     max: 110,
-    holdDrainPerSec: 12,
-    climbDrainPerSec: 32,
-    grabHopCost: 22,
-  },
-  grab: {
-    climbUpSpeed: 52,
-    climbDownSpeed: 78,
-    climbHopSpeedY: -240,
-    climbHopTime: 0.08,
-    exhaustedSlipSpeed: 110,
+    tiredThreshold: 20,
+    upCost: 100 / 2.2,
+    stillCost: 100 / 10,
+    jumpCost: 110 / 4,
+    checkDist: 2,
+    upCheckDist: 2,
+    noMoveTime: 0.1,
+    climbUpSpeed: -45,
+    climbDownSpeed: 80,
+    climbSlipSpeed: 30,
+    climbAccel: 900,
+    climbGrabYMult: 0.2,
+    climbHopY: -120,
+    climbHopX: 100,
+    climbHopForceTime: 0.2,
+    climbJumpBoostTime: 0.2,
+    exhaustedSlipSpeed: 30,
   },
   dash: {
-    straightSpeed: 240,
-    diagonalComponentSpeed: 170,
-    duration: 15 / 60,
-    refillCooldown: 10 / 60,
-    freezeTime: 0.04,
-    attackTime: 0.08,
-    carryTime: 0.12,
-    postHorizontalSpeed: 160,
-    postVerticalSpeed: 120,
+    speed: 240,
+    endSpeed: 160,
+    endDashUpMult: 0.75,
+    duration: 0.15,
+    preDelay: 1 / 60,
+    cooldown: 0.2,
+    refillCooldown: 0.1,
+    attackTime: 0.3,
+    dodgeSlideSpeedMult: 1.2,
     maxDashes: 1,
-    superSpeed: 260,
-    hyperSpeed: 325,
-    hyperJumpYMultiplier: 0.5,
-    ultraSpeedMultiplier: 1.2,
   },
   lift: {
     momentumStoreTime: 0.12,
-    maxBoostX: 80,
-    maxBoostY: 60,
+    maxBoostX: 250,
+    maxBoostY: 130,
   },
 };
 
