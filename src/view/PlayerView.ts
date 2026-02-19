@@ -36,26 +36,29 @@ export class PlayerView {
       .setDepth(5);
 
     this.dashEmitter = this.scene.add.particles(0, 0, "pixel", {
-      speed: { min: 10, max: 45 },
-      lifespan: { min: 3200, max: 5000 },
+      speed: { min: PLAYER_VISUALS.dashParticleSpeedMin, max: PLAYER_VISUALS.dashParticleSpeedMax },
+      lifespan: {
+        min: PLAYER_VISUALS.dashParticleLifeMinMs,
+        max: PLAYER_VISUALS.dashParticleLifeMaxMs,
+      },
       quantity: 0,
-      scale: { start: 1, end: 0.1 },
-      alpha: { start: 0.35, end: 0 },
-      tint: COLORS.playerCooldown,
-      gravityY: 20,
+      scale: 1,
+      alpha: { start: 1, end: 0 },
+      tint: COLORS.playerNoDash,
+      gravityY: PLAYER_VISUALS.dashParticleGravityY,
       emitting: false,
       blendMode: "NORMAL",
     });
     this.dashEmitter.setDepth(4);
 
     this.wallEmitter = this.scene.add.particles(0, 0, "pixel", {
-      speed: { min: 10, max: 40 },
-      lifespan: { min: 100, max: 220 },
+      speed: { min: PLAYER_VISUALS.dustSpeedMin, max: PLAYER_VISUALS.dustSpeedMax },
+      lifespan: { min: PLAYER_VISUALS.dustLifeMinMs, max: PLAYER_VISUALS.dustLifeMaxMs },
       quantity: 0,
       scale: { start: 1, end: 0.1 },
-      alpha: { start: 0.7, end: 0 },
-      tint: COLORS.tileEdge,
-      gravityY: 100,
+      alpha: 0.7,
+      tint: COLORS.dust,
+      gravityY: PLAYER_VISUALS.dustGravityY,
       emitting: false,
     });
     this.wallEmitter.setDepth(2);

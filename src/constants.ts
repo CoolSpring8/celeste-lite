@@ -40,6 +40,16 @@ export const PLAYER_VISUALS = {
   dashParticleCount: 1,
   dashParticleInterval: 0.02,
   dashTrailInterval: 0.08,
+  dustLifeMinMs: 300,
+  dustLifeMaxMs: 500,
+  dustSpeedMin: 5,
+  dustSpeedMax: 8,
+  dustGravityY: 5,
+  dashParticleLifeMinMs: 1000,
+  dashParticleLifeMaxMs: 2000,
+  dashParticleSpeedMin: 10,
+  dashParticleSpeedMax: 20,
+  dashParticleGravityY: 10,
 } as const;
 
 export interface PlayerConfig {
@@ -221,4 +231,5 @@ export const COLORS = {
   tile: 0x3a3a5c,
   tileEdge: 0x5a5a8c,
   background: 0x16213e,
+  dust: 0xffffff,
 } as const;
