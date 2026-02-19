@@ -36,6 +36,10 @@ export class Player {
   dashDir = { x: 0, y: 0 };
   private dashVelX = 0;
   private dashVelY = 0;
+  private preDashVx = 0;
+  private preDashVy = 0;
+  private pendingDashForcedDir: { x: number; y: number } | null = null;
+  private pendingDashKeepDuck = false;
   stamina: number;
   private isFastFalling = false;
 
@@ -76,6 +80,7 @@ export class Player {
     if (this.state === "freeze") {
       this.dashFreezeTimer -= dt;
       if (this.dashFreezeTimer <= 0) {
+        this.beginDashMotionFromInput(input);
         this.state = "dash";
         this.dashTimer = this.cfg.dash.duration;
       }
@@ -233,6 +238,10 @@ export class Player {
     this.climbHopTimer = 0;
     this.varJumpTimer = 0;
     this.varJumpSpeed = 0;
+    this.preDashVx = 0;
+    this.preDashVy = 0;
+    this.pendingDashForcedDir = null;
+    this.pendingDashKeepDuck = false;
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
@@ -529,50 +538,22 @@ export class Player {
     this.dashesLeft--;
     this.beginDashRefillCooldown();
 
-    if (forcedDir) {
-      this.dashDir = forcedDir;
-    } else {
-      this.dashDir = dashDirection(input.x, input.y, this.facing);
-    }
-
-    const diagonal =
-      Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) > 0.1;
-    const baseX = this.dashDir.x === 0
-      ? 0
-      : Math.sign(this.dashDir.x) *
-        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
-    const baseY = this.dashDir.y === 0
-      ? 0
-      : Math.sign(this.dashDir.y) *
-        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
-
-    // Preserve already-faster momentum in the same direction at dash start.
-    this.dashVelX =
-      baseX !== 0 && Math.sign(this.vx) === Math.sign(baseX) && Math.abs(this.vx) > Math.abs(baseX)
-        ? this.vx
-        : baseX;
-    this.dashVelY =
-      baseY !== 0 && Math.sign(this.vy) === Math.sign(baseY) && Math.abs(this.vy) > Math.abs(baseY)
-        ? this.vy
-        : baseY;
-
     this.dashStartedOnGround = this.onGround;
     this.downDiagonalDashSlideActive = false;
+    this.preDashVx = this.vx;
+    this.preDashVy = this.vy;
+    this.pendingDashForcedDir = forcedDir ?? null;
+    this.pendingDashKeepDuck = keepDuck;
     this.duckDashActive = keepDuck;
-    if (this.dashDir.x !== 0) {
-      this.facing = Math.sign(this.dashDir.x) as 1 | -1;
-    }
+    this.dashDir = { x: 0, y: 0 };
+    this.dashVelX = 0;
+    this.dashVelY = 0;
     this.jumpBufferTimer = 0;
-
-    if (!keepDuck && this.onGround && this.isDownDiagonalDashDir() && this.dashVelY > 0) {
-      this.convertDownDiagonalDashToSlide();
-    }
 
     this.state = "freeze";
     this.dashFreezeTimer = this.cfg.dash.freezeTime;
     this.vx = 0;
     this.vy = 0;
-    this.emit({ type: "dash_start", dirX: this.dashDir.x, dirY: this.dashDir.y });
   }
 
   private moveX(amount: number): void {
@@ -733,6 +714,43 @@ export class Player {
     if (this.dashesLeft >= this.cfg.dash.maxDashes) return false;
     this.dashesLeft = this.cfg.dash.maxDashes;
     return true;
+  }
+
+  private beginDashMotionFromInput(input: InputState): void {
+    const dir = this.pendingDashForcedDir ?? dashDirection(input.x, input.y, this.facing);
+    this.pendingDashForcedDir = null;
+
+    this.dashDir = dir;
+    if (this.dashDir.x !== 0) {
+      this.facing = Math.sign(this.dashDir.x) as 1 | -1;
+    }
+
+    const diagonal = Math.abs(this.dashDir.x) > 0.1 && Math.abs(this.dashDir.y) > 0.1;
+    const baseX = this.dashDir.x === 0
+      ? 0
+      : Math.sign(this.dashDir.x) *
+        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
+    const baseY = this.dashDir.y === 0
+      ? 0
+      : Math.sign(this.dashDir.y) *
+        (diagonal ? this.cfg.dash.diagonalComponentSpeed : this.cfg.dash.straightSpeed);
+
+    // Preserve already-faster momentum in the same direction when dash is committed.
+    this.dashVelX =
+      baseX !== 0 && Math.sign(this.preDashVx) === Math.sign(baseX) && Math.abs(this.preDashVx) > Math.abs(baseX)
+        ? this.preDashVx
+        : baseX;
+    this.dashVelY =
+      baseY !== 0 && Math.sign(this.preDashVy) === Math.sign(baseY) && Math.abs(this.preDashVy) > Math.abs(baseY)
+        ? this.preDashVy
+        : baseY;
+
+    if (!this.pendingDashKeepDuck && this.onGround && this.isDownDiagonalDashDir() && this.dashVelY > 0) {
+      this.convertDownDiagonalDashToSlide();
+    }
+
+    this.pendingDashKeepDuck = false;
+    this.emit({ type: "dash_start", dirX: this.dashDir.x, dirY: this.dashDir.y });
   }
 
   private tryEnterDuck(): boolean {
