@@ -29,6 +29,8 @@ export class Player {
   dashCarryTimer = 0;
   dashRefillTimer = 0;
   climbHopTimer = 0;
+  varJumpTimer = 0;
+  varJumpSpeed = 0;
 
   dashesLeft: number;
   dashDir = { x: 0, y: 0 };
@@ -229,6 +231,8 @@ export class Player {
     this.dashCarryTimer = 0;
     this.dashRefillTimer = 0;
     this.climbHopTimer = 0;
+    this.varJumpTimer = 0;
+    this.varJumpSpeed = 0;
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
@@ -292,6 +296,8 @@ export class Player {
       this.vy = approach(this.vy, this.cfg.wall.slideMax, this.cfg.gravity.normal * dt);
     }
 
+    this.updateVariableJump(dt, input);
+
     if (this.wasOnGround && !this.onGround) {
       this.coyoteTimer = this.cfg.jump.coyoteTime;
     }
@@ -314,10 +320,6 @@ export class Player {
         const neutral = input.x === 0 && !input.grab;
         this.doWallJump(neutral);
       }
-    }
-
-    if (input.jumpReleased && this.vy < 0) {
-      this.vy *= this.cfg.jump.cutMultiplier;
     }
 
     if (input.dashPressed && this.dashesLeft > 0) {
@@ -484,6 +486,7 @@ export class Player {
     }
 
     this.applyLiftBoostToJump();
+    this.startVariableJump();
 
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
@@ -504,6 +507,7 @@ export class Player {
       : this.cfg.wall.jumpLockTime;
     this.wallStickTimer = 0;
     this.jumpBufferTimer = 0;
+    this.startVariableJump();
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
   }
 
@@ -686,6 +690,7 @@ export class Player {
       ? this.cfg.jump.speed
       : this.cfg.jump.speed * this.cfg.dash.hyperJumpYMultiplier;
     this.applyLiftBoostToJump();
+    this.startVariableJump();
 
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
@@ -821,6 +826,32 @@ export class Player {
     this.vx += this.liftVx;
     this.vy += Math.min(0, this.liftVy);
     this.liftTimer = 0;
+  }
+
+  private updateVariableJump(dt: number, input: InputState): void {
+    if (this.varJumpTimer <= 0) return;
+
+    this.varJumpTimer -= dt;
+    if (this.varJumpTimer <= 0) {
+      this.varJumpTimer = 0;
+      return;
+    }
+
+    if (input.jump) {
+      this.vy = Math.min(this.vy, this.varJumpSpeed);
+    } else {
+      this.varJumpTimer = 0;
+    }
+  }
+
+  private startVariableJump(): void {
+    if (this.vy >= 0) {
+      this.varJumpTimer = 0;
+      return;
+    }
+
+    this.varJumpSpeed = this.vy;
+    this.varJumpTimer = this.cfg.jump.varTime;
   }
 
   private beginDashRefillCooldown(): void {

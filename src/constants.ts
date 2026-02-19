@@ -38,6 +38,7 @@ export interface PlayerConfig {
     speed: number;
     hBoost: number;
     cutMultiplier: number;
+    varTime: number;
     coyoteTime: number;
     bufferTime: number;
     bunnyhopWindow: number;
@@ -100,16 +101,17 @@ export const PLAYER_CONFIG: PlayerConfig = {
     bunnyhopGroundDecelMultiplier: 0.2,
   },
   gravity: {
-    normal: 1200,
+    normal: 1300,
     peak: 500,
     fastFall: 2100,
     peakThreshold: 50,
     maxFall: 300,
   },
   jump: {
-    speed: -310,
+    speed: -150,
     hBoost: 40,
     cutMultiplier: 0.45,
+    varTime: 0.12,
     coyoteTime: 0.08,
     bufferTime: 0.1,
     bunnyhopWindow: 4 / 120,
