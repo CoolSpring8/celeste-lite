@@ -675,6 +675,12 @@ export class Player {
   }
 
   private performDashJumpTech(type: "super" | "hyper" | "wavedash"): boolean {
+    const fromDuckDash = this.duckDashActive;
+    if (fromDuckDash && !this.tryStand()) {
+      return false;
+    }
+
+    const resolvedType = fromDuckDash && type === "super" ? "hyper" : type;
     const dir = this.facing;
     const reverse = this.dashDir.x !== 0 && Math.sign(this.dashDir.x) !== dir;
     const extended = this.tryGrantExtendedDash();
@@ -685,8 +691,8 @@ export class Player {
     this.dashTimer = 0;
     this.dashAttackTimer = 0;
 
-    this.vx = dir * (type === "super" ? this.cfg.dash.superSpeed : this.cfg.dash.hyperSpeed);
-    this.vy = type === "super"
+    this.vx = dir * (resolvedType === "super" ? this.cfg.dash.superSpeed : this.cfg.dash.hyperSpeed);
+    this.vy = resolvedType === "super"
       ? this.cfg.jump.speed
       : this.cfg.jump.speed * this.cfg.dash.hyperJumpYMultiplier;
     this.applyLiftBoostToJump();
@@ -694,7 +700,7 @@ export class Player {
 
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;
-    this.emit({ type, dirX: dir, dirY: -1, extended, reverse });
+    this.emit({ type: resolvedType, dirX: dir, dirY: -1, extended, reverse });
     return true;
   }
 
