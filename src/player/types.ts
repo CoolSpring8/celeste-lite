@@ -47,6 +47,7 @@ export interface PlayerSnapshot {
   stamina: number;
   drawW: number;
   hitboxH: number;
+  hurtboxH: number;
   drawH: number;
   isCrouched: boolean;
   isFastFalling: boolean;

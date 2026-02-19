@@ -1,5 +1,5 @@
 import { PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
-import { SolidGrid } from "../grid";
+import { SolidGrid, isJumpThroughTile, tileAt } from "../grid";
 import { collideAt, collideSolidAt, probeGround, wallDirAt } from "./collision";
 import { approach, dashDirection } from "./math";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
@@ -27,12 +27,14 @@ export class Player {
   private moveXInput = 0;
 
   private jumpGraceTimer = 0;
+  private jumpPressBufferTimer = 0;
   private varJumpTimer = 0;
   private varJumpSpeed = 0;
   private autoJump = false;
   private autoJumpTimer = 0;
 
   private dashCooldownTimer = 0;
+  private dashPressBufferTimer = 0;
   private dashRefillCooldownTimer = 0;
   private dashTimer = 0;
   private dashFreezeTimer = 0;
@@ -53,6 +55,8 @@ export class Player {
 
   private climbNoMoveTimer = 0;
   private lastClimbMove = 0;
+  private hopWaitX = 0;
+  private hopWaitXSpeed = 0;
 
   private lastAim = { x: 1, y: 0 };
   dashDir = { x: 0, y: 0 };
@@ -93,6 +97,18 @@ export class Player {
       this.moveXInput = this.forceMoveX;
     } else {
       this.moveXInput = input.x;
+    }
+
+    if (input.jumpPressed) {
+      this.jumpPressBufferTimer = this.cfg.input.jumpBufferTime;
+    } else if (this.jumpPressBufferTimer > 0) {
+      this.jumpPressBufferTimer = Math.max(0, this.jumpPressBufferTimer - dt);
+    }
+
+    if (input.dashPressed) {
+      this.dashPressBufferTimer = this.cfg.input.dashBufferTime;
+    } else if (this.dashPressBufferTimer > 0) {
+      this.dashPressBufferTimer = Math.max(0, this.dashPressBufferTimer - dt);
     }
 
     if (this.wallSlideDir !== 0) {
@@ -165,6 +181,7 @@ export class Player {
 
     this.lastAim = dashDirection(input.x, input.y, this.facing);
     this.updateWallSpeedRetention(dt);
+    this.updateHopWait();
 
     if (this.state === "freeze") {
       this.dashFreezeTimer -= dt;
@@ -182,7 +199,7 @@ export class Player {
         this.climbUpdate(dt, input);
         break;
       case "dash":
-        this.dashUpdate(dt, input);
+        this.dashUpdate(dt);
         break;
       case "normal":
       case "duck":
@@ -191,6 +208,8 @@ export class Player {
         this.normalUpdate(dt, input);
         break;
     }
+
+    this.applyJumpThruAssist(dt);
 
     this.moveX(this.vx * dt);
     this.moveY(this.vy * dt);
@@ -214,9 +233,18 @@ export class Player {
     return out;
   }
 
-  getHitboxBounds(): { x: number; y: number; w: number; h: number } {
+  getCollisionBounds(): { x: number; y: number; w: number; h: number } {
     const h = this.getHitboxH();
     return { x: this.x, y: this.y, w: PLAYER_GEOMETRY.hitboxW, h };
+  }
+
+  getHitboxBounds(): { x: number; y: number; w: number; h: number } {
+    return this.getCollisionBounds();
+  }
+
+  getHurtboxBounds(): { x: number; y: number; w: number; h: number } {
+    const h = this.getHurtboxH();
+    return { x: this.x, y: this.getHurtboxTop(), w: PLAYER_GEOMETRY.hitboxW, h };
   }
 
   tryRefill(targetDashes: number | "max"): boolean {
@@ -262,6 +290,7 @@ export class Player {
       stamina: this.stamina,
       drawW,
       hitboxH,
+      hurtboxH: this.getHurtboxH(),
       drawH,
       isCrouched: this.ducking,
       isFastFalling: this.isFastFalling,
@@ -293,12 +322,14 @@ export class Player {
 
     this.moveXInput = 0;
     this.jumpGraceTimer = 0;
+    this.jumpPressBufferTimer = 0;
     this.varJumpTimer = 0;
     this.varJumpSpeed = 0;
     this.autoJump = false;
     this.autoJumpTimer = 0;
 
     this.dashCooldownTimer = 0;
+    this.dashPressBufferTimer = 0;
     this.dashRefillCooldownTimer = 0;
     this.dashTimer = 0;
     this.dashFreezeTimer = 0;
@@ -319,6 +350,8 @@ export class Player {
 
     this.climbNoMoveTimer = 0;
     this.lastClimbMove = 0;
+    this.hopWaitX = 0;
+    this.hopWaitXSpeed = 0;
 
     this.lastAim = { x: this.facing, y: 0 };
     this.dashDir = { x: 0, y: 0 };
@@ -350,7 +383,7 @@ export class Player {
       return;
     }
 
-    if (this.canDash(input)) {
+    if (this.canDash()) {
       this.applyLiftBoost();
       this.startDash();
       return;
@@ -385,7 +418,7 @@ export class Player {
 
     this.updateVertical(dt, input);
 
-    if (input.jumpPressed) {
+    if (this.hasJumpPress()) {
       if (this.jumpGraceTimer > 0) {
         this.jump();
         return;
@@ -463,7 +496,7 @@ export class Player {
       this.stamina = this.cfg.climb.max;
     }
 
-    if (input.jumpPressed && (!this.ducking || this.canUnDuck())) {
+    if (this.hasJumpPress() && (!this.ducking || this.canUnDuck())) {
       if (this.moveXInput === -this.facing) {
         this.wallJump(-this.facing);
       } else {
@@ -472,7 +505,7 @@ export class Player {
       return;
     }
 
-    if (this.canDash(input)) {
+    if (this.canDash()) {
       this.applyLiftBoost();
       this.startDash();
       return;
@@ -570,16 +603,18 @@ export class Player {
     this.remX = 0;
   }
 
-  private dashUpdate(dt: number, input: InputState): void {
+  private dashUpdate(dt: number): void {
     if (this.dashDir.y === 0) {
-      if (input.jumpPressed && this.canUnDuck() && this.jumpGraceTimer > 0) {
+      this.applyDashJumpThruNudge();
+
+      if (this.hasJumpPress() && this.canUnDuck() && this.jumpGraceTimer > 0) {
         this.superJump();
         return;
       }
     }
 
     if (this.dashDir.x === 0 && this.dashDir.y < -0.9) {
-      if (input.jumpPressed && this.canUnDuck()) {
+      if (this.hasJumpPress() && this.canUnDuck()) {
         if (this.wallJumpCheck(1)) {
           this.superWallJump(-1);
           return;
@@ -589,7 +624,7 @@ export class Player {
           return;
         }
       }
-    } else if (input.jumpPressed && this.canUnDuck()) {
+    } else if (this.hasJumpPress() && this.canUnDuck()) {
       if (this.wallJumpCheck(1)) {
         this.wallJump(-1);
         return;
@@ -661,6 +696,7 @@ export class Player {
   }
 
   private jump(emitEffect = true): void {
+    this.consumeJumpPress();
     this.jumpGraceTimer = 0;
     this.varJumpTimer = this.cfg.jump.varTime;
     this.autoJump = false;
@@ -680,6 +716,7 @@ export class Player {
   }
 
   private wallJump(dir: number): void {
+    this.consumeJumpPress();
     this.setDucking(false);
     this.jumpGraceTimer = 0;
     this.varJumpTimer = this.cfg.jump.varTime;
@@ -704,6 +741,7 @@ export class Player {
   }
 
   private superWallJump(dir: number): void {
+    this.consumeJumpPress();
     this.setDucking(false);
     this.jumpGraceTimer = 0;
     this.varJumpTimer = this.cfg.jump.superWallJumpVarTime;
@@ -738,6 +776,7 @@ export class Player {
   }
 
   private superJump(): void {
+    this.consumeJumpPress();
     this.jumpGraceTimer = 0;
     this.varJumpTimer = this.cfg.jump.varTime;
     this.autoJump = false;
@@ -777,11 +816,12 @@ export class Player {
     });
   }
 
-  private canDash(input: InputState): boolean {
-    return input.dashPressed && this.dashCooldownTimer <= 0 && this.dashesLeft > 0;
+  private canDash(): boolean {
+    return this.hasDashPress() && this.dashCooldownTimer <= 0 && this.dashesLeft > 0;
   }
 
   private startDash(): void {
+    this.consumeDashPress();
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
     this.dashCooldownTimer = this.cfg.dash.cooldown;
     this.dashRefillCooldownTimer = this.cfg.dash.refillCooldown;
@@ -790,6 +830,7 @@ export class Player {
 
     this.beforeDashVx = this.vx;
     this.beforeDashVy = this.vy;
+    this.hopWaitX = 0;
 
     this.vx = 0;
     this.vy = 0;
@@ -882,7 +923,7 @@ export class Player {
         continue;
       }
 
-      const dashCollision = this.tryDashHorizontalCollision(sign, h);
+      const dashCollision = this.tryDashHorizontalCollision(sign);
       if (dashCollision === "corrected") {
         move -= sign;
         continue;
@@ -959,7 +1000,79 @@ export class Player {
     }
   }
 
-  private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
+  private applyJumpThruAssist(dt: number): void {
+    if (this.onGround || this.vy > 0) return;
+    if (this.state === "grab" && this.lastClimbMove !== -1) return;
+    if (!this.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
+
+    this.moveY(this.cfg.jump.jumpThruAssistSpeed * dt);
+  }
+
+  private applyDashJumpThruNudge(): void {
+    if (this.dashDir.y !== 0) return;
+
+    const nudgeY = this.findDashJumpThruNudgeY();
+    if (nudgeY === null) return;
+
+    this.y = nudgeY;
+    this.remY = 0;
+  }
+
+  private findDashJumpThruNudgeY(): number | null {
+    const h = this.getHitboxH();
+    const left = Math.floor(this.x / WORLD.tile);
+    const right = Math.floor((this.x + PLAYER_GEOMETRY.hitboxW - 1) / WORLD.tile);
+    const top = Math.floor(this.y / WORLD.tile);
+    const bottom = Math.floor((this.y + h - 1) / WORLD.tile);
+    const bodyBottom = this.y + h;
+
+    let bestY: number | null = null;
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
+
+        const tileTop = r * WORLD.tile;
+        const penetration = bodyBottom - tileTop;
+        if (penetration <= 0 || penetration > this.cfg.dash.hJumpThruNudge) continue;
+
+        const nudgeY = tileTop - h;
+        if (nudgeY >= this.y) continue;
+        if (bestY === null || nudgeY > bestY) {
+          bestY = nudgeY;
+        }
+      }
+    }
+
+    return bestY;
+  }
+
+  private overlapsJumpThrough(x: number, y: number, w: number, h: number): boolean {
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const top = Math.floor(y / WORLD.tile);
+    const bottom = Math.floor((y + h - 1) / WORLD.tile);
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
+
+        const tileX = c * WORLD.tile;
+        const tileY = r * WORLD.tile;
+        const intersects =
+          x < tileX + WORLD.tile &&
+          x + w > tileX &&
+          y < tileY + WORLD.tile &&
+          y + h > tileY;
+
+        if (intersects) return true;
+      }
+    }
+
+    return false;
+  }
+
+  private tryDashHorizontalCollision(sign: number): DashHorizontalCollisionResult {
     if (this.state !== "dash") return "none";
 
     if (this.onGround && this.duckFreeAt(this.x + sign)) {
@@ -967,11 +1080,14 @@ export class Player {
       return "ducked";
     }
 
+    const hurtH = this.getHurtboxH();
+    const hurtY = this.getHurtboxTop();
+
     if (Math.abs(this.vy) <= EPSILON && Math.abs(this.vx) > EPSILON) {
       for (let i = 1; i <= this.cfg.movement.dashCornerCorrection; i++) {
         for (const j of [1, -1]) {
           const yOffset = i * j;
-          if (!collideSolidAt(this.x + sign, this.y + yOffset, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+          if (!collideSolidAt(this.x + sign, hurtY + yOffset, PLAYER_GEOMETRY.hitboxW, hurtH, this.grid)) {
             this.y += yOffset;
             this.x += sign;
             return "corrected";
@@ -1083,6 +1199,20 @@ export class Player {
     }
 
     this.wallSpeedRetentionTimer = Math.max(0, this.wallSpeedRetentionTimer - dt);
+  }
+
+  private updateHopWait(): void {
+    if (this.hopWaitX === 0) return;
+
+    if (Math.sign(this.vx) === -this.hopWaitX || this.vy > 0) {
+      this.hopWaitX = 0;
+      return;
+    }
+
+    if (!this.climbCheck(this.hopWaitX)) {
+      this.vx = this.hopWaitXSpeed;
+      this.hopWaitX = 0;
+    }
   }
 
   private consumeStamina(amount: number): void {
@@ -1236,7 +1366,13 @@ export class Player {
   }
 
   private climbHop(): void {
-    this.vx = this.facing * this.cfg.climb.climbHopX;
+    if (this.climbCheck(this.facing)) {
+      this.hopWaitX = this.facing;
+      this.hopWaitXSpeed = this.facing * this.cfg.climb.climbHopX;
+    } else {
+      this.hopWaitX = 0;
+      this.vx = this.facing * this.cfg.climb.climbHopX;
+    }
     this.vy = Math.min(this.vy, this.cfg.climb.climbHopY);
     this.forceMoveX = 0;
     this.forceMoveXTimer = this.cfg.climb.climbHopForceTime;
@@ -1284,8 +1420,32 @@ export class Player {
     return this.stamina <= this.cfg.climb.tiredThreshold;
   }
 
+  private hasJumpPress(): boolean {
+    return this.jumpPressBufferTimer > 0;
+  }
+
+  private consumeJumpPress(): void {
+    this.jumpPressBufferTimer = 0;
+  }
+
+  private hasDashPress(): boolean {
+    return this.dashPressBufferTimer > 0;
+  }
+
+  private consumeDashPress(): void {
+    this.dashPressBufferTimer = 0;
+  }
+
   private getHitboxH(): number {
     return this.ducking ? PLAYER_GEOMETRY.crouchHitboxH : PLAYER_GEOMETRY.hitboxH;
+  }
+
+  private getHurtboxH(): number {
+    return this.ducking ? PLAYER_GEOMETRY.crouchHurtboxH : PLAYER_GEOMETRY.hurtboxH;
+  }
+
+  private getHurtboxTop(): number {
+    return this.y;
   }
 
   private getStandTopAt(x: number, y: number): number {

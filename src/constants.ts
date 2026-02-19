@@ -13,11 +13,17 @@ export const PLAYER_GEOMETRY = {
   hitboxW: 8,
   hitboxH: 11,
   crouchHitboxH: 6,
+  hurtboxH: 9,
+  crouchHurtboxH: 4,
   drawW: 10,
   drawH: 16,
 } as const;
 
 export interface PlayerConfig {
+  input: {
+    jumpBufferTime: number;
+    dashBufferTime: number;
+  };
   movement: {
     walkSpeed: number;
     maxRun: number;
@@ -46,6 +52,7 @@ export interface PlayerConfig {
     hBoost: number;
     varTime: number;
     ceilingVarJumpGrace: number;
+    jumpThruAssistSpeed: number;
     wallJumpCheckDist: number;
     wallJumpForceTime: number;
     wallJumpHSpeed: number;
@@ -84,6 +91,7 @@ export interface PlayerConfig {
     preDelay: number;
     cooldown: number;
     refillCooldown: number;
+    hJumpThruNudge: number;
     attackTime: number;
     dodgeSlideSpeedMult: number;
     maxDashes: number;
@@ -96,6 +104,10 @@ export interface PlayerConfig {
 } 
 
 export const PLAYER_CONFIG: PlayerConfig = {
+  input: {
+    jumpBufferTime: 0.1,
+    dashBufferTime: 0.1,
+  },
   movement: {
     walkSpeed: 64,
     maxRun: 90,
@@ -124,6 +136,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     hBoost: 40,
     varTime: 0.2,
     ceilingVarJumpGrace: 0.05,
+    jumpThruAssistSpeed: -40,
     wallJumpCheckDist: 3,
     wallJumpForceTime: 0.16,
     wallJumpHSpeed: 130,
@@ -162,6 +175,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     preDelay: 1 / 60,
     cooldown: 0.2,
     refillCooldown: 0.1,
+    hJumpThruNudge: 6,
     attackTime: 0.3,
     dodgeSlideSpeedMult: 1.2,
     maxDashes: 1,
