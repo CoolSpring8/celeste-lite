@@ -1,5 +1,6 @@
 import { WORLD } from "./constants";
-import { SolidGrid, TILE_EMPTY, TILE_JUMP_THROUGH, TILE_SOLID } from "./grid";
+import { EntityWorld } from "./entities/EntityWorld";
+import { LevelEntitySpec, SpikeDirection } from "./entities/types";
 
 // 0 = 空气, 1 = 实心方块
 // 这张图设计了：地面、墙壁、浮空平台、需要冲刺越过的大间隙、练习蹬墙跳的竖井
@@ -23,7 +24,7 @@ X...........XX...........======....................X
 X.................XX..............XX.........XX....X
 X..................................................X
 X..................................................X
-X..XX..............................................X
+X..XX.....................^........................X
 X..XX......XX..........X====X..........XXXX........X
 X..XX.............................1................X
 X..XX......................................XX.XX...X
@@ -35,67 +36,70 @@ X..................................................X
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX
 XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX`;
 
-export type RefillType = number | "max";
-
-export interface RefillSpawn {
-  x: number;
-  y: number;
-  type: RefillType;
-}
-
 export interface LevelData {
-  grid: SolidGrid;
+  world: EntityWorld;
   spawnX: number;
   spawnY: number;
-  refills: RefillSpawn[];
 }
 
 export function parseLevel(): LevelData {
   const lines = RAW.trim().split("\n");
-  const data = new Uint8Array(WORLD.cols * WORLD.rows);
   let spawnX = 3 * WORLD.tile;
   let spawnY = 20 * WORLD.tile;
-  const refills: RefillSpawn[] = [];
+  const entities: LevelEntitySpec[] = [];
 
   for (let r = 0; r < WORLD.rows; r++) {
     const line = lines[r] || "";
     for (let c = 0; c < WORLD.cols; c++) {
       const ch = line[c] || ".";
-      const idx = r * WORLD.cols + c;
       if (ch === "X") {
-        data[idx] = TILE_SOLID;
+        entities.push({ kind: "solidTile", col: c, row: r });
       } else if (ch === "=") {
-        data[idx] = TILE_JUMP_THROUGH;
+        entities.push({ kind: "jumpThruTile", col: c, row: r });
       } else {
-        data[idx] = TILE_EMPTY;
         if (ch === "S") {
           spawnX = c * WORLD.tile + 4;
           spawnY = r * WORLD.tile;
         } else if (ch === "D") {
-          refills.push({
+          entities.push({
+            kind: "refill",
             x: c * WORLD.tile + WORLD.tile * 0.5,
             y: r * WORLD.tile + WORLD.tile * 0.5,
             type: "max",
           });
         } else if (ch >= "1" && ch <= "9") {
-          refills.push({
+          entities.push({
+            kind: "refill",
             x: c * WORLD.tile + WORLD.tile * 0.5,
             y: r * WORLD.tile + WORLD.tile * 0.5,
             type: Number(ch),
           });
+        } else {
+          const spikeDir = spikeDirectionFromChar(ch);
+          if (spikeDir) {
+            entities.push({
+              kind: "spike",
+              col: c,
+              row: r,
+              dir: spikeDir,
+            });
+          }
         }
       }
     }
   }
 
   return {
-    grid: {
-      cols: WORLD.cols,
-      rows: WORLD.rows,
-      data,
-    },
+    world: EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, entities),
     spawnX,
     spawnY,
-    refills,
   };
+}
+
+function spikeDirectionFromChar(ch: string): SpikeDirection | null {
+  if (ch === "^") return "up";
+  if (ch === "v") return "down";
+  if (ch === "<") return "left";
+  if (ch === ">") return "right";
+  return null;
 }
