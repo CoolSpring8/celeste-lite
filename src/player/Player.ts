@@ -208,18 +208,17 @@ export class Player {
         break;
     }
 
+    // Canonical order: pre-physics helper nudges before main movement step.
+    this.applyJumpThruAssist(dt);
+    this.applyDashFloorSnap();
+    if (this.vy > 0 && this.canUnDuck() && !this.onGround) {
+      this.setDucking(false);
+    }
+
     this.moveX(this.vx * dt);
     this.moveY(this.vy * dt);
 
     this.refreshEnvironment();
-
-    this.applyJumpThruAssist(dt);
-    this.applyDashFloorSnap();
-    this.refreshEnvironment();
-
-    if (this.vy > 0 && this.canUnDuck() && !this.onGround) {
-      this.setDucking(false);
-    }
 
     if (this.y > WORLD.rows * WORLD.tile + 32) {
       this.emit({ type: "fell_out" });
