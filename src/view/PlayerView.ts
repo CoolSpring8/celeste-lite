@@ -342,8 +342,7 @@ export class PlayerView {
   }
 
   private captureDashVisuals(snapshot: PlayerSnapshot, effect: PlayerEffect): void {
-    const preDashCount = snapshot.dashesLeft + 1;
-    this.dashTrailColor = this.resolveHairColorByDashCount(preDashCount);
+    this.dashTrailColor = this.resolveHairColorByDashCount(snapshot.dashesLeft);
     this.dashEmitter.setParticleTint(this.dashTrailColor);
 
     const dx = effect.dirX ?? snapshot.facing;
