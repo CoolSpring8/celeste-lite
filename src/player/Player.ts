@@ -279,7 +279,13 @@ export class Player {
           : this.cfg.movement.airDecel;
 
       if (ix !== 0) {
-        this.vx = approach(this.vx, this.cfg.movement.maxRun * ix, accel * dt);
+        const target = this.cfg.movement.maxRun * ix;
+        const aboveMaxInInputDirection =
+          !this.onGround &&
+          Math.abs(this.vx) > this.cfg.movement.maxRun &&
+          Math.sign(this.vx) === Math.sign(ix);
+        const appliedAccel = aboveMaxInInputDirection ? this.cfg.movement.airRunReduce : accel;
+        this.vx = approach(this.vx, target, appliedAccel * dt);
       } else {
         this.vx = approach(this.vx, 0, decel * dt);
       }
@@ -724,7 +730,7 @@ export class Player {
     this.vx = -wall * this.cfg.wall.bounceH;
     this.vy = this.cfg.wall.bounceV;
     this.facing = -wall as 1 | -1;
-    this.wallJumpLockTimer = this.cfg.wall.jumpLockTime;
+    this.wallJumpLockTimer = 0;
     this.wallStickTimer = 0;
     this.coyoteTimer = 0;
     this.jumpBufferTimer = 0;

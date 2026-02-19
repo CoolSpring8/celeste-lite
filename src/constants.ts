@@ -24,6 +24,7 @@ export interface PlayerConfig {
     runDecel: number;
     airAccel: number;
     airDecel: number;
+    airRunReduce: number;
     cornerCorrection: number;
     bunnyhopGroundDecelMultiplier: number;
   };
@@ -98,6 +99,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     runDecel: 1800,
     airAccel: 1100,
     airDecel: 700,
+    airRunReduce: 450,
     cornerCorrection: 4,
     bunnyhopGroundDecelMultiplier: 0.2,
   },
