@@ -776,7 +776,12 @@ export class Player {
       this.wallBoostTimer = this.cfg.climb.climbJumpBoostTime;
     }
 
-    this.emit({ type: "jump", dirX: Math.sign(this.vx) || this.facing, dirY: -1 });
+    this.emit({
+      type: "wall_jump",
+      wallDir: this.facing,
+      dirX: Math.sign(this.vx) || this.facing,
+      dirY: -1,
+    });
   }
 
   private superJump(): void {

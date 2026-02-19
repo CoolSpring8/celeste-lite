@@ -14,6 +14,7 @@ export class PlayerView {
   private afterimages: Afterimage[] = [];
   private afterimagePool: Phaser.GameObjects.Rectangle[] = [];
   private trailTimer = 0;
+  private dashParticleTimer = 0;
   private wallDustTimer = 0;
   private dashTrailColor: number = COLORS.playerOneDash;
   private dashDirX = 1;
@@ -101,31 +102,33 @@ export class PlayerView {
       switch (effect.type) {
         case "super":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
-          this.emitDashBurst(snapshot, 10);
+          this.emitJumpDust(snapshot, PLAYER_VISUALS.jumpDustCount);
           break;
         case "hyper":
         case "wavedash":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
-          this.emitDashBurst(snapshot, 11);
+          this.emitJumpDust(snapshot, PLAYER_VISUALS.jumpDustCount);
           break;
         case "ultra":
-          this.emitDashBurst(snapshot, 8);
           break;
         case "jump":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
+          this.emitJumpDust(snapshot, PLAYER_VISUALS.jumpDustCount);
           break;
         case "wall_jump":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
-          this.emitWallBurst(snapshot);
+          this.emitWallJumpDust(
+            snapshot,
+            effect.wallDir ?? snapshot.wallDir,
+            PLAYER_VISUALS.wallJumpDustCount,
+          );
           break;
         case "dash_start":
           this.captureDashVisuals(snapshot, effect);
-          this.emitDashBurst(snapshot, 5, this.dashTrailColor);
           this.scene.cameras.main.shake(50, 0.002);
           break;
         case "wall_bounce":
           this.squash(0.55, 1.5);
-          this.emitWallBurst(snapshot);
           this.scene.cameras.main.shake(70, 0.003);
           break;
         case "land": {
@@ -134,6 +137,10 @@ export class PlayerView {
             Phaser.Math.Linear(1, PLAYER_VISUALS.landSquashMaxX, impact),
             Phaser.Math.Linear(1, PLAYER_VISUALS.landSquashMinY, impact),
           );
+          const dustImpact = PLAYER_CONFIG.gravity.maxFall / (2 * PLAYER_CONFIG.gravity.fastMaxFall);
+          if (impact >= dustImpact) {
+            this.emitLandDust(snapshot, PLAYER_VISUALS.landDustCount);
+          }
           break;
         }
         case "respawn":
@@ -155,30 +162,40 @@ export class PlayerView {
     ) {
       this.wallDustTimer -= dt;
       if (this.wallDustTimer <= 0) {
-        this.wallDustTimer = 0.04;
-        const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
-        const py = snapshot.y + Math.random() * snapshot.hitboxH;
-        this.wallEmitter.emitParticleAt(px, py, 1);
+        this.wallDustTimer = PLAYER_VISUALS.wallSlideDustInterval;
+        this.emitWallSlideDust(snapshot, snapshot.wallDir, PLAYER_VISUALS.wallSlideDustCount);
       }
     }
 
-    if (snapshot.state !== "dash") return;
+    if (snapshot.state !== "dash") {
+      if (this.prevState === "dash") {
+        this.spawnAfterimage(snapshot, this.dashTrailColor);
+      }
+      this.trailTimer = 0;
+      this.dashParticleTimer = 0;
+      return;
+    }
 
     this.trailTimer -= dt;
-    if (this.trailTimer > 0) return;
+    if (this.trailTimer <= 0) {
+      this.trailTimer = PLAYER_VISUALS.dashTrailInterval;
+      this.spawnAfterimage(snapshot, this.dashTrailColor);
+    }
 
-    this.trailTimer = 0.04;
-    this.spawnAfterimage(snapshot, this.dashTrailColor);
+    this.dashParticleTimer -= dt;
+    if (this.dashParticleTimer <= 0) {
+      this.dashParticleTimer = PLAYER_VISUALS.dashParticleInterval;
 
-    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + snapshot.hitboxH / 2;
-    const baseSpeed = 45;
-    const spread = 35;
-    const xBias = this.dashDirX * baseSpeed;
-    const yBias = this.dashDirY * baseSpeed;
-    this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
-    this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
-    this.dashEmitter.emitParticleAt(cx, cy, 1);
+      const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+      const cy = snapshot.y + snapshot.hitboxH / 2;
+      const baseSpeed = 45;
+      const spread = 35;
+      const xBias = this.dashDirX * baseSpeed;
+      const yBias = this.dashDirY * baseSpeed;
+      this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
+      this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
+      this.dashEmitter.emitParticleAt(cx, cy, PLAYER_VISUALS.dashParticleCount);
+    }
   }
 
   private updateAfterimages(dt: number): void {
@@ -285,19 +302,28 @@ export class PlayerView {
       : Math.max(current - maxDelta, target);
   }
 
-  private emitDashBurst(snapshot: PlayerSnapshot, count: number, color?: number): void {
-    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + snapshot.hitboxH / 2;
-    if (color !== undefined) {
-      this.dashEmitter.setParticleTint(color);
-    }
-    this.dashEmitter.emitParticleAt(cx, cy, count);
+  private emitJumpDust(snapshot: PlayerSnapshot, count: number): void {
+    this.emitLandDust(snapshot, count);
   }
 
-  private emitWallBurst(snapshot: PlayerSnapshot): void {
-    const px = snapshot.wallDir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
+  private emitLandDust(snapshot: PlayerSnapshot, count: number): void {
+    const px = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const py = snapshot.y + snapshot.hitboxH;
+    this.wallEmitter.emitParticleAt(px, py, count);
+  }
+
+  private emitWallJumpDust(snapshot: PlayerSnapshot, wallDir: number, count: number): void {
+    const dir = wallDir === 0 ? snapshot.facing : wallDir;
+    const px = dir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
     const py = snapshot.y + snapshot.hitboxH * 0.5;
-    this.wallEmitter.emitParticleAt(px, py, 8);
+    this.wallEmitter.emitParticleAt(px, py, count);
+  }
+
+  private emitWallSlideDust(snapshot: PlayerSnapshot, wallDir: number, count: number): void {
+    const dir = wallDir === 0 ? snapshot.facing : wallDir;
+    const px = dir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
+    const py = snapshot.y + snapshot.hitboxH - 2;
+    this.wallEmitter.emitParticleAt(px, py, count);
   }
 
   private resolveColor(snapshot: PlayerSnapshot): number {

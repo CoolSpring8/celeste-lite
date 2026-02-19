@@ -32,6 +32,14 @@ export const PLAYER_VISUALS = {
   fastFallScaleMinX: 0.5,
   fastFallScaleMaxY: 1.5,
   fastFallScaleStartRatio: 0.5,
+  jumpDustCount: 4,
+  wallJumpDustCount: 4,
+  landDustCount: 8,
+  wallSlideDustCount: 1,
+  wallSlideDustInterval: 0.01,
+  dashParticleCount: 1,
+  dashParticleInterval: 0.02,
+  dashTrailInterval: 0.08,
 } as const;
 
 export interface PlayerConfig {
