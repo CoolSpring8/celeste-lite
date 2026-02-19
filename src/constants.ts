@@ -92,6 +92,7 @@ export interface PlayerConfig {
     cooldown: number;
     refillCooldown: number;
     hJumpThruNudge: number;
+    floorSnapDist: number;
     attackTime: number;
     dodgeSlideSpeedMult: number;
     maxDashes: number;
@@ -176,6 +177,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     cooldown: 0.2,
     refillCooldown: 0.1,
     hJumpThruNudge: 6,
+    floorSnapDist: 3,
     attackTime: 0.3,
     dodgeSlideSpeedMult: 1.2,
     maxDashes: 1,

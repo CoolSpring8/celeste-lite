@@ -209,11 +209,13 @@ export class Player {
         break;
     }
 
-    this.applyJumpThruAssist(dt);
-
     this.moveX(this.vx * dt);
     this.moveY(this.vy * dt);
 
+    this.refreshEnvironment();
+
+    this.applyJumpThruAssist(dt);
+    this.applyDashFloorSnap();
     this.refreshEnvironment();
 
     if (this.vy > 0 && this.canUnDuck() && !this.onGround) {
@@ -253,7 +255,7 @@ export class Player {
       : Math.max(0, targetDashes);
 
     const needsDashRefill = this.dashesLeft < target;
-    const needsStaminaRefill = this.stamina < this.cfg.climb.max;
+    const needsStaminaRefill = this.stamina < this.cfg.climb.tiredThreshold;
     if (!needsDashRefill && !needsStaminaRefill) return false;
 
     this.dashesLeft = Math.max(this.dashesLeft, target);
@@ -426,6 +428,11 @@ export class Player {
 
       if (this.canUnDuck()) {
         if (this.wallJumpCheck(1)) {
+          if (this.facing === 1 && input.grab && this.stamina > 0) {
+            this.climbJump();
+            return;
+          }
+
           if (this.isUpDashAttackActive()) {
             this.superWallJump(-1);
           } else {
@@ -435,6 +442,11 @@ export class Player {
         }
 
         if (this.wallJumpCheck(-1)) {
+          if (this.facing === -1 && input.grab && this.stamina > 0) {
+            this.climbJump();
+            return;
+          }
+
           if (this.isUpDashAttackActive()) {
             this.superWallJump(1);
           } else {
@@ -923,7 +935,7 @@ export class Player {
         continue;
       }
 
-      const dashCollision = this.tryDashHorizontalCollision(sign);
+      const dashCollision = this.tryDashHorizontalCollision(sign, h);
       if (dashCollision === "corrected") {
         move -= sign;
         continue;
@@ -1008,6 +1020,51 @@ export class Player {
     this.moveY(this.cfg.jump.jumpThruAssistSpeed * dt);
   }
 
+  private applyDashFloorSnap(): void {
+    if (this.onGround) return;
+    if (this.dashAttackTimer <= 0) return;
+    if (Math.abs(this.dashDir.y) > EPSILON) return;
+
+    const h = this.getHitboxH();
+    const dist = this.cfg.dash.floorSnapDist;
+    if (dist <= 0) return;
+
+    const wouldHitSolid = collideSolidAt(
+      this.x,
+      this.y + dist,
+      PLAYER_GEOMETRY.hitboxW,
+      h,
+      this.grid,
+    );
+    const wouldHitJumpThru = this.wouldLandOnJumpThruAt(this.x, this.y, h, dist);
+    if (!wouldHitSolid && !wouldHitJumpThru) return;
+
+    this.y += dist;
+    this.remY = 0;
+  }
+
+  private wouldLandOnJumpThruAt(x: number, y: number, h: number, dist: number): boolean {
+    const beforeBottom = y + h;
+    const afterBottom = y + h + dist;
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + PLAYER_GEOMETRY.hitboxW - 1) / WORLD.tile);
+    const fromRow = Math.floor(beforeBottom / WORLD.tile);
+    const toRow = Math.floor(afterBottom / WORLD.tile);
+
+    for (let r = fromRow; r <= toRow; r++) {
+      for (let c = left; c <= right; c++) {
+        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
+
+        const tileTop = r * WORLD.tile;
+        if (beforeBottom <= tileTop && afterBottom > tileTop) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
   private applyDashJumpThruNudge(): void {
     if (this.dashDir.y !== 0) return;
 
@@ -1072,7 +1129,7 @@ export class Player {
     return false;
   }
 
-  private tryDashHorizontalCollision(sign: number): DashHorizontalCollisionResult {
+  private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
     if (this.state !== "dash") return "none";
 
     if (this.onGround && this.duckFreeAt(this.x + sign)) {
@@ -1080,14 +1137,11 @@ export class Player {
       return "ducked";
     }
 
-    const hurtH = this.getHurtboxH();
-    const hurtY = this.getHurtboxTop();
-
     if (Math.abs(this.vy) <= EPSILON && Math.abs(this.vx) > EPSILON) {
       for (let i = 1; i <= this.cfg.movement.dashCornerCorrection; i++) {
         for (const j of [1, -1]) {
           const yOffset = i * j;
-          if (!collideSolidAt(this.x + sign, hurtY + yOffset, PLAYER_GEOMETRY.hitboxW, hurtH, this.grid)) {
+          if (!collideSolidAt(this.x + sign, this.y + yOffset, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
             this.y += yOffset;
             this.x += sign;
             return "corrected";
