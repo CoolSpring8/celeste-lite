@@ -15,7 +15,6 @@ export type PlayerEffectType =
   | "hyper"
   | "wavedash"
   | "ultra"
-  | "bunnyhop"
   | "jump"
   | "wall_jump"
   | "dash_start"

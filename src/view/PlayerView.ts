@@ -102,9 +102,6 @@ export class PlayerView {
           this.squash(1.26, 0.72, 80);
           this.emitDashBurst(snapshot, 8);
           break;
-        case "bunnyhop":
-          this.squash(0.82, 1.15, 70);
-          break;
         case "jump":
           this.squash(0.72, 1.28, 90);
           break;
