@@ -987,7 +987,7 @@ export class Player {
         this.applyDashSlide(!this.dashStartedOnGround);
       }
 
-      if (sign > 0 && !this.onGround) {
+      if (sign > 0 && this.vy > 0 && this.state !== "grab") {
         const impact = Math.min(1, Math.max(0, this.vy / this.cfg.gravity.fastMaxFall));
         this.emit({ type: "land", impact });
       }
