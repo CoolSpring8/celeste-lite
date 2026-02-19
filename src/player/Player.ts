@@ -323,6 +323,10 @@ export class Player {
     if (this.jumpBufferTimer > 0) this.jumpBufferTimer -= dt;
 
     if (this.jumpBufferTimer > 0) {
+      if (this.tryWallBounceTech()) {
+        return;
+      }
+
       if (this.onGround || this.coyoteTimer > 0) {
         this.doJump(ix);
       } else if (this.wallStickTimer > 0 || this.wallDir !== 0) {
@@ -441,18 +445,8 @@ export class Player {
       if (this.tryDashJumpTech()) return;
     }
 
-    if (input.jumpPressed && this.wallDir !== 0) {
-      this.state = "normal";
-      this.duckDashActive = false;
-      this.downDiagonalDashSlideActive = false;
-      this.vx = -this.wallDir * this.cfg.wall.bounceH;
-      this.vy = this.cfg.wall.bounceV;
-      this.facing = -this.wallDir as 1 | -1;
-      this.wallJumpLockTimer = this.cfg.wall.jumpLockTime;
-      this.jumpBufferTimer = 0;
-      this.dashesLeft = this.cfg.dash.maxDashes;
-      this.emit({ type: "wall_bounce", wallDir: this.wallDir });
-      return;
+    if (this.jumpBufferTimer > 0) {
+      if (this.tryWallBounceTech()) return;
     }
 
     if (this.dashTimer <= 0) {
@@ -714,6 +708,51 @@ export class Player {
     if (this.dashesLeft >= this.cfg.dash.maxDashes) return false;
     this.dashesLeft = this.cfg.dash.maxDashes;
     return true;
+  }
+
+  private tryWallBounceTech(): boolean {
+    if (this.onGround) return false;
+    if (!this.isUpDashAttackActive()) return false;
+
+    const wall = this.findWallBounceWallDir();
+    if (wall === 0) return false;
+    if (!this.tryStand()) return false;
+
+    this.state = "normal";
+    this.duckDashActive = false;
+    this.downDiagonalDashSlideActive = false;
+    this.vx = -wall * this.cfg.wall.bounceH;
+    this.vy = this.cfg.wall.bounceV;
+    this.facing = -wall as 1 | -1;
+    this.wallJumpLockTimer = this.cfg.wall.jumpLockTime;
+    this.wallStickTimer = 0;
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+    this.dashTimer = 0;
+    this.dashAttackTimer = 0;
+    this.startVariableJump();
+    this.emit({ type: "wall_bounce", wallDir: wall });
+    return true;
+  }
+
+  private isUpDashAttackActive(): boolean {
+    if (!(this.state === "dash" || this.dashAttackTimer > 0)) return false;
+    return Math.abs(this.dashDir.x) <= 0.1 && this.dashDir.y < -0.9;
+  }
+
+  private findWallBounceWallDir(): number {
+    const h = this.getHitboxH();
+
+    for (let i = 1; i <= this.cfg.wall.bounceLeniency; i++) {
+      if (collideSolidAt(this.x - i, this.y, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+        return -1;
+      }
+      if (collideSolidAt(this.x + i, this.y, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+        return 1;
+      }
+    }
+
+    return 0;
   }
 
   private beginDashMotionFromInput(input: InputState): void {

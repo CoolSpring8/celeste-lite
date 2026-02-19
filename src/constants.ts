@@ -53,6 +53,7 @@ export interface PlayerConfig {
     stickTime: number;
     bounceH: number;
     bounceV: number;
+    bounceLeniency: number;
   };
   stamina: {
     max: number;
@@ -124,8 +125,9 @@ export const PLAYER_CONFIG: PlayerConfig = {
     neutralJumpLockTime: 0.03,
     jumpLockTime: 0.13,
     stickTime: 0.06,
-    bounceH: 280,
-    bounceV: -260,
+    bounceH: 170,
+    bounceV: -160,
+    bounceLeniency: 6,
   },
   stamina: {
     max: 110,
