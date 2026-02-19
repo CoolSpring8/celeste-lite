@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COLORS, PLAYER_GEOMETRY } from "../constants";
+import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PLAYER_VISUALS } from "../constants";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 
 interface Afterimage {
@@ -18,6 +18,9 @@ export class PlayerView {
   private dashTrailColor: number = COLORS.playerOneDash;
   private dashDirX = 1;
   private dashDirY = 0;
+  private prevCrouched: boolean | null = null;
+  private prevOnGround = false;
+  private prevState: PlayerSnapshot["state"] = "normal";
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   private wallEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -58,7 +61,10 @@ export class PlayerView {
   }
 
   render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
+    this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
+    this.processDuckStateTransition(snapshot);
+    this.relaxScale(dt);
     this.updateAfterimages(dt);
     this.updateTrail(snapshot, dt);
 
@@ -68,6 +74,10 @@ export class PlayerView {
     this.body.setSize(snapshot.drawW, snapshot.drawH);
     this.body.setPosition(drawX, drawY);
     this.body.setFillStyle(this.resolveColor(snapshot), 1);
+
+    this.prevCrouched = snapshot.isCrouched;
+    this.prevOnGround = snapshot.onGround;
+    this.prevState = snapshot.state;
   }
 
   destroy(): void {
@@ -90,39 +100,42 @@ export class PlayerView {
     for (const effect of effects) {
       switch (effect.type) {
         case "super":
-          this.squash(0.7, 1.32, 95);
+          this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
           this.emitDashBurst(snapshot, 10);
           break;
         case "hyper":
         case "wavedash":
-          this.squash(0.64, 1.24, 90);
+          this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
           this.emitDashBurst(snapshot, 11);
           break;
         case "ultra":
-          this.squash(1.26, 0.72, 80);
           this.emitDashBurst(snapshot, 8);
           break;
         case "jump":
-          this.squash(0.72, 1.28, 90);
+          this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
           break;
         case "wall_jump":
-          this.squash(0.65, 1.35, 100);
+          this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
           this.emitWallBurst(snapshot);
           break;
         case "dash_start":
           this.captureDashVisuals(snapshot, effect);
-          this.squash(1.35, 0.7, 80);
           this.emitDashBurst(snapshot, 5, this.dashTrailColor);
           this.scene.cameras.main.shake(50, 0.002);
           break;
         case "wall_bounce":
-          this.squash(0.55, 1.5, 100);
+          this.squash(0.55, 1.5);
           this.emitWallBurst(snapshot);
           this.scene.cameras.main.shake(70, 0.003);
           break;
-        case "land":
-          this.squash(1.28, 0.74, 120);
+        case "land": {
+          const impact = Phaser.Math.Clamp(effect.impact ?? 0, 0, 1);
+          this.squash(
+            Phaser.Math.Linear(1, PLAYER_VISUALS.landSquashMaxX, impact),
+            Phaser.Math.Linear(1, PLAYER_VISUALS.landSquashMinY, impact),
+          );
           break;
+        }
         case "respawn":
           this.scene.cameras.main.flash(120, 255, 255, 255, false);
           break;
@@ -216,15 +229,60 @@ export class PlayerView {
       .setVisible(false);
   }
 
-  private squash(scaleX: number, scaleY: number, duration: number): void {
+  private squash(scaleX: number, scaleY: number): void {
     this.body.setScale(scaleX, scaleY);
-    this.scene.tweens.add({
-      targets: this.body,
-      scaleX: 1,
-      scaleY: 1,
-      duration,
-      ease: "Quad.Out",
-    });
+  }
+
+  private applyFastFallScale(snapshot: PlayerSnapshot): void {
+    if (snapshot.onGround || !snapshot.isFastFalling) return;
+
+    const maxFall = PLAYER_CONFIG.gravity.maxFall;
+    const fastMaxFall = PLAYER_CONFIG.gravity.fastMaxFall;
+    const half =
+      maxFall + (fastMaxFall - maxFall) * PLAYER_VISUALS.fastFallScaleStartRatio;
+    if (snapshot.vy < half) return;
+
+    const lerp = Phaser.Math.Clamp((snapshot.vy - half) / (fastMaxFall - half), 0, 1);
+    this.squash(
+      Phaser.Math.Linear(1, PLAYER_VISUALS.fastFallScaleMinX, lerp),
+      Phaser.Math.Linear(1, PLAYER_VISUALS.fastFallScaleMaxY, lerp),
+    );
+  }
+
+  private processDuckStateTransition(snapshot: PlayerSnapshot): void {
+    if (this.prevCrouched === null) return;
+
+    const enteredDuck =
+      !this.prevCrouched &&
+      snapshot.isCrouched &&
+      snapshot.onGround &&
+      snapshot.state === "duck";
+    if (enteredDuck) {
+      this.squash(PLAYER_VISUALS.duckSquashX, PLAYER_VISUALS.duckSquashY);
+      return;
+    }
+
+    const exitedDuck =
+      this.prevCrouched &&
+      !snapshot.isCrouched &&
+      this.prevOnGround &&
+      this.prevState === "duck" &&
+      snapshot.onGround;
+    if (exitedDuck) {
+      this.squash(PLAYER_VISUALS.unduckSquashX, PLAYER_VISUALS.unduckSquashY);
+    }
+  }
+
+  private relaxScale(dt: number): void {
+    const delta = PLAYER_VISUALS.scaleRelaxRate * dt;
+    this.body.scaleX = this.approach(this.body.scaleX, 1, delta);
+    this.body.scaleY = this.approach(this.body.scaleY, 1, delta);
+  }
+
+  private approach(current: number, target: number, maxDelta: number): number {
+    return current < target
+      ? Math.min(current + maxDelta, target)
+      : Math.max(current - maxDelta, target);
   }
 
   private emitDashBurst(snapshot: PlayerSnapshot, count: number, color?: number): void {

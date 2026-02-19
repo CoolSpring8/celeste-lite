@@ -28,6 +28,7 @@ export interface PlayerEffect {
   dirX?: number;
   dirY?: number;
   wallDir?: number;
+  impact?: number;
   extended?: boolean;
   reverse?: boolean;
 }

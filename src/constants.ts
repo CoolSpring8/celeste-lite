@@ -19,6 +19,21 @@ export const PLAYER_GEOMETRY = {
   drawH: 16,
 } as const;
 
+export const PLAYER_VISUALS = {
+  jumpSquashX: 0.6,
+  jumpSquashY: 1.4,
+  duckSquashX: 1.4,
+  duckSquashY: 0.6,
+  unduckSquashX: 0.8,
+  unduckSquashY: 1.2,
+  landSquashMaxX: 1.6,
+  landSquashMinY: 0.4,
+  scaleRelaxRate: 1.75,
+  fastFallScaleMinX: 0.5,
+  fastFallScaleMaxY: 1.5,
+  fastFallScaleStartRatio: 0.5,
+} as const;
+
 export interface PlayerConfig {
   input: {
     jumpBufferTime: number;

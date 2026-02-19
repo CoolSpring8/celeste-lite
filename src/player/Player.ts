@@ -264,15 +264,10 @@ export class Player {
 
   getSnapshot(): PlayerSnapshot {
     const hitboxH = this.getHitboxH();
-    let drawW = PLAYER_GEOMETRY.drawW;
-    let drawH = this.ducking
+    const drawW = PLAYER_GEOMETRY.drawW;
+    const drawH = this.ducking
       ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
       : PLAYER_GEOMETRY.drawH;
-
-    if (this.isFastFalling && !this.ducking) {
-      drawW *= 0.82;
-      drawH *= 1.2;
-    }
 
     const state = this.state === "normal" && this.ducking ? "duck" : this.state;
 
@@ -993,7 +988,8 @@ export class Player {
       }
 
       if (sign > 0 && !this.onGround) {
-        this.emit({ type: "land" });
+        const impact = Math.min(1, Math.max(0, this.vy / this.cfg.gravity.fastMaxFall));
+        this.emit({ type: "land", impact });
       }
 
       if (sign < 0 && this.varJumpTimer < this.cfg.jump.varTime - this.cfg.jump.ceilingVarJumpGrace) {
