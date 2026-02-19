@@ -1,6 +1,5 @@
 import { PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
-import { SolidGrid, isJumpThroughTile, tileAt } from "../grid";
-import { collideAt, collideSolidAt, probeGround, wallDirAt } from "./collision";
+import { CollisionWorld } from "../entities/CollisionWorld";
 import { approach, dashDirection } from "./math";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
@@ -75,13 +74,13 @@ export class Player {
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
 
-  private grid: SolidGrid;
+  private world: CollisionWorld;
   private cfg: PlayerConfig;
 
-  constructor(x: number, y: number, grid: SolidGrid, cfg: PlayerConfig = PLAYER_CONFIG) {
+  constructor(x: number, y: number, world: CollisionWorld, cfg: PlayerConfig = PLAYER_CONFIG) {
     this.x = x;
     this.y = y;
-    this.grid = grid;
+    this.world = world;
     this.cfg = cfg;
     this.dashesLeft = cfg.dash.maxDashes;
     this.stamina = cfg.climb.max;
@@ -374,10 +373,10 @@ export class Player {
 
   private refreshEnvironment(): void {
     const h = this.getHitboxH();
-    const ground = probeGround(this.x, this.y, h, this.grid);
+    const ground = this.world.probeGround(this.x, this.y, PLAYER_GEOMETRY.hitboxW, h);
     this.onGround = ground.onGround;
     this.onJumpThrough = ground.onJumpThrough;
-    this.wallDir = wallDirAt(this.x, this.y, h, this.grid);
+    this.wallDir = this.world.wallDirAt(this.x, this.y, PLAYER_GEOMETRY.hitboxW, h);
   }
 
   private normalUpdate(dt: number, input: InputState): void {
@@ -545,7 +544,7 @@ export class Player {
         target = this.cfg.climb.climbUpSpeed;
 
         const blockedAbove =
-          collideSolidAt(this.x, this.y - 1, PLAYER_GEOMETRY.hitboxW, this.getHitboxH(), this.grid) ||
+          this.world.collideSolidAt(this.x, this.y - 1, PLAYER_GEOMETRY.hitboxW, this.getHitboxH()) ||
           (this.climbHopBlockedCheck() && this.slipCheck(-1));
 
         if (blockedAbove) {
@@ -585,12 +584,11 @@ export class Player {
     if (
       input.y !== 1 &&
       this.vy > 0 &&
-      !collideSolidAt(
+      !this.world.collideSolidAt(
         this.x + this.facing,
         this.y + 1,
         PLAYER_GEOMETRY.hitboxW,
         this.getHitboxH(),
-        this.grid,
       )
     ) {
       this.vy = 0;
@@ -671,7 +669,7 @@ export class Player {
 
     if (input.y < 1) {
       for (let i = 1; i <= this.cfg.climb.upCheckDist; i++) {
-        if (collideSolidAt(this.x, this.y - i, PLAYER_GEOMETRY.hitboxW, this.getHitboxH(), this.grid)) {
+        if (this.world.collideSolidAt(this.x, this.y - i, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
           continue;
         }
 
@@ -699,7 +697,7 @@ export class Player {
     this.lastClimbMove = 0;
 
     for (let i = 0; i < this.cfg.climb.checkDist; i++) {
-      if (!collideSolidAt(this.x + this.facing, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH(), this.grid)) {
+      if (!this.world.collideSolidAt(this.x + this.facing, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
         this.x += this.facing;
       } else {
         break;
@@ -920,12 +918,11 @@ export class Player {
       const nextX = this.x + sign;
 
       if (
-        !collideAt(
+        !this.world.collideAt(
           nextX,
           this.y,
           PLAYER_GEOMETRY.hitboxW,
           h,
-          this.grid,
           this.y,
           false,
         )
@@ -968,12 +965,11 @@ export class Player {
       const nextY = this.y + sign;
 
       if (
-        !collideAt(
+        !this.world.collideAt(
           this.x,
           nextY,
           PLAYER_GEOMETRY.hitboxW,
           h,
-          this.grid,
           this.y,
           sign > 0,
         )
@@ -1015,7 +1011,7 @@ export class Player {
   private applyJumpThruAssist(dt: number): void {
     if (this.onGround || this.vy > 0) return;
     if (this.state === "grab" && this.lastClimbMove !== -1) return;
-    if (!this.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
+    if (!this.world.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
 
     this.moveY(this.cfg.jump.jumpThruAssistSpeed * dt);
   }
@@ -1029,104 +1025,39 @@ export class Player {
     const dist = this.cfg.dash.floorSnapDist;
     if (dist <= 0) return;
 
-    const wouldHitSolid = collideSolidAt(
+    const wouldHitSolid = this.world.collideSolidAt(
       this.x,
       this.y + dist,
       PLAYER_GEOMETRY.hitboxW,
       h,
-      this.grid,
     );
-    const wouldHitJumpThru = this.wouldLandOnJumpThruAt(this.x, this.y, h, dist);
+    const wouldHitJumpThru = this.world.wouldLandOnJumpThruAt(
+      this.x,
+      this.y,
+      PLAYER_GEOMETRY.hitboxW,
+      h,
+      dist,
+    );
     if (!wouldHitSolid && !wouldHitJumpThru) return;
 
     this.y += dist;
     this.remY = 0;
   }
 
-  private wouldLandOnJumpThruAt(x: number, y: number, h: number, dist: number): boolean {
-    const beforeBottom = y + h;
-    const afterBottom = y + h + dist;
-    const left = Math.floor(x / WORLD.tile);
-    const right = Math.floor((x + PLAYER_GEOMETRY.hitboxW - 1) / WORLD.tile);
-    const fromRow = Math.floor(beforeBottom / WORLD.tile);
-    const toRow = Math.floor(afterBottom / WORLD.tile);
-
-    for (let r = fromRow; r <= toRow; r++) {
-      for (let c = left; c <= right; c++) {
-        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
-
-        const tileTop = r * WORLD.tile;
-        if (beforeBottom <= tileTop && afterBottom > tileTop) {
-          return true;
-        }
-      }
-    }
-
-    return false;
-  }
-
   private applyDashJumpThruNudge(): void {
     if (this.dashDir.y !== 0) return;
 
-    const nudgeY = this.findDashJumpThruNudgeY();
+    const nudgeY = this.world.findJumpThruNudgeY(
+      this.x,
+      this.y,
+      PLAYER_GEOMETRY.hitboxW,
+      this.getHitboxH(),
+      this.cfg.dash.hJumpThruNudge,
+    );
     if (nudgeY === null) return;
 
     this.y = nudgeY;
     this.remY = 0;
-  }
-
-  private findDashJumpThruNudgeY(): number | null {
-    const h = this.getHitboxH();
-    const left = Math.floor(this.x / WORLD.tile);
-    const right = Math.floor((this.x + PLAYER_GEOMETRY.hitboxW - 1) / WORLD.tile);
-    const top = Math.floor(this.y / WORLD.tile);
-    const bottom = Math.floor((this.y + h - 1) / WORLD.tile);
-    const bodyBottom = this.y + h;
-
-    let bestY: number | null = null;
-
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
-
-        const tileTop = r * WORLD.tile;
-        const penetration = bodyBottom - tileTop;
-        if (penetration <= 0 || penetration > this.cfg.dash.hJumpThruNudge) continue;
-
-        const nudgeY = tileTop - h;
-        if (nudgeY >= this.y) continue;
-        if (bestY === null || nudgeY > bestY) {
-          bestY = nudgeY;
-        }
-      }
-    }
-
-    return bestY;
-  }
-
-  private overlapsJumpThrough(x: number, y: number, w: number, h: number): boolean {
-    const left = Math.floor(x / WORLD.tile);
-    const right = Math.floor((x + w - 1) / WORLD.tile);
-    const top = Math.floor(y / WORLD.tile);
-    const bottom = Math.floor((y + h - 1) / WORLD.tile);
-
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        if (!isJumpThroughTile(tileAt(this.grid, c, r))) continue;
-
-        const tileX = c * WORLD.tile;
-        const tileY = r * WORLD.tile;
-        const intersects =
-          x < tileX + WORLD.tile &&
-          x + w > tileX &&
-          y < tileY + WORLD.tile &&
-          y + h > tileY;
-
-        if (intersects) return true;
-      }
-    }
-
-    return false;
   }
 
   private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
@@ -1141,7 +1072,7 @@ export class Player {
       for (let i = 1; i <= this.cfg.movement.dashCornerCorrection; i++) {
         for (const j of [1, -1]) {
           const yOffset = i * j;
-          if (!collideSolidAt(this.x + sign, this.y + yOffset, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+          if (!this.world.collideSolidAt(this.x + sign, this.y + yOffset, PLAYER_GEOMETRY.hitboxW, h)) {
             this.y += yOffset;
             this.x += sign;
             return "corrected";
@@ -1184,7 +1115,7 @@ export class Player {
   private tryUpCornerCorrectionY(h: number): boolean {
     if (this.vx <= 0) {
       for (let i = 1; i <= this.cfg.movement.upwardCornerCorrection; i++) {
-        if (!collideSolidAt(this.x - i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+        if (!this.world.collideSolidAt(this.x - i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h)) {
           this.x -= i;
           this.y -= 1;
           return true;
@@ -1194,7 +1125,7 @@ export class Player {
 
     if (this.vx >= 0) {
       for (let i = 1; i <= this.cfg.movement.upwardCornerCorrection; i++) {
-        if (!collideSolidAt(this.x + i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h, this.grid)) {
+        if (!this.world.collideSolidAt(this.x + i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h)) {
           this.x += i;
           this.y -= 1;
           return true;
@@ -1245,7 +1176,7 @@ export class Player {
     const dir = Math.sign(this.wallSpeedRetained);
     if (
       dir !== 0 &&
-      !collideSolidAt(this.x + dir, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH(), this.grid)
+      !this.world.collideSolidAt(this.x + dir, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())
     ) {
       this.vx = this.wallSpeedRetained;
       this.wallSpeedRetentionTimer = 0;
@@ -1342,12 +1273,11 @@ export class Player {
     if (!this.ducking) return true;
 
     const standTop = this.getStandTopAt(this.x, this.y);
-    return !collideSolidAt(
+    return !this.world.collideSolidAt(
       this.x,
       standTop,
       PLAYER_GEOMETRY.hitboxW,
       PLAYER_GEOMETRY.hitboxH,
-      this.grid,
     );
   }
 
@@ -1355,24 +1285,22 @@ export class Player {
     if (!this.ducking) return true;
 
     const standTop = this.getStandTopAt(x, this.y);
-    return !collideSolidAt(
+    return !this.world.collideSolidAt(
       x,
       standTop,
       PLAYER_GEOMETRY.hitboxW,
       PLAYER_GEOMETRY.hitboxH,
-      this.grid,
     );
   }
 
   private duckFreeAt(x: number): boolean {
     const footY = this.y + this.getHitboxH();
     const crouchTop = footY - PLAYER_GEOMETRY.crouchHitboxH;
-    return !collideSolidAt(
+    return !this.world.collideSolidAt(
       x,
       crouchTop,
       PLAYER_GEOMETRY.hitboxW,
       PLAYER_GEOMETRY.crouchHitboxH,
-      this.grid,
     );
   }
 
@@ -1392,12 +1320,11 @@ export class Player {
 
   private wallJumpCheck(dir: number): boolean {
     return this.climbBoundsCheck(dir) &&
-      collideSolidAt(
+      this.world.collideSolidAt(
         this.x + dir * this.cfg.jump.wallJumpCheckDist,
         this.y,
         PLAYER_GEOMETRY.hitboxW,
         this.getHitboxH(),
-        this.grid,
       );
   }
 
@@ -1410,12 +1337,11 @@ export class Player {
 
   private climbCheck(dir: number, yAdd = 0): boolean {
     return this.climbBoundsCheck(dir) &&
-      collideSolidAt(
+      this.world.collideSolidAt(
         this.x + dir * this.cfg.climb.checkDist,
         this.y + yAdd,
         PLAYER_GEOMETRY.hitboxW,
         this.getHitboxH(),
-        this.grid,
       );
   }
 
@@ -1445,21 +1371,20 @@ export class Player {
   }
 
   private solidAtPoint(px: number, py: number): boolean {
-    return collideSolidAt(px, py, 1, 1, this.grid);
+    return this.world.collideSolidAt(px, py, 1, 1);
   }
 
   private isFacingWallSolid(): boolean {
-    return collideSolidAt(
+    return this.world.collideSolidAt(
       this.x + this.facing,
       this.y,
       PLAYER_GEOMETRY.hitboxW,
       this.getHitboxH(),
-      this.grid,
     );
   }
 
   private onGroundAt(x: number, y: number, h: number): boolean {
-    return probeGround(x, y, h, this.grid).onGround;
+    return this.world.probeGround(x, y, PLAYER_GEOMETRY.hitboxW, h).onGround;
   }
 
   private isDownDiagonalDash(): boolean {

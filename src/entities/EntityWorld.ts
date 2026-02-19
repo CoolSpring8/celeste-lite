@@ -1,5 +1,6 @@
 import { WORLD } from "../constants";
 import { SolidGrid, TILE_EMPTY, TILE_JUMP_THROUGH, TILE_SOLID } from "../grid";
+import { CollisionWorld, GroundProbe } from "./CollisionWorld";
 import {
   Aabb,
   JumpThruTileEntity,
@@ -17,7 +18,7 @@ const REFILL_RESPAWN_TIME = 2.5;
 const SPIKE_SIZE = WORLD.tile;
 const SPIKE_HEIGHT = 10;
 
-export class EntityWorld implements SolidGrid {
+export class EntityWorld implements SolidGrid, CollisionWorld {
   readonly cols: number;
   readonly rows: number;
   readonly data: Uint8Array;
@@ -65,6 +66,162 @@ export class EntityWorld implements SolidGrid {
       refill.respawnTimer = 0;
       refill.y = refill.baseY;
     }
+  }
+
+  collideSolidAt(x: number, y: number, w: number, h: number): boolean {
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const top = Math.floor(y / WORLD.tile);
+    const bottom = Math.floor((y + h - 1) / WORLD.tile);
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        if (this.tileAtCell(c, r) === TILE_SOLID) return true;
+      }
+    }
+
+    return false;
+  }
+
+  collideAt(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    fromY: number,
+    movingDown: boolean,
+  ): boolean {
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const top = Math.floor(y / WORLD.tile);
+    const bottom = Math.floor((y + h - 1) / WORLD.tile);
+
+    const beforeBottom = fromY + h;
+    const afterBottom = y + h;
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        const tile = this.tileAtCell(c, r);
+        if (tile === TILE_SOLID) return true;
+
+        if (!movingDown || tile !== TILE_JUMP_THROUGH) continue;
+
+        const tileTop = r * WORLD.tile;
+        const crossedTop = beforeBottom <= tileTop && afterBottom > tileTop;
+        if (crossedTop) return true;
+      }
+    }
+
+    return false;
+  }
+
+  wallDirAt(x: number, y: number, w: number, h: number): number {
+    if (this.collideSolidAt(x - 1, y, w, h)) return -1;
+    if (this.collideSolidAt(x + 1, y, w, h)) return 1;
+    return 0;
+  }
+
+  probeGround(x: number, y: number, w: number, h: number): GroundProbe {
+    const nextY = y + 1;
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const row = Math.floor((nextY + h - 1) / WORLD.tile);
+    const beforeBottom = y + h;
+    const afterBottom = nextY + h;
+
+    let onJumpThrough = false;
+
+    for (let c = left; c <= right; c++) {
+      const tile = this.tileAtCell(c, row);
+      if (tile === TILE_SOLID) {
+        return { onGround: true, onJumpThrough: false };
+      }
+
+      if (tile !== TILE_JUMP_THROUGH) continue;
+
+      const tileTop = row * WORLD.tile;
+      const crossedTop = beforeBottom <= tileTop && afterBottom > tileTop;
+      if (crossedTop) {
+        onJumpThrough = true;
+      }
+    }
+
+    return { onGround: onJumpThrough, onJumpThrough };
+  }
+
+  overlapsJumpThrough(x: number, y: number, w: number, h: number): boolean {
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const top = Math.floor(y / WORLD.tile);
+    const bottom = Math.floor((y + h - 1) / WORLD.tile);
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
+
+        const tileX = c * WORLD.tile;
+        const tileY = r * WORLD.tile;
+        const intersects =
+          x < tileX + WORLD.tile &&
+          x + w > tileX &&
+          y < tileY + WORLD.tile &&
+          y + h > tileY;
+
+        if (intersects) return true;
+      }
+    }
+
+    return false;
+  }
+
+  wouldLandOnJumpThruAt(x: number, y: number, w: number, h: number, dist: number): boolean {
+    const beforeBottom = y + h;
+    const afterBottom = y + h + dist;
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const fromRow = Math.floor(beforeBottom / WORLD.tile);
+    const toRow = Math.floor(afterBottom / WORLD.tile);
+
+    for (let r = fromRow; r <= toRow; r++) {
+      for (let c = left; c <= right; c++) {
+        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
+
+        const tileTop = r * WORLD.tile;
+        if (beforeBottom <= tileTop && afterBottom > tileTop) {
+          return true;
+        }
+      }
+    }
+
+    return false;
+  }
+
+  findJumpThruNudgeY(x: number, y: number, w: number, h: number, maxNudge: number): number | null {
+    const left = Math.floor(x / WORLD.tile);
+    const right = Math.floor((x + w - 1) / WORLD.tile);
+    const top = Math.floor(y / WORLD.tile);
+    const bottom = Math.floor((y + h - 1) / WORLD.tile);
+    const bodyBottom = y + h;
+
+    let bestY: number | null = null;
+
+    for (let r = top; r <= bottom; r++) {
+      for (let c = left; c <= right; c++) {
+        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
+
+        const tileTop = r * WORLD.tile;
+        const penetration = bodyBottom - tileTop;
+        if (penetration <= 0 || penetration > maxNudge) continue;
+
+        const nudgeY = tileTop - h;
+        if (nudgeY >= y) continue;
+        if (bestY === null || nudgeY > bestY) {
+          bestY = nudgeY;
+        }
+      }
+    }
+
+    return bestY;
   }
 
   consumeTouchingRefills(
@@ -188,6 +345,11 @@ export class EntityWorld implements SolidGrid {
     const id = this.nextEntityId;
     this.nextEntityId++;
     return id;
+  }
+
+  private tileAtCell(col: number, row: number): number {
+    if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) return TILE_EMPTY;
+    return this.data[row * this.cols + col];
   }
 
   private spikeDangerBounds(spike: SpikeEntity): Aabb {
