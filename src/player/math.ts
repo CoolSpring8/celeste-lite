@@ -4,6 +4,19 @@ export function approach(current: number, target: number, maxDelta: number): num
     : Math.max(current - maxDelta, target);
 }
 
+const EIGHT_WAY_DIRECTIONS: Array<{ x: number; y: number }> = [
+  { x: 1, y: 0 },
+  { x: Math.SQRT1_2, y: Math.SQRT1_2 },
+  { x: 0, y: 1 },
+  { x: -Math.SQRT1_2, y: Math.SQRT1_2 },
+  { x: -1, y: 0 },
+  { x: -Math.SQRT1_2, y: -Math.SQRT1_2 },
+  { x: 0, y: -1 },
+  { x: Math.SQRT1_2, y: -Math.SQRT1_2 },
+];
+
+const EIGHT_WAY_STEP = Math.PI / 4;
+
 export function dashDirection(
   inputX: number,
   inputY: number,
@@ -14,6 +27,8 @@ export function dashDirection(
 
   if (dx === 0 && dy === 0) dx = facing;
 
-  const len = Math.sqrt(dx * dx + dy * dy);
-  return { x: dx / len, y: dy / len };
+  const angle = Math.atan2(dy, dx);
+  const snappedIndex = Math.round(angle / EIGHT_WAY_STEP);
+  const wrapped = ((snappedIndex % 8) + 8) % 8;
+  return EIGHT_WAY_DIRECTIONS[wrapped];
 }
