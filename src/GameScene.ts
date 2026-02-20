@@ -17,7 +17,6 @@ interface RefillView {
 type CameraLockMode = "none" | "finalBoss" | "boostSequence";
 
 const CAMERA_SMOOTH_BASE = 0.01;
-const CAMERA_DASH_LOOK_AHEAD = 48;
 const CAMERA_BOOST_UPWARD_MAX_Y_OFFSET = 48;
 
 interface CameraKillbox {
@@ -305,9 +304,6 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateCamera(snapshot: ReturnType<Player["getSnapshot"]>, dt: number): void {
-    const inControl = snapshot.state !== "freeze";
-    if (!inControl && !this.forceCameraUpdate) return;
-
     const camera = this.cameras.main;
     const target = this.computeCameraTarget(snapshot, camera);
 
@@ -320,7 +316,7 @@ export class GameScene extends Phaser.Scene {
       nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
     }
 
-    camera.setScroll(Math.round(nextX), Math.round(nextY));
+    camera.setScroll(nextX, nextY);
     this.forceCameraSnapNextFrame = false;
   }
 
@@ -333,13 +329,6 @@ export class GameScene extends Phaser.Scene {
 
     targetX += this.cameraOffset.x;
     targetY += this.cameraOffset.y;
-
-    if (snapshot.state === "dash" || snapshot.state === "dashAttack") {
-      const xSign = Math.abs(snapshot.vx) < 0.0001 ? snapshot.facing : Math.sign(snapshot.vx);
-      const ySign = Math.abs(snapshot.vy) < 0.0001 ? 0 : Math.sign(snapshot.vy);
-      targetX += CAMERA_DASH_LOOK_AHEAD * xSign;
-      targetY += CAMERA_DASH_LOOK_AHEAD * ySign;
-    }
 
     if (this.cameraAnchorLerp.lengthSq() > 0) {
       if (this.cameraAnchorIgnoreX && !this.cameraAnchorIgnoreY) {
