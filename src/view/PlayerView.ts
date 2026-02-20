@@ -22,6 +22,8 @@ export class PlayerView {
   private prevCrouched: boolean | null = null;
   private prevOnGround = false;
   private prevState: PlayerSnapshot["state"] = "normal";
+  private tiredFlashTimer = PLAYER_VISUALS.tiredFlashInterval;
+  private tiredFlash = false;
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   private wallEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -65,6 +67,7 @@ export class PlayerView {
   }
 
   render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
+    this.updateTiredFlash(dt);
     this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
     this.processDuckStateTransition(snapshot);
@@ -330,11 +333,24 @@ export class PlayerView {
   }
 
   private resolveColor(snapshot: PlayerSnapshot): number {
+    const isTired = snapshot.stamina <= PLAYER_CONFIG.climb.tiredThreshold;
+    if (isTired) {
+      return this.tiredFlash ? COLORS.playerTiredFlash : COLORS.playerCooldown;
+    }
+
     if (snapshot.dashCooldownActive) {
       return COLORS.playerCooldown;
     }
 
     return this.resolveHairColorByDashCount(snapshot.dashesLeft);
+  }
+
+  private updateTiredFlash(dt: number): void {
+    this.tiredFlashTimer -= dt;
+    while (this.tiredFlashTimer <= 0) {
+      this.tiredFlash = !this.tiredFlash;
+      this.tiredFlashTimer += PLAYER_VISUALS.tiredFlashInterval;
+    }
   }
 
   private resolveHairColorByDashCount(dashesLeft: number): number {

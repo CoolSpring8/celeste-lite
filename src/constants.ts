@@ -50,6 +50,7 @@ export const PLAYER_VISUALS = {
   dashParticleSpeedMin: 10,
   dashParticleSpeedMax: 20,
   dashParticleGravityY: 10,
+  tiredFlashInterval: 0.05,
 } as const;
 
 export interface PlayerConfig {
@@ -228,6 +229,7 @@ export const COLORS = {
   playerTwoDash: 0xf08ad6, // pink
   playerManyDash: 0x62c462, // green
   playerCooldown: 0xffffff, // white
+  playerTiredFlash: 0xff0000, // red flash while tired
   tile: 0x3a3a5c,
   tileEdge: 0x5a5a8c,
   background: 0x16213e,
