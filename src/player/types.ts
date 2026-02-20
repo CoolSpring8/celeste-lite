@@ -42,7 +42,7 @@ export interface PlayerSnapshot {
   facing: 1 | -1;
   onGround: boolean;
   wallDir: number;
-  wallSlideDustDir: number;
+  wallDustDir: number;
   dashesLeft: number;
   dashCooldownActive: boolean;
   stamina: number;

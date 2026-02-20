@@ -43,6 +43,7 @@ export class Player {
 
   private wallSlideTimer: number;
   private wallSlideDir = 0;
+  private wallDustDir = 0;
   private maxFall: number;
 
   private forceMoveX = 0;
@@ -90,6 +91,7 @@ export class Player {
 
   update(dt: number, input: InputState): void {
     this.refreshEnvironment();
+    this.wallDustDir = 0;
 
     if (this.forceMoveXTimer > 0) {
       this.forceMoveXTimer = Math.max(0, this.forceMoveXTimer - dt);
@@ -270,10 +272,6 @@ export class Player {
       : PLAYER_GEOMETRY.drawH;
 
     const state = this.state === "normal" && this.ducking ? "duck" : this.state;
-    const wallSlideRatio =
-      this.cfg.gravity.wallSlideTime > 0 ? this.wallSlideTimer / this.cfg.gravity.wallSlideTime : 0;
-    const wallSlideDustDir = this.wallSlideDir !== 0 && wallSlideRatio > 0.65 ? this.wallSlideDir : 0;
-
     return {
       x: this.x,
       y: this.y,
@@ -282,10 +280,8 @@ export class Player {
       state,
       facing: this.facing,
       onGround: this.onGround,
-      // Expose active wall-slide direction (not just raw wall contact) to represent slide state.
       wallDir: this.wallSlideDir,
-      // Match Celeste: wall-slide dust only emits in the early wall-slide timer window (> 0.65).
-      wallSlideDustDir,
+      wallDustDir: this.wallDustDir,
       dashesLeft: this.dashesLeft,
       dashCooldownActive: this.dashRefillCooldownTimer > 0,
       stamina: this.stamina,
@@ -319,6 +315,7 @@ export class Player {
     this.onGround = false;
     this.onJumpThrough = false;
     this.wallDir = 0;
+    this.wallDustDir = 0;
     this.wasOnGround = false;
 
     this.moveXInput = 0;
@@ -482,8 +479,13 @@ export class Player {
         }
 
         if (this.wallSlideDir !== 0) {
-          const t = Math.max(0, Math.min(1, this.wallSlideTimer / this.cfg.gravity.wallSlideTime));
+          const t = this.cfg.gravity.wallSlideTime > 0
+            ? Math.max(0, Math.min(1, this.wallSlideTimer / this.cfg.gravity.wallSlideTime))
+            : 0;
           max = this.lerp(this.cfg.gravity.maxFall, this.cfg.gravity.wallSlideStartMax, t);
+          if (t > 0.65) {
+            this.wallDustDir = this.wallSlideDir;
+          }
         }
       }
 
@@ -565,6 +567,8 @@ export class Player {
             this.vy = 0;
           }
           target = 0;
+        } else {
+          this.wallDustDir = this.facing;
         }
       } else {
         trySlip = true;

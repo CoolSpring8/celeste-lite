@@ -160,18 +160,13 @@ export class PlayerView {
   }
 
   private updateTrail(snapshot: PlayerSnapshot, dt: number): void {
-    if (
-      !snapshot.onGround &&
-      snapshot.wallSlideDustDir !== 0 &&
-      snapshot.vy > 0 &&
-      snapshot.state === "normal"
-    ) {
+    if (snapshot.wallDustDir !== 0) {
       this.wallDustTimer -= dt;
       if (this.wallDustTimer <= 0) {
         this.wallDustTimer = PLAYER_VISUALS.wallSlideDustInterval;
         this.emitWallSlideDust(
           snapshot,
-          snapshot.wallSlideDustDir,
+          snapshot.wallDustDir,
           PLAYER_VISUALS.wallSlideDustCount,
         );
       }
