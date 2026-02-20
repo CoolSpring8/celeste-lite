@@ -270,6 +270,9 @@ export class Player {
       : PLAYER_GEOMETRY.drawH;
 
     const state = this.state === "normal" && this.ducking ? "duck" : this.state;
+    const wallSlideRatio =
+      this.cfg.gravity.wallSlideTime > 0 ? this.wallSlideTimer / this.cfg.gravity.wallSlideTime : 0;
+    const wallSlideDustDir = this.wallSlideDir !== 0 && wallSlideRatio > 0.65 ? this.wallSlideDir : 0;
 
     return {
       x: this.x,
@@ -279,8 +282,10 @@ export class Player {
       state,
       facing: this.facing,
       onGround: this.onGround,
-      // Expose active wall-slide direction (not just raw wall contact) for visual dust timing.
+      // Expose active wall-slide direction (not just raw wall contact) to represent slide state.
       wallDir: this.wallSlideDir,
+      // Match Celeste: wall-slide dust only emits in the early wall-slide timer window (> 0.65).
+      wallSlideDustDir,
       dashesLeft: this.dashesLeft,
       dashCooldownActive: this.dashRefillCooldownTimer > 0,
       stamina: this.stamina,
