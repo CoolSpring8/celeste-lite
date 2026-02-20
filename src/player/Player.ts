@@ -279,7 +279,8 @@ export class Player {
       state,
       facing: this.facing,
       onGround: this.onGround,
-      wallDir: this.wallDir,
+      // Expose active wall-slide direction (not just raw wall contact) for visual dust timing.
+      wallDir: this.wallSlideDir,
       dashesLeft: this.dashesLeft,
       dashCooldownActive: this.dashRefillCooldownTimer > 0,
       stamina: this.stamina,
