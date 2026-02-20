@@ -14,6 +14,20 @@ interface RefillView {
   body: Phaser.GameObjects.Rectangle;
 }
 
+type CameraLockMode = "none" | "finalBoss" | "boostSequence";
+
+const CAMERA_SMOOTH_BASE = 0.01;
+const CAMERA_DASH_LOOK_AHEAD = 48;
+const CAMERA_BOOST_UPWARD_MAX_Y_OFFSET = 48;
+
+interface CameraKillbox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  active?: boolean;
+}
+
 export class GameScene extends Phaser.Scene {
   private player!: Player;
   private playerView!: PlayerView;
@@ -31,9 +45,18 @@ export class GameScene extends Phaser.Scene {
 
   private tileGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
-  private cameraTarget!: Phaser.GameObjects.Zone;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private cameraOffset = new Phaser.Math.Vector2(0, 0);
+  private cameraAnchor = new Phaser.Math.Vector2(0, 0);
+  private cameraAnchorLerp = new Phaser.Math.Vector2(0, 0);
+  private cameraAnchorIgnoreX = false;
+  private cameraAnchorIgnoreY = false;
+  private forceCameraUpdate = false;
+  private forceCameraSnapNextFrame = true;
+  private cameraLockMode: CameraLockMode = "none";
+  private cameraUpwardMaxY = Number.POSITIVE_INFINITY;
+  private cameraKillboxes: CameraKillbox[] = [];
 
   constructor() {
     super("GameScene");
@@ -66,10 +89,11 @@ export class GameScene extends Phaser.Scene {
     this.refillEmitter.setDepth(4);
     this.createRefills(this.world.refills);
 
-    this.cameraTarget = this.add.zone(this.spawnX, this.spawnY, 1, 1);
-    this.cameras.main.startFollow(this.cameraTarget, true, 0.15, 0.15);
-    this.cameras.main.setDeadzone(80, 50);
-    this.cameras.main.roundPixels = true;
+    const camera = this.cameras.main;
+    camera.roundPixels = true;
+    camera.setBounds(0, 0, this.world.cols * WORLD.tile, this.world.rows * WORLD.tile);
+    this.forceCameraSnap();
+    this.updateCamera(this.player.getSnapshot(), 0);
 
     const kb = this.input.keyboard!;
     this.keys = {
@@ -124,6 +148,7 @@ export class GameScene extends Phaser.Scene {
       this.world.resetTransientState();
       this.syncRefillViews();
       this.clearInputEdgeQueues();
+      this.forceCameraSnap();
       this.cameras.main.fadeIn(80, 10, 10, 20);
       this.accumulator = 0;
     }
@@ -144,6 +169,7 @@ export class GameScene extends Phaser.Scene {
         this.world.resetTransientState();
         this.syncRefillViews();
         this.clearInputEdgeQueues();
+        this.forceCameraSnap();
         if (spiked) {
           this.cameras.main.flash(180, 0, 0, 0, false);
         } else {
@@ -164,13 +190,56 @@ export class GameScene extends Phaser.Scene {
 
     const snapshot = this.player.getSnapshot();
     this.playerView.render(snapshot, effects, frameDt);
-
-    this.cameraTarget.setPosition(
-      snapshot.x + PLAYER_GEOMETRY.hitboxW / 2,
-      snapshot.y + snapshot.hitboxH / 2,
-    );
+    this.updateCamera(snapshot, frameDt);
 
     this.updateHUD(snapshot, effects);
+  }
+
+  setCameraOffset(x: number, y: number): void {
+    this.cameraOffset.set(x, y);
+  }
+
+  setCameraAnchor(
+    x: number,
+    y: number,
+    lerpX: number,
+    lerpY: number,
+    opts?: { ignoreX?: boolean; ignoreY?: boolean },
+  ): void {
+    this.cameraAnchor.set(x, y);
+    this.cameraAnchorLerp.set(Phaser.Math.Clamp(lerpX, 0, 1), Phaser.Math.Clamp(lerpY, 0, 1));
+    this.cameraAnchorIgnoreX = !!opts?.ignoreX;
+    this.cameraAnchorIgnoreY = !!opts?.ignoreY;
+  }
+
+  clearCameraAnchor(): void {
+    this.cameraAnchorLerp.set(0, 0);
+    this.cameraAnchorIgnoreX = false;
+    this.cameraAnchorIgnoreY = false;
+  }
+
+  setCameraLockMode(mode: CameraLockMode): void {
+    this.cameraLockMode = mode;
+    if (mode !== "boostSequence") {
+      this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
+    }
+  }
+
+  setForceCameraUpdate(force: boolean): void {
+    this.forceCameraUpdate = force;
+  }
+
+  setCameraKillboxes(killboxes: ReadonlyArray<CameraKillbox>): void {
+    this.cameraKillboxes = killboxes.map((box) => ({ ...box }));
+  }
+
+  clearCameraKillboxes(): void {
+    this.cameraKillboxes = [];
+  }
+
+  forceCameraSnap(): void {
+    this.forceCameraSnapNextFrame = true;
+    this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
   }
 
   shutdown(): void {
@@ -233,6 +302,107 @@ export class GameScene extends Phaser.Scene {
   private clearInputEdgeQueues(): void {
     this.pendingJumpEdges.length = 0;
     this.pendingDashPresses = 0;
+  }
+
+  private updateCamera(snapshot: ReturnType<Player["getSnapshot"]>, dt: number): void {
+    const inControl = snapshot.state !== "freeze";
+    if (!inControl && !this.forceCameraUpdate) return;
+
+    const camera = this.cameras.main;
+    const target = this.computeCameraTarget(snapshot, camera);
+
+    let nextX = target.x;
+    let nextY = target.y;
+
+    if (!this.forceCameraSnapNextFrame) {
+      const smooth = 1 - Math.pow(CAMERA_SMOOTH_BASE, dt);
+      nextX = camera.scrollX + (target.x - camera.scrollX) * smooth;
+      nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
+    }
+
+    camera.setScroll(Math.round(nextX), Math.round(nextY));
+    this.forceCameraSnapNextFrame = false;
+  }
+
+  private computeCameraTarget(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    camera: Phaser.Cameras.Scene2D.Camera,
+  ): Phaser.Math.Vector2 {
+    let targetX = snapshot.x + PLAYER_GEOMETRY.hitboxW * 0.5 - VIEWPORT.width * 0.5;
+    let targetY = snapshot.y + snapshot.hitboxH * 0.5 - VIEWPORT.height * 0.5;
+
+    targetX += this.cameraOffset.x;
+    targetY += this.cameraOffset.y;
+
+    if (snapshot.state === "dash" || snapshot.state === "dashAttack") {
+      const xSign = Math.abs(snapshot.vx) < 0.0001 ? snapshot.facing : Math.sign(snapshot.vx);
+      const ySign = Math.abs(snapshot.vy) < 0.0001 ? 0 : Math.sign(snapshot.vy);
+      targetX += CAMERA_DASH_LOOK_AHEAD * xSign;
+      targetY += CAMERA_DASH_LOOK_AHEAD * ySign;
+    }
+
+    if (this.cameraAnchorLerp.lengthSq() > 0) {
+      if (this.cameraAnchorIgnoreX && !this.cameraAnchorIgnoreY) {
+        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
+      } else if (!this.cameraAnchorIgnoreX && this.cameraAnchorIgnoreY) {
+        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
+      } else if (this.cameraAnchorLerp.x === this.cameraAnchorLerp.y) {
+        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
+        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
+      } else {
+        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
+        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
+      }
+    }
+
+    const maxX = Math.max(0, this.world.cols * WORLD.tile - VIEWPORT.width);
+    const maxY = Math.max(0, this.world.rows * WORLD.tile - VIEWPORT.height);
+    let clampedX = Phaser.Math.Clamp(targetX, 0, maxX);
+    let clampedY = Phaser.Math.Clamp(targetY, 0, maxY);
+
+    if (this.cameraLockMode !== "none") {
+      if (this.cameraLockMode !== "boostSequence") {
+        clampedX = Math.max(clampedX, camera.scrollX);
+      }
+
+      if (this.cameraLockMode === "finalBoss") {
+        clampedY = Math.max(clampedY, camera.scrollY);
+      } else if (this.cameraLockMode === "boostSequence") {
+        this.cameraUpwardMaxY = Math.min(
+          camera.scrollY + CAMERA_BOOST_UPWARD_MAX_Y_OFFSET,
+          this.cameraUpwardMaxY,
+        );
+        clampedY = Math.min(clampedY, this.cameraUpwardMaxY);
+      }
+    }
+
+    clampedY = this.applyKillboxSafety(snapshot, clampedY, maxY);
+    return new Phaser.Math.Vector2(clampedX, clampedY);
+  }
+
+  private applyKillboxSafety(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    targetY: number,
+    maxY: number,
+  ): number {
+    if (this.cameraKillboxes.length === 0) return targetY;
+
+    let safeY = targetY;
+    const playerLeft = snapshot.x;
+    const playerRight = snapshot.x + PLAYER_GEOMETRY.hitboxW;
+    const playerTop = snapshot.y;
+
+    for (const box of this.cameraKillboxes) {
+      if (box.active === false) continue;
+
+      const overlapsX = playerRight > box.x && playerLeft < box.x + box.w;
+      if (!overlapsX) continue;
+      if (playerTop >= box.y + box.h) continue;
+
+      safeY = Math.min(safeY, box.y - VIEWPORT.height);
+    }
+
+    return Phaser.Math.Clamp(safeY, 0, maxY);
   }
 
   private drawTiles(): void {
@@ -354,6 +524,7 @@ export class GameScene extends Phaser.Scene {
         `  |  Dashes: ${snapshot.dashesLeft}` +
         `  |  Stam: ${snapshot.stamina.toFixed(0)}` +
         `  |  Vel: (${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)})` +
+        `  |  Cam: (${this.cameras.main.scrollX.toFixed(0)}, ${this.cameras.main.scrollY.toFixed(0)})` +
         `  |  ${snapshot.onGround ? "GROUND" : "AIR"}` +
         `${events ? `\nEffects: ${events}` : ""}`,
     );
