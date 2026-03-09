@@ -18,4 +18,12 @@ export interface CollisionWorld {
   overlapsJumpThrough(x: number, y: number, w: number, h: number): boolean;
   wouldLandOnJumpThruAt(x: number, y: number, w: number, h: number, dist: number): boolean;
   findJumpThruNudgeY(x: number, y: number, w: number, h: number, maxNudge: number): number | null;
+  collidesWithSpikeAt(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    vx: number,
+    vy: number,
+  ): boolean;
 }

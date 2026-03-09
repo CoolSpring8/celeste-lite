@@ -17,6 +17,7 @@ const REFILL_PICKUP_SIZE = 12;
 const REFILL_RESPAWN_TIME = 2.5;
 const SPIKE_SIZE = WORLD.tile;
 const SPIKE_HEIGHT = 10;
+const SPIKE_EPSILON = 0.0001;
 
 export class EntityWorld implements SolidGrid, CollisionWorld {
   readonly cols: number;
@@ -252,15 +253,29 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     return consumed;
   }
 
-  collidesWithSpike(hurtbox: Aabb): SpikeEntity | null {
+  collidesWithSpike(hurtbox: Aabb, vx = 0, vy = 0): SpikeEntity | null {
     for (const spike of this.spikes) {
+      if (this.isSafeFromSpike(spike, vx, vy)) continue;
+
+      const probe = this.spikeProbeBounds(hurtbox, spike.dir);
       const danger = this.spikeDangerBounds(spike);
-      if (this.overlapAabb(hurtbox, danger)) {
+      if (this.overlapAabb(probe, danger)) {
         return spike;
       }
     }
 
     return null;
+  }
+
+  collidesWithSpikeAt(
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    vx: number,
+    vy: number,
+  ): boolean {
+    return this.collidesWithSpike({ x, y, w, h }, vx, vy) !== null;
   }
 
   private addSpec(spec: LevelEntitySpec): void {
@@ -364,6 +379,34 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
       case "right":
       default:
         return { x: spike.x, y: spike.y, w: h, h: spike.h };
+    }
+  }
+
+  private spikeProbeBounds(hurtbox: Aabb, dir: SpikeDirection): Aabb {
+    switch (dir) {
+      case "up":
+        return { x: hurtbox.x, y: hurtbox.y + hurtbox.h - 1, w: hurtbox.w, h: 1 };
+      case "down":
+        return { x: hurtbox.x, y: hurtbox.y, w: hurtbox.w, h: 1 };
+      case "left":
+        return { x: hurtbox.x, y: hurtbox.y, w: 1, h: hurtbox.h };
+      case "right":
+      default:
+        return { x: hurtbox.x + hurtbox.w - 1, y: hurtbox.y, w: 1, h: hurtbox.h };
+    }
+  }
+
+  private isSafeFromSpike(spike: SpikeEntity, vx: number, vy: number): boolean {
+    switch (spike.dir) {
+      case "up":
+        return vy < -SPIKE_EPSILON;
+      case "down":
+        return vy > SPIKE_EPSILON;
+      case "left":
+        return vx < -SPIKE_EPSILON;
+      case "right":
+      default:
+        return vx > SPIKE_EPSILON;
     }
   }
 

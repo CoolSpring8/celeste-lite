@@ -148,7 +148,18 @@ export class Player {
 
     if (this.dashRefillCooldownTimer > 0) {
       this.dashRefillCooldownTimer = Math.max(0, this.dashRefillCooldownTimer - dt);
-    } else if (this.onGround && this.dashesLeft < this.cfg.dash.maxDashes) {
+    } else if (
+      this.onGround &&
+      this.dashesLeft < this.cfg.dash.maxDashes &&
+      !this.world.collidesWithSpikeAt(
+        this.x,
+        this.getHurtboxTop(),
+        PLAYER_GEOMETRY.hitboxW,
+        this.getHurtboxH(),
+        this.vx,
+        this.vy,
+      )
+    ) {
       this.dashesLeft = this.cfg.dash.maxDashes;
     }
 
@@ -689,6 +700,7 @@ export class Player {
   }
 
   private enterClimb(): void {
+    this.leaveNormalState();
     this.setDucking(false);
     this.state = "grab";
     this.autoJump = false;
@@ -840,6 +852,7 @@ export class Player {
   }
 
   private startDash(): void {
+    this.leaveNormalState();
     this.consumeDashPress();
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
     this.dashCooldownTimer = this.cfg.dash.cooldown;
@@ -1377,7 +1390,12 @@ export class Player {
   }
 
   private climbHopBlockedCheck(): boolean {
-    return false;
+    return this.world.collideSolidAt(
+      this.x,
+      this.y - 6,
+      PLAYER_GEOMETRY.hitboxW,
+      this.getHitboxH(),
+    );
   }
 
   private solidAtPoint(px: number, py: number): boolean {
@@ -1449,6 +1467,17 @@ export class Player {
   private toNormalState(): void {
     this.state = "normal";
     this.maxFall = this.cfg.gravity.maxFall;
+  }
+
+  private leaveNormalState(): void {
+    if (this.state !== "normal" && this.state !== "duck" && this.state !== "dashAttack") {
+      return;
+    }
+
+    this.wallBoostTimer = 0;
+    this.wallSpeedRetentionTimer = 0;
+    this.hopWaitX = 0;
+    this.hopWaitXSpeed = 0;
   }
 
   private emit(effect: PlayerEffect): void {

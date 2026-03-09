@@ -162,7 +162,12 @@ export class GameScene extends Phaser.Scene {
 
       let stepEffects = this.player.consumeEffects();
       const fellOut = stepEffects.some((e) => e.type === "fell_out");
-      const spiked = this.world.collidesWithSpike(this.player.getHurtboxBounds()) !== null;
+      const stepSnapshot = this.player.getSnapshot();
+      const spiked = this.world.collidesWithSpike(
+        this.player.getHurtboxBounds(),
+        stepSnapshot.vx,
+        stepSnapshot.vy,
+      ) !== null;
       if (fellOut || spiked) {
         this.player.hardRespawn(this.spawnX, this.spawnY);
         this.world.resetTransientState();
