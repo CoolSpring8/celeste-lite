@@ -144,4 +144,56 @@ describe("Climb and dashless tech", () => {
     expect(exhausted?.stamina).toBe(0);
     expect(exhausted?.vy).toBeLessThan(0);
   });
+
+  test("climb loses hold when adjacent wall contact is gone even if the up-check regrab search can still find the wall above", () => {
+    const specs: LevelEntitySpec[] = [];
+    for (let row = 12; row <= 16; row++) {
+      specs.push({ kind: "solidTile", col: 20, row });
+    }
+    const world = buildWorld(specs);
+    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, 272);
+    const internals = player as unknown as {
+      state: string;
+      facing: 1 | -1;
+      refreshEnvironment: () => void;
+      climbCheck: (dir: number, yAdd?: number) => boolean;
+    };
+
+    internals.state = "grab";
+    internals.facing = 1;
+    internals.refreshEnvironment();
+
+    expect(internals.climbCheck(1)).toBeFalse();
+    expect(internals.climbCheck(1, -1)).toBeTrue();
+
+    const result = stepOnce(player, makeInput({ x: 1, grab: true }));
+    expect(result.snapshot.state).toBe("normal");
+  });
+
+  test("climb movement uses midpoint-to-even remainder rounding, so a 0.5px remainder does not move yet", () => {
+    const specs: LevelEntitySpec[] = [];
+    for (let row = 12; row <= 16; row++) {
+      specs.push({ kind: "solidTile", col: 20, row });
+    }
+    const world = buildWorld(specs);
+    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, 271);
+    const internals = player as unknown as {
+      state: string;
+      facing: 1 | -1;
+      refreshEnvironment: () => void;
+    };
+
+    internals.state = "grab";
+    internals.facing = 1;
+    internals.refreshEnvironment();
+
+    stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
+    stepOnce(player, makeInput({ x: 1, grab: true }));
+    stepOnce(player, makeInput({ x: 1, grab: true }));
+    stepOnce(player, makeInput({ x: 1, grab: true }));
+    const secondTap = stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
+
+    expect(secondTap.snapshot.state).toBe("grab");
+    expect(secondTap.snapshot.y).toBe(271);
+  });
 });

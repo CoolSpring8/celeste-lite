@@ -541,7 +541,14 @@ export class Player {
       return;
     }
 
-    if (!this.climbCheck(this.facing)) {
+    if (
+      !this.world.collideSolidAt(
+        this.x + this.facing,
+        this.y,
+        PLAYER_GEOMETRY.hitboxW,
+        this.getHitboxH(),
+      )
+    ) {
       if (this.vy < 0) {
         this.climbHop();
       }
@@ -919,7 +926,7 @@ export class Player {
 
   private moveX(amount: number): void {
     this.remX += amount;
-    let move = Math.round(this.remX);
+    let move = this.roundToEvenInt(this.remX);
     this.remX -= move;
     const h = this.getHitboxH();
 
@@ -966,7 +973,7 @@ export class Player {
 
   private moveY(amount: number): void {
     this.remY += amount;
-    let move = Math.round(this.remY);
+    let move = this.roundToEvenInt(this.remY);
     this.remY -= move;
     const h = this.getHitboxH();
 
@@ -1450,6 +1457,15 @@ export class Player {
 
   private lerp(from: number, to: number, t: number): number {
     return from + (to - from) * t;
+  }
+
+  private roundToEvenInt(value: number): number {
+    const floor = Math.floor(value);
+    const diff = value - floor;
+
+    if (diff < 0.5) return floor;
+    if (diff > 0.5) return floor + 1;
+    return floor % 2 === 0 ? floor : floor + 1;
   }
 
   private toNormalState(): void {
