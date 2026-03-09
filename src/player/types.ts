@@ -6,6 +6,7 @@ export interface InputState {
   jump: boolean;
   jumpPressed: boolean;
   jumpReleased: boolean;
+  dash: boolean;
   dashPressed: boolean;
   grab: boolean;
 }

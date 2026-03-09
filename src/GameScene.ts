@@ -300,6 +300,7 @@ export class GameScene extends Phaser.Scene {
     const jumpEdge = this.pendingJumpEdges.shift();
     const jumpPressed = jumpEdge === "down";
     const jumpReleased = jumpEdge === "up";
+    const dash = this.keys.dash.isDown;
     const dashPressed = this.pendingDashPresses > 0;
     if (dashPressed) this.pendingDashPresses--;
     const grab = this.keys.grab.isDown;
@@ -310,6 +311,7 @@ export class GameScene extends Phaser.Scene {
       jump,
       jumpPressed,
       jumpReleased,
+      dash,
       dashPressed,
       grab,
     };

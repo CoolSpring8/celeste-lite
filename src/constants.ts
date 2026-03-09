@@ -142,8 +142,8 @@ export interface PlayerConfig {
 
 export const PLAYER_CONFIG: PlayerConfig = {
   input: {
-    jumpBufferTime: 0.1,
-    dashBufferTime: 0.1,
+    jumpBufferTime: 0.08,
+    dashBufferTime: 0.08,
   },
   movement: {
     walkSpeed: 64,

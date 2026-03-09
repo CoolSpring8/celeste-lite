@@ -13,12 +13,16 @@ export interface StepResult {
 }
 
 export function makeInput(partial: Partial<InputState> = {}): InputState {
+  const jump = partial.jump ?? !!partial.jumpPressed;
+  const dash = partial.dash ?? !!partial.dashPressed;
+
   return {
     x: 0,
     y: 0,
-    jump: false,
+    jump,
     jumpPressed: false,
     jumpReleased: false,
+    dash,
     dashPressed: false,
     grab: false,
     ...partial,

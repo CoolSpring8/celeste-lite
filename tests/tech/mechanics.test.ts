@@ -83,6 +83,62 @@ describe("Core mechanics", () => {
     expect(lateBufferedJump).toBeFalse();
   });
 
+  test("jump buffer is cleared when jump is released before it becomes usable", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const startY = 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 80;
+
+    const probe = createPlayer(world, 120, startY);
+    let landingFrame = -1;
+    for (let frame = 0; frame < 120; frame++) {
+      const result = stepOnce(probe, makeInput());
+      if (result.snapshot.onGround) {
+        landingFrame = frame;
+        break;
+      }
+    }
+    expect(landingFrame).toBeGreaterThan(0);
+
+    const player = createPlayer(world, 120, startY);
+    const pressFrame = landingFrame - 5;
+    let bufferedJump = false;
+    for (let frame = 0; frame < 120; frame++) {
+      const result = stepOnce(player, makeInput({
+        jump: frame === pressFrame,
+        jumpPressed: frame === pressFrame,
+      }));
+      if (result.effects.some((effect) => effect.type === "jump")) {
+        bufferedJump = true;
+        break;
+      }
+    }
+
+    expect(bufferedJump).toBeFalse();
+  });
+
+  test("dash buffer is cleared when dash is released before dashing becomes possible", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 100, 20);
+    (player as unknown as { dashCooldownTimer: number }).dashCooldownTimer = 0.02;
+
+    stepOnce(player, makeInput({ dash: true, dashPressed: true }));
+    stepOnce(player, makeInput());
+
+    const released = stepOnce(player, makeInput());
+    expect(released.snapshot.state).not.toBe("dash");
+
+    const holding = createPlayerOnFloor(world, 100, 20);
+    (holding as unknown as { dashCooldownTimer: number }).dashCooldownTimer = 0.02;
+
+    stepOnce(holding, makeInput({ dash: true, dashPressed: true }));
+    const bufferedDash = stepOnce(holding, makeInput({ dash: true }));
+    expect(bufferedDash.snapshot.state).toBe("dash");
+    expect(bufferedDash.effects.some((effect) => effect.type === "dash_begin")).toBeTrue();
+  });
+
   test("fastfall raises max fall speed from 160 to 240", () => {
     const world = buildWorld([]);
 

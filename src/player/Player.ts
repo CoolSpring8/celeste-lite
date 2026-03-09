@@ -103,12 +103,16 @@ export class Player {
 
     if (input.jumpPressed) {
       this.jumpPressBufferTimer = this.cfg.input.jumpBufferTime;
+    } else if (!input.jump) {
+      this.jumpPressBufferTimer = 0;
     } else if (this.jumpPressBufferTimer > 0) {
       this.jumpPressBufferTimer = Math.max(0, this.jumpPressBufferTimer - dt);
     }
 
     if (input.dashPressed) {
       this.dashPressBufferTimer = this.cfg.input.dashBufferTime;
+    } else if (!input.dash) {
+      this.dashPressBufferTimer = 0;
     } else if (this.dashPressBufferTimer > 0) {
       this.dashPressBufferTimer = Math.max(0, this.dashPressBufferTimer - dt);
     }
