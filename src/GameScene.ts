@@ -41,6 +41,7 @@ export class GameScene extends Phaser.Scene {
   private accumulator = 0;
   private readonly fixedDt = 1 / 60;
   private readonly maxSteps = 6;
+  private freezeTimer = 0;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
@@ -140,7 +141,6 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const frameDt = Math.min(delta / 1000, 0.1);
-    this.accumulator += frameDt;
 
     if (this.keys.restart.isDown) {
       this.player.hardRespawn(this.spawnX, this.spawnY);
@@ -150,14 +150,27 @@ export class GameScene extends Phaser.Scene {
       this.forceCameraSnap();
       this.cameras.main.fadeIn(80, 10, 10, 20);
       this.accumulator = 0;
+      this.freezeTimer = 0;
     }
 
     const effects: PlayerEffect[] = [];
+
+    if (this.freezeTimer > 0) {
+      this.freezeTimer = Math.max(0, this.freezeTimer - frameDt);
+      const snapshot = this.player.getSnapshot();
+      this.playerView.render(snapshot, effects, frameDt);
+      this.updateCamera(snapshot, frameDt);
+      this.updateHUD(snapshot, effects);
+      return;
+    }
+
+    this.accumulator += frameDt;
     let steps = 0;
 
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
       this.world.update(this.fixedDt, this.time.now / 1000);
       this.player.update(this.fixedDt, this.gatherStepInput());
+      const freeze = this.player.consumeFreezeRequest();
       this.updateRefills();
 
       let stepEffects = this.player.consumeEffects();
@@ -186,6 +199,12 @@ export class GameScene extends Phaser.Scene {
       effects.push(...stepEffects);
       this.accumulator -= this.fixedDt;
       steps++;
+
+      if (freeze > 0) {
+        this.freezeTimer = Math.max(this.freezeTimer, freeze);
+        this.accumulator = 0;
+        break;
+      }
     }
 
     if (steps === this.maxSteps) {

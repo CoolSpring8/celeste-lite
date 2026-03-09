@@ -37,8 +37,8 @@ export class Player {
   private dashRefillCooldownTimer = 0;
   private dashTimer = 0;
   private dashAttackTimer = 0;
-  private dashStartupTimer = 0;
-  private dashStartupQueuedMotion = false;
+  private dashMotionPending = false;
+  private freezeRequestTimer = 0;
   private dashStartedOnGround = false;
   private dashJustStarted = false;
 
@@ -332,8 +332,8 @@ export class Player {
     this.dashRefillCooldownTimer = 0;
     this.dashTimer = 0;
     this.dashAttackTimer = 0;
-    this.dashStartupTimer = 0;
-    this.dashStartupQueuedMotion = false;
+    this.dashMotionPending = false;
+    this.freezeRequestTimer = 0;
     this.dashStartedOnGround = false;
     this.dashJustStarted = false;
 
@@ -620,9 +620,9 @@ export class Player {
   }
 
   private dashUpdate(dt: number): void {
-    if (this.isInDashStartup()) {
-      this.updateDashStartup(dt);
-      return;
+    if (this.dashMotionPending) {
+      this.dashMotionPending = false;
+      this.beginDashMotion();
     }
 
     if (this.dashDir.y === 0) {
@@ -664,53 +664,6 @@ export class Player {
     this.dashTimer -= dt;
     if (this.dashTimer <= 0) {
       this.finishDash();
-    }
-  }
-
-  private updateDashStartup(dt: number): void {
-    if (this.dashDir.y === 0) {
-      this.applyDashJumpThruNudge();
-
-      if (this.hasJumpPress() && this.canUnDuck() && this.jumpGraceTimer > 0) {
-        this.superJump();
-        return;
-      }
-    }
-
-    if (this.dashDir.x === 0 && this.dashDir.y < -0.9) {
-      if (this.hasJumpPress() && this.canUnDuck()) {
-        if (this.wallJumpCheck(1)) {
-          this.superWallJump(-1);
-          return;
-        }
-        if (this.wallJumpCheck(-1)) {
-          this.superWallJump(1);
-          return;
-        }
-      }
-    } else if (this.hasJumpPress() && this.canUnDuck()) {
-      if (this.wallJumpCheck(1)) {
-        this.wallJump(-1);
-        return;
-      }
-      if (this.wallJumpCheck(-1)) {
-        this.wallJump(1);
-        return;
-      }
-    }
-
-    if (this.dashStartupTimer > 0) {
-      this.dashStartupTimer = Math.max(0, this.dashStartupTimer - dt);
-      if (this.dashStartupTimer <= 0) {
-        // DashCoroutine yields one frame after the freeze before committing direction.
-        this.dashStartupQueuedMotion = true;
-      }
-      return;
-    }
-
-    if (this.dashStartupQueuedMotion) {
-      this.dashStartupQueuedMotion = false;
-      this.beginDashMotion();
     }
   }
 
@@ -915,8 +868,8 @@ export class Player {
       this.setDucking(false);
     }
 
-    this.dashStartupTimer = this.cfg.dash.freezeTime;
-    this.dashStartupQueuedMotion = false;
+    this.dashMotionPending = true;
+    this.requestFreeze(this.cfg.dash.freezeTime);
     this.dashJustStarted = false;
     this.state = "dash";
   }
@@ -1510,8 +1463,7 @@ export class Player {
   private toNormalState(): void {
     this.state = "normal";
     this.maxFall = this.cfg.gravity.maxFall;
-    this.dashStartupTimer = 0;
-    this.dashStartupQueuedMotion = false;
+    this.dashMotionPending = false;
   }
 
   private leaveNormalState(): void {
@@ -1529,7 +1481,13 @@ export class Player {
     this.effects.push(effect);
   }
 
-  private isInDashStartup(): boolean {
-    return this.state === "dash" && (this.dashStartupTimer > 0 || this.dashStartupQueuedMotion);
+  consumeFreezeRequest(): number {
+    const value = this.freezeRequestTimer;
+    this.freezeRequestTimer = 0;
+    return value;
+  }
+
+  private requestFreeze(duration: number): void {
+    this.freezeRequestTimer = Math.max(this.freezeRequestTimer, duration);
   }
 }

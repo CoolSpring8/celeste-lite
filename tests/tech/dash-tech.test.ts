@@ -48,6 +48,9 @@ describe("Dash tech", () => {
     stepOnce(player, makeInput({ x: 1, dashPressed: true }));
     stepOnce(player, makeInput({ x: 1 }));
     stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
     const jump = stepOnce(player, makeInput({ x: 1, jump: true, jumpPressed: true }));
 
     expect(jump.effects.some((effect) => effect.type === "super")).toBeTrue();
@@ -160,8 +163,8 @@ describe("Dash tech", () => {
     for (let frame = 0; frame < 25; frame++) {
       const result = stepOnce(player, makeInput({
         x: 1,
-        jump: frame === 7,
-        jumpPressed: frame === 7,
+        jump: frame === 11,
+        jumpPressed: frame === 11,
       }));
       const fx = result.effects.find((effect) => effect.type === "super");
       if (fx) {
