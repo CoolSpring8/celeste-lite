@@ -36,8 +36,9 @@ export class Player {
   private dashPressBufferTimer = 0;
   private dashRefillCooldownTimer = 0;
   private dashTimer = 0;
-  private dashFreezeTimer = 0;
   private dashAttackTimer = 0;
+  private dashStartupTimer = 0;
+  private dashStartupQueuedMotion = false;
   private dashStartedOnGround = false;
   private dashJustStarted = false;
 
@@ -187,24 +188,13 @@ export class Player {
       this.vy = lift.y;
     }
 
-    if (this.moveXInput !== 0 && this.state !== "grab" && this.state !== "freeze") {
+    if (this.moveXInput !== 0 && this.state !== "grab") {
       this.facing = this.moveXInput as 1 | -1;
     }
 
     this.lastAim = dashDirection(input.x, input.y, this.facing);
     this.updateWallSpeedRetention(dt);
     this.updateHopWait();
-
-    if (this.state === "freeze") {
-      this.dashFreezeTimer -= dt;
-      if (this.dashFreezeTimer > 0) {
-        this.refreshEnvironment();
-        this.wasOnGround = this.onGround;
-        return;
-      }
-
-      this.beginDashMotion();
-    }
 
     switch (this.state) {
       case "grab":
@@ -341,8 +331,9 @@ export class Player {
     this.dashPressBufferTimer = 0;
     this.dashRefillCooldownTimer = 0;
     this.dashTimer = 0;
-    this.dashFreezeTimer = 0;
     this.dashAttackTimer = 0;
+    this.dashStartupTimer = 0;
+    this.dashStartupQueuedMotion = false;
     this.dashStartedOnGround = false;
     this.dashJustStarted = false;
 
@@ -629,6 +620,11 @@ export class Player {
   }
 
   private dashUpdate(dt: number): void {
+    if (this.isInDashStartup()) {
+      this.updateDashStartup(dt);
+      return;
+    }
+
     if (this.dashDir.y === 0) {
       this.applyDashJumpThruNudge();
 
@@ -668,6 +664,53 @@ export class Player {
     this.dashTimer -= dt;
     if (this.dashTimer <= 0) {
       this.finishDash();
+    }
+  }
+
+  private updateDashStartup(dt: number): void {
+    if (this.dashDir.y === 0) {
+      this.applyDashJumpThruNudge();
+
+      if (this.hasJumpPress() && this.canUnDuck() && this.jumpGraceTimer > 0) {
+        this.superJump();
+        return;
+      }
+    }
+
+    if (this.dashDir.x === 0 && this.dashDir.y < -0.9) {
+      if (this.hasJumpPress() && this.canUnDuck()) {
+        if (this.wallJumpCheck(1)) {
+          this.superWallJump(-1);
+          return;
+        }
+        if (this.wallJumpCheck(-1)) {
+          this.superWallJump(1);
+          return;
+        }
+      }
+    } else if (this.hasJumpPress() && this.canUnDuck()) {
+      if (this.wallJumpCheck(1)) {
+        this.wallJump(-1);
+        return;
+      }
+      if (this.wallJumpCheck(-1)) {
+        this.wallJump(1);
+        return;
+      }
+    }
+
+    if (this.dashStartupTimer > 0) {
+      this.dashStartupTimer = Math.max(0, this.dashStartupTimer - dt);
+      if (this.dashStartupTimer <= 0) {
+        // DashCoroutine yields one frame after the freeze before committing direction.
+        this.dashStartupQueuedMotion = true;
+      }
+      return;
+    }
+
+    if (this.dashStartupQueuedMotion) {
+      this.dashStartupQueuedMotion = false;
+      this.beginDashMotion();
     }
   }
 
@@ -872,9 +915,10 @@ export class Player {
       this.setDucking(false);
     }
 
+    this.dashStartupTimer = this.cfg.dash.freezeTime;
+    this.dashStartupQueuedMotion = false;
     this.dashJustStarted = false;
-    this.state = "freeze";
-    this.dashFreezeTimer = this.cfg.dash.preDelay;
+    this.state = "dash";
   }
 
   private beginDashMotion(): void {
@@ -904,7 +948,6 @@ export class Player {
       this.applyDashSlide(false);
     }
 
-    this.state = "dash";
     this.dashTimer = this.cfg.dash.duration;
     this.dashJustStarted = true;
 
@@ -1467,6 +1510,8 @@ export class Player {
   private toNormalState(): void {
     this.state = "normal";
     this.maxFall = this.cfg.gravity.maxFall;
+    this.dashStartupTimer = 0;
+    this.dashStartupQueuedMotion = false;
   }
 
   private leaveNormalState(): void {
@@ -1482,5 +1527,9 @@ export class Player {
 
   private emit(effect: PlayerEffect): void {
     this.effects.push(effect);
+  }
+
+  private isInDashStartup(): boolean {
+    return this.state === "dash" && (this.dashStartupTimer > 0 || this.dashStartupQueuedMotion);
   }
 }

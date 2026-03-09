@@ -122,7 +122,7 @@ export interface PlayerConfig {
     endSpeed: number;
     endDashUpMult: number;
     duration: number;
-    preDelay: number;
+    freezeTime: number;
     cooldown: number;
     refillCooldown: number;
     hJumpThruNudge: number;
@@ -207,7 +207,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
     endSpeed: 160,
     endDashUpMult: 0.75,
     duration: 0.15,
-    preDelay: 1 / 60,
+    freezeTime: 0.05,
     cooldown: 0.2,
     refillCooldown: 0.1,
     hJumpThruNudge: 6,

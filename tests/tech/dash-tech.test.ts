@@ -12,6 +12,32 @@ import {
 } from "./harness.ts";
 
 describe("Dash tech", () => {
+  test("dash enters state immediately and commits direction on the 5th frame from press", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 100, 20);
+
+    stepOnce(player, makeInput());
+    const press = stepOnce(player, makeInput({ x: -1, dashPressed: true }));
+    expect(press.snapshot.state).toBe("dash");
+    expect(press.snapshot.vx).toBe(0);
+    expect(press.effects.some((effect) => effect.type === "dash_start")).toBeFalse();
+
+    for (let frame = 0; frame < 4; frame++) {
+      const startup = stepOnce(player, makeInput({ x: 1 }));
+      expect(startup.snapshot.state).toBe("dash");
+      expect(startup.snapshot.vx).toBe(0);
+      expect(startup.effects.some((effect) => effect.type === "dash_start")).toBeFalse();
+    }
+
+    const commit = stepOnce(player, makeInput({ x: 1 }));
+    const dashStart = commit.effects.find((effect) => effect.type === "dash_start");
+    expect(dashStart).toBeTruthy();
+    expect(dashStart?.dirX).toBeGreaterThan(0);
+    expect(commit.snapshot.vx).toBeGreaterThan(0);
+  });
+
   test("superdash gives 260 horizontal speed and full jump height", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
@@ -37,6 +63,9 @@ describe("Dash tech", () => {
 
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
     stepOnce(player, makeInput({ x: 1, y: 1 }));
     stepOnce(player, makeInput({ x: 1, y: 1 }));
     const jump = stepOnce(player, makeInput({ x: 1, y: 1, jump: true, jumpPressed: true }));
@@ -94,6 +123,9 @@ describe("Dash tech", () => {
     stepOnce(reverseSuper, makeInput({ x: -1, dashPressed: true }));
     stepOnce(reverseSuper, makeInput({ x: -1 }));
     stepOnce(reverseSuper, makeInput({ x: -1 }));
+    stepOnce(reverseSuper, makeInput({ x: -1 }));
+    stepOnce(reverseSuper, makeInput({ x: -1 }));
+    stepOnce(reverseSuper, makeInput({ x: -1 }));
     const superJump = stepOnce(reverseSuper, makeInput({ x: 1, jump: true, jumpPressed: true }));
     const superFx = superJump.effects.find((effect) => effect.type === "super");
 
@@ -103,6 +135,9 @@ describe("Dash tech", () => {
     const reverseHyper = createPlayerOnFloor(world, 240, 20);
     stepOnce(reverseHyper, makeInput());
     stepOnce(reverseHyper, makeInput({ x: -1, y: 1, dashPressed: true }));
+    stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
+    stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
+    stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
     stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
     stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
     const hyperJump = stepOnce(reverseHyper, makeInput({ x: 1, y: 1, jump: true, jumpPressed: true }));
@@ -148,6 +183,9 @@ describe("Dash tech", () => {
     player.dashesLeft = 1;
 
     stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
+    stepOnce(player, makeInput({ x: 1, y: 1 }));
     stepOnce(player, makeInput({ x: 1, y: 1 }));
     const slide = stepOnce(player, makeInput({ x: 1, y: 1 }));
 
@@ -196,6 +234,9 @@ describe("Dash tech", () => {
     stepOnce(player, makeInput({ y: -1, dashPressed: true }));
     stepOnce(player, makeInput({ y: -1 }));
     stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
     const wallbounce = stepOnce(player, makeInput({ x: 1, y: -1, jump: true, jumpPressed: true }));
 
     expect(wallbounce.effects.some((effect) => effect.type === "wall_jump")).toBeTrue();
@@ -207,6 +248,7 @@ describe("Dash tech", () => {
     expect(PLAYER_CONFIG.dash.speed).toBe(240);
     expect(PLAYER_CONFIG.dash.endSpeed).toBe(160);
     expect(PLAYER_CONFIG.dash.duration).toBe(0.15);
+    expect(PLAYER_CONFIG.dash.freezeTime).toBe(0.05);
     expect(PLAYER_CONFIG.dash.cooldown).toBe(0.2);
     expect(PLAYER_CONFIG.dash.refillCooldown).toBe(0.1);
     expect(PLAYER_CONFIG.dash.attackTime).toBe(0.3);

@@ -42,6 +42,9 @@ describe("Hazards", () => {
     stepOnce(player, makeInput({ y: -1, dashPressed: true }));
     stepOnce(player, makeInput({ y: -1 }));
     stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
+    stepOnce(player, makeInput({ y: -1 }));
     const wallbounce = stepOnce(player, makeInput({ x: 1, y: -1, jump: true, jumpPressed: true }));
 
     expect(wallbounce.effects.some((effect) => effect.type === "wall_jump")).toBeTrue();
