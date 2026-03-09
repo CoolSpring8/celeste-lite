@@ -28,6 +28,7 @@ interface CameraKillbox {
 }
 
 export class GameScene extends Phaser.Scene {
+  private readonly f32 = Math.fround;
   private player!: Player;
   private playerView!: PlayerView;
   private world!: EntityWorld;
@@ -141,7 +142,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    const frameDt = Math.min(delta / 1000, 0.1);
+    const frameDt = this.f32(Math.min(delta / 1000, 0.1));
 
     if (this.keys.restart.isDown) {
       this.player.hardRespawn(this.spawnX, this.spawnY);
@@ -157,7 +158,7 @@ export class GameScene extends Phaser.Scene {
     const effects: PlayerEffect[] = [];
 
     if (this.freezeTimer > 0) {
-      this.freezeTimer = Math.max(0, this.freezeTimer - frameDt);
+      this.freezeTimer = this.f32(Math.max(0, this.f32(this.freezeTimer - frameDt)));
       const snapshot = this.player.getSnapshot();
       this.playerView.render(snapshot, effects, frameDt);
       this.updateCamera(snapshot, frameDt);
@@ -202,7 +203,7 @@ export class GameScene extends Phaser.Scene {
       steps++;
 
       if (freeze > 0) {
-        this.freezeTimer = Math.max(this.freezeTimer, freeze);
+        this.freezeTimer = this.f32(Math.max(this.freezeTimer, freeze));
         this.accumulator = 0;
         break;
       }

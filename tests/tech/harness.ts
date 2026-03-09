@@ -5,6 +5,7 @@ import { Player } from "../../src/player/Player.ts";
 import type { InputState, PlayerEffect, PlayerSnapshot } from "../../src/player/types.ts";
 
 export const DT = 1 / 60;
+const f32 = Math.fround;
 const freezeTimers = new WeakMap<Player, number>();
 
 export interface StepResult {
@@ -60,7 +61,7 @@ export function step(player: Player, input: InputState, frames = 1): StepResult[
   for (let i = 0; i < frames; i++) {
     const freezeTimer = freezeTimers.get(player) ?? 0;
     if (freezeTimer > 0) {
-      freezeTimers.set(player, Math.max(0, freezeTimer - DT));
+      freezeTimers.set(player, f32(Math.max(0, f32(freezeTimer - f32(DT)))));
       out.push({
         snapshot: player.getSnapshot(),
         effects: [],
@@ -71,7 +72,7 @@ export function step(player: Player, input: InputState, frames = 1): StepResult[
     player.update(DT, input);
     const freeze = player.consumeFreezeRequest();
     if (freeze > 0) {
-      freezeTimers.set(player, freeze);
+      freezeTimers.set(player, f32(freeze));
     }
 
     out.push({

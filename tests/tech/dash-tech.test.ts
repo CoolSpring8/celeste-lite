@@ -12,7 +12,7 @@ import {
 } from "./harness.ts";
 
 describe("Dash tech", () => {
-  test("dash enters state immediately and commits direction on the 5th frame from press", () => {
+  test("dash enters state immediately and commits direction after the frozen startup", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
@@ -25,7 +25,7 @@ describe("Dash tech", () => {
     expect(press.effects.some((effect) => effect.type === "dash_begin")).toBeTrue();
     expect(press.effects.some((effect) => effect.type === "dash_start")).toBeFalse();
 
-    for (let frame = 0; frame < 4; frame++) {
+    for (let frame = 0; frame < 3; frame++) {
       const startup = stepOnce(player, makeInput({ x: 1 }));
       expect(startup.snapshot.state).toBe("dash");
       expect(startup.snapshot.vx).toBe(0);
@@ -59,6 +59,39 @@ describe("Dash tech", () => {
     expect(jump.snapshot.vy).toBeCloseTo(-105, 5);
   });
 
+  test("jump resolves before dash motion on the coroutine commit frame", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const probe = createPlayerOnFloor(world, 100, 20);
+
+    stepOnce(probe, makeInput());
+    stepOnce(probe, makeInput({ x: 1, y: 1, dashPressed: true }));
+
+    let commitFrame = -1;
+    for (let frame = 0; frame < 10; frame++) {
+      const result = stepOnce(probe, makeInput({ x: 1, y: 1 }));
+      if (result.effects.some((effect) => effect.type === "dash_start")) {
+        commitFrame = frame;
+        break;
+      }
+    }
+
+    expect(commitFrame).toBeGreaterThanOrEqual(0);
+
+    const player = createPlayerOnFloor(world, 100, 20);
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
+    step(player, makeInput({ x: 1, y: 1 }), commitFrame);
+    const jump = stepOnce(player, makeInput({ x: 1, y: 1, jump: true, jumpPressed: true }));
+
+    expect(jump.effects.some((effect) => effect.type === "super")).toBeTrue();
+    expect(jump.effects.some((effect) => effect.type === "hyper")).toBeFalse();
+    expect(jump.snapshot.state).toBe("normal");
+    expect(jump.snapshot.vx).toBeCloseTo(260, 5);
+    expect(jump.snapshot.vy).toBeCloseTo(-105, 5);
+  });
+
   test("hyperdash gives 325 horizontal speed and half jump height", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
@@ -83,24 +116,41 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayer(
+    const startX = 100;
+    const startY = 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 24;
+    const probe = createPlayer(
       world,
-      100,
-      20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 24,
+      startX,
+      startY,
     );
 
+    stepOnce(probe, makeInput());
+    stepOnce(probe, makeInput({ x: 1, y: 1, dashPressed: true }));
+
+    let landingFrame = -1;
+    for (let frame = 0; frame < 40; frame++) {
+      const result = stepOnce(probe, makeInput({ x: 1, y: 1 }));
+      if (result.snapshot.onGround) {
+        landingFrame = frame;
+        break;
+      }
+    }
+
+    expect(landingFrame).toBeGreaterThan(0);
+
+    const player = createPlayer(world, startX, startY);
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
 
     let wavedash = null as ReturnType<typeof player.getSnapshot> | null;
     let extended = false;
     for (let frame = 0; frame < 30; frame++) {
-      const jumpHeld = frame >= 7;
+      const jumpHeld = frame >= Math.max(0, landingFrame - 1);
       const result = stepOnce(player, makeInput({
         x: 1,
         y: 1,
         jump: jumpHeld,
-        jumpPressed: frame === 7,
+        jumpPressed: frame === Math.max(0, landingFrame - 1),
       }));
       const fx = result.effects.find((effect) => effect.type === "wavedash");
       if (fx) {

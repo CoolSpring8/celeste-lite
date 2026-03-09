@@ -6,6 +6,7 @@ import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
 
 const EPSILON = 0.0001;
+const f32 = Math.fround;
 
 export class Player {
   x: number;
@@ -38,9 +39,10 @@ export class Player {
   private dashTimer = 0;
   private dashAttackTimer = 0;
   private dashMotionPending = false;
+  private dashCoroutinePrimed = false;
+  private dashEndPending = false;
   private freezeRequestTimer = 0;
   private dashStartedOnGround = false;
-  private dashJustStarted = false;
 
   private wallSlideTimer: number;
   private wallSlideDir = 0;
@@ -205,7 +207,7 @@ export class Player {
         this.climbUpdate(dt, input);
         break;
       case "dash":
-        this.dashUpdate(dt);
+        this.dashUpdate();
         break;
       case "normal":
       case "duck":
@@ -214,6 +216,8 @@ export class Player {
         this.normalUpdate(dt, input);
         break;
     }
+
+    this.updateDashCoroutine(dt);
 
     // Canonical order: pre-physics helper nudges before main movement step.
     this.applyJumpThruAssist(dt);
@@ -337,9 +341,10 @@ export class Player {
     this.dashTimer = 0;
     this.dashAttackTimer = 0;
     this.dashMotionPending = false;
+    this.dashCoroutinePrimed = false;
+    this.dashEndPending = false;
     this.freezeRequestTimer = 0;
     this.dashStartedOnGround = false;
-    this.dashJustStarted = false;
 
     this.wallSlideTimer = this.cfg.gravity.wallSlideTime;
     this.wallSlideDir = 0;
@@ -622,12 +627,7 @@ export class Player {
     this.remX = 0;
   }
 
-  private dashUpdate(dt: number): void {
-    if (this.dashMotionPending) {
-      this.dashMotionPending = false;
-      this.beginDashMotion();
-    }
-
+  private dashUpdate(): void {
     if (this.dashDir.y === 0) {
       this.applyDashJumpThruNudge();
 
@@ -657,16 +657,6 @@ export class Player {
         this.wallJump(1);
         return;
       }
-    }
-
-    if (this.dashJustStarted) {
-      this.dashJustStarted = false;
-      return;
-    }
-
-    this.dashTimer -= dt;
-    if (this.dashTimer <= 0) {
-      this.finishDash();
     }
   }
 
@@ -873,8 +863,9 @@ export class Player {
 
     this.emit({ type: "dash_begin" });
     this.dashMotionPending = true;
+    this.dashCoroutinePrimed = false;
+    this.dashEndPending = false;
     this.requestFreeze(this.cfg.dash.freezeTime);
-    this.dashJustStarted = false;
     this.state = "dash";
   }
 
@@ -905,8 +896,7 @@ export class Player {
       this.applyDashSlide(false);
     }
 
-    this.dashTimer = this.cfg.dash.duration;
-    this.dashJustStarted = true;
+    this.dashTimer = f32(this.cfg.dash.duration);
 
     this.emit({ type: "dash_start", dirX: this.dashDir.x, dirY: this.dashDir.y });
   }
@@ -924,9 +914,7 @@ export class Player {
       this.vy *= this.cfg.dash.endDashUpMult;
     }
 
-    this.dashJustStarted = false;
     this.toNormalState();
-    this.dashTimer = 0;
   }
 
   private moveX(amount: number): void {
@@ -1465,9 +1453,15 @@ export class Player {
   }
 
   private toNormalState(): void {
+    if (this.state === "grab") {
+      this.wallSpeedRetentionTimer = 0;
+    }
     this.state = "normal";
     this.maxFall = this.cfg.gravity.maxFall;
+    this.dashTimer = 0;
     this.dashMotionPending = false;
+    this.dashCoroutinePrimed = false;
+    this.dashEndPending = false;
   }
 
   private leaveNormalState(): void {
@@ -1492,6 +1486,36 @@ export class Player {
   }
 
   private requestFreeze(duration: number): void {
-    this.freezeRequestTimer = Math.max(this.freezeRequestTimer, duration);
+    this.freezeRequestTimer = f32(Math.max(this.freezeRequestTimer, duration));
+  }
+
+  private updateDashCoroutine(dt: number): void {
+    if (this.state !== "dash") {
+      return;
+    }
+
+    if (!this.dashCoroutinePrimed) {
+      this.dashCoroutinePrimed = true;
+      return;
+    }
+
+    if (this.dashMotionPending) {
+      this.dashMotionPending = false;
+      this.beginDashMotion();
+      return;
+    }
+
+    if (this.dashTimer > 0) {
+      this.dashTimer = f32(Math.max(0, f32(this.dashTimer - f32(dt))));
+      if (this.dashTimer <= 0) {
+        this.dashEndPending = true;
+      }
+      return;
+    }
+
+    if (this.dashEndPending) {
+      this.dashEndPending = false;
+      this.finishDash();
+    }
   }
 }

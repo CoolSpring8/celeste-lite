@@ -35,7 +35,7 @@ describe("Core mechanics", () => {
     expect(lateJump.snapshot.vy).toBeGreaterThanOrEqual(0);
   });
 
-  test("jump buffering remains available for 5 ticks before landing and expires on the 6th", () => {
+  test("jump buffering is valid 3 frames before the first grounded snapshot and expires 4 frames early", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
@@ -53,7 +53,9 @@ describe("Core mechanics", () => {
     expect(landingFrame).toBeGreaterThan(0);
 
     const withinWindow = createPlayer(world, 120, startY);
-    const pressFrame = landingFrame - 5;
+    // The buffered jump resolves on the first update after the landing step, so the
+    // "4 frames early" Celeste window appears as 3 frames before the first grounded snapshot.
+    const pressFrame = Math.max(0, landingFrame - 3);
     let bufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(withinWindow, makeInput({
@@ -68,7 +70,7 @@ describe("Core mechanics", () => {
     expect(bufferedJump).toBeTrue();
 
     const afterWindow = createPlayer(world, 120, startY);
-    const latePressFrame = landingFrame - 6;
+    const latePressFrame = Math.max(0, landingFrame - 4);
     let lateBufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(afterWindow, makeInput({
