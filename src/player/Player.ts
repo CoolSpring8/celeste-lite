@@ -610,7 +610,6 @@ export class Player {
 
     if (this.stamina <= 0) {
       this.applyLiftBoost();
-      this.vy = Math.max(this.vy, this.cfg.climb.exhaustedSlipSpeed);
       this.toNormalState();
       return;
     }

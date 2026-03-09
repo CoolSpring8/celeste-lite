@@ -114,4 +114,34 @@ describe("Climb and dashless tech", () => {
     expect(refunded).toBeTrue();
     expect(player.getSnapshot().vx).toBeCloseTo(240, 5);
   });
+
+  test("running out of stamina while climbing exits without forcing slip speed", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 26);
+    for (let row = 0; row <= 25; row++) {
+      specs.push({ kind: "solidTile", col: 10, row });
+    }
+    const world = buildWorld(specs);
+    const player = createPlayer(
+      world,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
+      22 * WORLD.tile,
+    );
+
+    stepOnce(player, makeInput({ grab: true }));
+    expect(player.getSnapshot().state).toBe("grab");
+
+    let exhausted: ReturnType<typeof player.getSnapshot> | null = null;
+    for (let frame = 0; frame < 240; frame++) {
+      const result = stepOnce(player, makeInput({ grab: true, y: -1 }));
+      if (result.snapshot.state !== "grab") {
+        exhausted = result.snapshot;
+        break;
+      }
+    }
+
+    expect(exhausted).toBeTruthy();
+    expect(exhausted?.stamina).toBe(0);
+    expect(exhausted?.vy).toBeLessThan(0);
+  });
 });

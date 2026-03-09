@@ -118,7 +118,6 @@ export interface PlayerConfig {
     climbHopX: number;
     climbHopForceTime: number;
     climbJumpBoostTime: number;
-    exhaustedSlipSpeed: number;
   };
   dash: {
     speed: number;
@@ -203,7 +202,6 @@ export const PLAYER_CONFIG: PlayerConfig = {
     climbHopX: 100,
     climbHopForceTime: 0.2,
     climbJumpBoostTime: 0.2,
-    exhaustedSlipSpeed: 30,
   },
   dash: {
     speed: 240,
