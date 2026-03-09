@@ -11,6 +11,7 @@ export interface InputState {
 }
 
 export type PlayerEffectType =
+  | "dash_begin"
   | "super"
   | "hyper"
   | "wavedash"

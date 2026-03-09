@@ -22,6 +22,7 @@ describe("Dash tech", () => {
     const press = stepOnce(player, makeInput({ x: -1, dashPressed: true }));
     expect(press.snapshot.state).toBe("dash");
     expect(press.snapshot.vx).toBe(0);
+    expect(press.effects.some((effect) => effect.type === "dash_begin")).toBeTrue();
     expect(press.effects.some((effect) => effect.type === "dash_start")).toBeFalse();
 
     for (let frame = 0; frame < 4; frame++) {

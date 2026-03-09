@@ -54,6 +54,7 @@ export class GameScene extends Phaser.Scene {
   private cameraAnchorIgnoreY = false;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
+  private cameraImpulse = new Phaser.Math.Vector2(0, 0);
   private cameraLockMode: CameraLockMode = "none";
   private cameraUpwardMaxY = Number.POSITIVE_INFINITY;
   private cameraKillboxes: CameraKillbox[] = [];
@@ -263,6 +264,12 @@ export class GameScene extends Phaser.Scene {
   forceCameraSnap(): void {
     this.forceCameraSnapNextFrame = true;
     this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
+    this.cameraImpulse.set(0, 0);
+  }
+
+  addCameraImpulse(x: number, y: number): void {
+    this.cameraImpulse.x = Phaser.Math.Clamp(this.cameraImpulse.x + x, -8, 8);
+    this.cameraImpulse.y = Phaser.Math.Clamp(this.cameraImpulse.y + y, -8, 8);
   }
 
   shutdown(): void {
@@ -340,7 +347,9 @@ export class GameScene extends Phaser.Scene {
       nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
     }
 
-    camera.setScroll(nextX, nextY);
+    camera.setScroll(nextX + this.cameraImpulse.x, nextY + this.cameraImpulse.y);
+    const impulseDecay = Math.exp(-20 * dt);
+    this.cameraImpulse.scale(impulseDecay);
     this.forceCameraSnapNextFrame = false;
   }
 

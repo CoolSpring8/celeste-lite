@@ -50,6 +50,9 @@ export const PLAYER_VISUALS = {
   dashParticleSpeedMin: 10,
   dashParticleSpeedMax: 20,
   dashParticleGravityY: 10,
+  dashSlashLife: 0.06,
+  dashSlashLength: 12,
+  dashSlashThickness: 1,
   tiredFlashInterval: 0.05,
 } as const;
 

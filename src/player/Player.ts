@@ -868,6 +868,7 @@ export class Player {
       this.setDucking(false);
     }
 
+    this.emit({ type: "dash_begin" });
     this.dashMotionPending = true;
     this.requestFreeze(this.cfg.dash.freezeTime);
     this.dashJustStarted = false;

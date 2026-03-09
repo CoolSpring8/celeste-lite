@@ -11,10 +11,12 @@ interface Afterimage {
 export class PlayerView {
   private scene: Phaser.Scene;
   private body: Phaser.GameObjects.Rectangle;
+  private dashSlash: Phaser.GameObjects.Rectangle;
   private afterimages: Afterimage[] = [];
   private afterimagePool: Phaser.GameObjects.Rectangle[] = [];
   private trailTimer = 0;
   private dashParticleTimer = 0;
+  private dashSlashTimer = 0;
   private wallDustTimer = 0;
   private dashTrailColor: number = COLORS.playerOneDash;
   private dashDirX = 1;
@@ -36,6 +38,18 @@ export class PlayerView {
       .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.playerOneDash)
       .setOrigin(0.5, 1)
       .setDepth(5);
+
+    this.dashSlash = this.scene.add
+      .rectangle(
+        0,
+        0,
+        PLAYER_VISUALS.dashSlashLength,
+        PLAYER_VISUALS.dashSlashThickness,
+        0xffffff,
+      )
+      .setOrigin(0.5)
+      .setDepth(6)
+      .setVisible(false);
 
     this.dashEmitter = this.scene.add.particles(0, 0, "pixel", {
       speed: { min: PLAYER_VISUALS.dashParticleSpeedMin, max: PLAYER_VISUALS.dashParticleSpeedMax },
@@ -73,6 +87,7 @@ export class PlayerView {
     this.processDuckStateTransition(snapshot);
     this.relaxScale(dt);
     this.updateAfterimages(dt);
+    this.updateDashSlash(dt);
     this.updateTrail(snapshot, dt);
 
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
@@ -89,6 +104,7 @@ export class PlayerView {
 
   destroy(): void {
     this.body.destroy();
+    this.dashSlash.destroy();
     this.dashEmitter.destroy();
     this.wallEmitter.destroy();
 
@@ -106,6 +122,11 @@ export class PlayerView {
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
     for (const effect of effects) {
       switch (effect.type) {
+        case "dash_begin":
+          this.captureDashVisuals(snapshot, effect);
+          this.emitDashBeginBurst(snapshot);
+          this.squash(0.72, 1.28);
+          break;
         case "super":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
           this.emitJumpDust(snapshot, PLAYER_VISUALS.jumpDustCount);
@@ -131,7 +152,9 @@ export class PlayerView {
           break;
         case "dash_start":
           this.captureDashVisuals(snapshot, effect);
-          this.scene.cameras.main.shake(50, 0.002);
+          this.emitDashCommitBurst(snapshot);
+          this.emitDashSlash(snapshot);
+          this.addCameraImpulse(this.dashDirX * 3, this.dashDirY * 3);
           break;
         case "wall_bounce":
           this.squash(0.55, 1.5);
@@ -172,7 +195,10 @@ export class PlayerView {
       }
     }
 
-    if (snapshot.state !== "dash") {
+    const dashActive = snapshot.state === "dash" &&
+      (Math.abs(snapshot.vx) > 0.001 || Math.abs(snapshot.vy) > 0.001);
+
+    if (!dashActive) {
       if (this.prevState === "dash") {
         this.spawnAfterimage(snapshot, this.dashTrailColor);
       }
@@ -217,6 +243,21 @@ export class PlayerView {
 
       a.rect.alpha = a.life / a.maxLife;
     }
+  }
+
+  private updateDashSlash(dt: number): void {
+    if (this.dashSlashTimer <= 0) {
+      this.dashSlash.setVisible(false);
+      return;
+    }
+
+    this.dashSlashTimer = Math.max(0, this.dashSlashTimer - dt);
+    const life = PLAYER_VISUALS.dashSlashLife;
+    const t = life > 0 ? this.dashSlashTimer / life : 0;
+    this.dashSlash
+      .setVisible(true)
+      .setAlpha(0.85 * t)
+      .setScale(1 + (1 - t) * 0.35, Phaser.Math.Linear(1.1, 0.75, 1 - t));
   }
 
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
@@ -375,6 +416,44 @@ export class PlayerView {
     const yBias = this.dashDirY * baseSpeed;
     this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
     this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
+  }
+
+  private emitDashBeginBurst(snapshot: PlayerSnapshot): void {
+    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    this.dashEmitter.speedX = { min: -90, max: 90 };
+    this.dashEmitter.speedY = { min: -90, max: 90 };
+    this.dashEmitter.emitParticleAt(cx, cy, 1);
+  }
+
+  private emitDashCommitBurst(snapshot: PlayerSnapshot): void {
+    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    const baseSpeed = 120;
+    const spread = 45;
+    const xBias = this.dashDirX * baseSpeed;
+    const yBias = this.dashDirY * baseSpeed;
+    this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
+    this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
+    this.dashEmitter.emitParticleAt(cx, cy, 2);
+  }
+
+  private emitDashSlash(snapshot: PlayerSnapshot): void {
+    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
+    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    this.dashSlashTimer = PLAYER_VISUALS.dashSlashLife;
+    this.dashSlash
+      .setPosition(cx, cy)
+      .setAngle(Phaser.Math.RadToDeg(Math.atan2(this.dashDirY, this.dashDirX)))
+      .setFillStyle(COLORS.dust, 1)
+      .setAlpha(0.85)
+      .setScale(1, 1.1)
+      .setVisible(true);
+  }
+
+  private addCameraImpulse(x: number, y: number): void {
+    const scene = this.scene as Phaser.Scene & { addCameraImpulse?: (ix: number, iy: number) => void };
+    scene.addCameraImpulse?.(x, y);
   }
 
   private ensurePixelTexture(): void {
