@@ -4,7 +4,7 @@ import type { LevelEntitySpec } from "../../src/entities/types.ts";
 import { Player } from "../../src/player/Player.ts";
 import type { InputState, PlayerEffect, PlayerSnapshot } from "../../src/player/types.ts";
 
-export const DT = 1 / 120;
+export const DT = 1 / 60;
 
 export interface StepResult {
   snapshot: PlayerSnapshot;

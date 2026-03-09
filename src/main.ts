@@ -8,6 +8,10 @@ const config: Phaser.Types.Core.GameConfig = {
   height: VIEWPORT.height,
   backgroundColor: `#${COLORS.background.toString(16).padStart(6, "0")}`,
   pixelArt: true,
+  fps: {
+    target: 60,
+    forceSetTimeOut: true,
+  },
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,

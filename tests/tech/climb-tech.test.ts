@@ -77,7 +77,7 @@ describe("Climb and dashless tech", () => {
     stepOnce(player, makeInput({ x: -1 }));
     const wallboost = player.getSnapshot();
     expect(wallboost.stamina).toBeCloseTo(110, 5);
-    expect(wallboost.vx).toBeCloseTo(-128, 0);
+    expect(wallboost.vx).toBeCloseTo(-125.6666666667, 5);
   });
 
   test("wall speed retention refunds stored speed when the path clears inside the retention window", () => {

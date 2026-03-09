@@ -39,7 +39,7 @@ export class GameScene extends Phaser.Scene {
   private pendingDashPresses = 0;
 
   private accumulator = 0;
-  private readonly fixedDt = 1 / 120;
+  private readonly fixedDt = 1 / 60;
   private readonly maxSteps = 6;
 
   private tileGfx!: Phaser.GameObjects.Graphics;

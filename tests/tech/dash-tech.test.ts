@@ -125,8 +125,8 @@ describe("Dash tech", () => {
     for (let frame = 0; frame < 25; frame++) {
       const result = stepOnce(player, makeInput({
         x: 1,
-        jump: frame === 14,
-        jumpPressed: frame === 14,
+        jump: frame === 7,
+        jumpPressed: frame === 7,
       }));
       const fx = result.effects.find((effect) => effect.type === "super");
       if (fx) {

@@ -11,7 +11,7 @@ import {
 } from "./harness.ts";
 
 describe("Core mechanics", () => {
-  test("coyote jump remains available for 11 ticks at 120 Hz and expires on the 12th", () => {
+  test("coyote jump remains available for 5 ticks at 60 Hz and expires on the 6th", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20, 0, 9);
     const world = buildWorld(specs);
@@ -19,7 +19,7 @@ describe("Core mechanics", () => {
     const withinWindow = createPlayerOnFloor(world, 40, 20);
     stepOnce(withinWindow, makeInput());
     withinWindow.x = 220;
-    for (let frame = 0; frame < 11; frame++) {
+    for (let frame = 0; frame < 5; frame++) {
       stepOnce(withinWindow, makeInput());
     }
     const coyoteJump = stepOnce(withinWindow, makeInput({ jump: true, jumpPressed: true }));
@@ -28,14 +28,14 @@ describe("Core mechanics", () => {
     const afterWindow = createPlayerOnFloor(world, 40, 20);
     stepOnce(afterWindow, makeInput());
     afterWindow.x = 220;
-    for (let frame = 0; frame < 12; frame++) {
+    for (let frame = 0; frame < 6; frame++) {
       stepOnce(afterWindow, makeInput());
     }
     const lateJump = stepOnce(afterWindow, makeInput({ jump: true, jumpPressed: true }));
     expect(lateJump.snapshot.vy).toBeGreaterThanOrEqual(0);
   });
 
-  test("jump buffering remains available for 11 ticks before landing and expires on the 12th", () => {
+  test("jump buffering remains available for 5 ticks before landing and expires on the 6th", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
@@ -53,7 +53,7 @@ describe("Core mechanics", () => {
     expect(landingFrame).toBeGreaterThan(0);
 
     const withinWindow = createPlayer(world, 120, startY);
-    const pressFrame = landingFrame - 11;
+    const pressFrame = landingFrame - 5;
     let bufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(withinWindow, makeInput({
@@ -68,7 +68,7 @@ describe("Core mechanics", () => {
     expect(bufferedJump).toBeTrue();
 
     const afterWindow = createPlayer(world, 120, startY);
-    const latePressFrame = landingFrame - 12;
+    const latePressFrame = landingFrame - 6;
     let lateBufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(afterWindow, makeInput({
