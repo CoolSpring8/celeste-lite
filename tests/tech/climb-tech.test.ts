@@ -170,7 +170,7 @@ describe("Climb and dashless tech", () => {
     expect(result.snapshot.state).toBe("normal");
   });
 
-  test("climb movement uses midpoint-to-even remainder rounding, so a 0.5px remainder does not move yet", () => {
+  test("climb movement uses float32 remainders, so two quarter-pixel taps cross 0.5 and advance on the second tap", () => {
     const specs: LevelEntitySpec[] = [];
     for (let row = 12; row <= 16; row++) {
       specs.push({ kind: "solidTile", col: 20, row });
@@ -194,6 +194,6 @@ describe("Climb and dashless tech", () => {
     const secondTap = stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
 
     expect(secondTap.snapshot.state).toBe("grab");
-    expect(secondTap.snapshot.y).toBe(271);
+    expect(secondTap.snapshot.y).toBe(272);
   });
 });
