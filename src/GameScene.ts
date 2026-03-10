@@ -18,7 +18,17 @@ interface RefillView {
 type CameraLockMode = "none" | "finalBoss" | "boostSequence";
 
 const CAMERA_SMOOTH_BASE = 0.01;
+const CAMERA_SETTLE_EPSILON = 0.75;
 const CAMERA_BOOST_UPWARD_MAX_Y_OFFSET = 48;
+const CAMERA_FOOT_ANCHOR_Y = Math.round(VIEWPORT.height * 0.46);
+const CAMERA_PLAYER_MARGIN_X = 12;
+const CAMERA_PLAYER_MARGIN_TOP = 18;
+const CAMERA_PLAYER_MARGIN_BOTTOM = 20;
+const TILE_EDGE_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.125));
+const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
+const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
+const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
+const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 
 interface CameraKillbox {
   x: number;
@@ -46,6 +56,7 @@ export class GameScene extends Phaser.Scene {
 
   private tileGfx!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
+  private helpText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private cameraOffset = new Phaser.Math.Vector2(0, 0);
@@ -55,7 +66,6 @@ export class GameScene extends Phaser.Scene {
   private cameraAnchorIgnoreY = false;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
-  private cameraImpulse = new Phaser.Math.Vector2(0, 0);
   private cameraLockMode: CameraLockMode = "none";
   private cameraUpwardMaxY = Number.POSITIVE_INFINITY;
   private cameraKillboxes: CameraKillbox[] = [];
@@ -119,21 +129,26 @@ export class GameScene extends Phaser.Scene {
     this.hudText = this.add
       .text(8, 8, "", {
         fontFamily: "monospace",
-        fontSize: "13px",
+        fontSize: "10px",
         color: "#8888bb",
+        lineSpacing: -2,
+        wordWrap: { width: VIEWPORT.width - 16, useAdvancedWrap: true },
       })
       .setDepth(10)
       .setScrollFactor(0);
 
-    this.add
+    this.helpText = this.add
       .text(
         VIEWPORT.width - 8,
         VIEWPORT.height - 8,
-        "← → ↑ ↓  |  C: Jump  |  X: Dash  |  Z: Grab  |  R: Reset",
+        "Move: arrows / WASD\nC jump  X dash  Z grab  R reset",
         {
           fontFamily: "monospace",
-          fontSize: "11px",
-          color: "#444466",
+          fontSize: "9px",
+          color: "#666699",
+          align: "right",
+          lineSpacing: -2,
+          wordWrap: { width: 168, useAdvancedWrap: true },
         },
       )
       .setOrigin(1, 1)
@@ -265,12 +280,12 @@ export class GameScene extends Phaser.Scene {
   forceCameraSnap(): void {
     this.forceCameraSnapNextFrame = true;
     this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
-    this.cameraImpulse.set(0, 0);
   }
 
   addCameraImpulse(x: number, y: number): void {
-    this.cameraImpulse.x = Phaser.Math.Clamp(this.cameraImpulse.x + x, -8, 8);
-    this.cameraImpulse.y = Phaser.Math.Clamp(this.cameraImpulse.y + y, -8, 8);
+    if (x === 0 && y === 0) return;
+    const intensity = Phaser.Math.Clamp(Math.hypot(x, y) * 0.00045, 0.0006, 0.0018);
+    this.cameras.main.shake(45, intensity);
   }
 
   shutdown(): void {
@@ -340,6 +355,8 @@ export class GameScene extends Phaser.Scene {
   private updateCamera(snapshot: ReturnType<Player["getSnapshot"]>, dt: number): void {
     const camera = this.cameras.main;
     const target = this.computeCameraTarget(snapshot, camera);
+    const maxX = Math.max(0, this.world.cols * WORLD.tile - VIEWPORT.width);
+    const maxY = Math.max(0, this.world.rows * WORLD.tile - VIEWPORT.height);
 
     let nextX = target.x;
     let nextY = target.y;
@@ -348,20 +365,50 @@ export class GameScene extends Phaser.Scene {
       const smooth = 1 - Math.pow(CAMERA_SMOOTH_BASE, dt);
       nextX = camera.scrollX + (target.x - camera.scrollX) * smooth;
       nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
+      if (Math.abs(target.x - nextX) < CAMERA_SETTLE_EPSILON) {
+        nextX = target.x;
+      }
+      if (Math.abs(target.y - nextY) < CAMERA_SETTLE_EPSILON) {
+        nextY = target.y;
+      }
     }
+    nextX = this.keepPlayerHorizontallyVisible(snapshot, nextX, maxX);
+    nextY = this.keepPlayerVerticallyVisible(snapshot, nextY, maxY);
 
-    camera.setScroll(nextX + this.cameraImpulse.x, nextY + this.cameraImpulse.y);
-    const impulseDecay = Math.exp(-20 * dt);
-    this.cameraImpulse.scale(impulseDecay);
+    camera.setScroll(nextX, nextY);
     this.forceCameraSnapNextFrame = false;
+  }
+
+  private keepPlayerHorizontallyVisible(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    scrollX: number,
+    maxX: number,
+  ): number {
+    const minScrollX = snapshot.x + PLAYER_GEOMETRY.hitboxW - (VIEWPORT.width - CAMERA_PLAYER_MARGIN_X);
+    const maxScrollX = snapshot.x - CAMERA_PLAYER_MARGIN_X;
+    return Phaser.Math.Clamp(Phaser.Math.Clamp(scrollX, minScrollX, maxScrollX), 0, maxX);
+  }
+
+  private keepPlayerVerticallyVisible(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    scrollY: number,
+    maxY: number,
+  ): number {
+    const playerTop = snapshot.y;
+    const playerBottom = snapshot.y + snapshot.hitboxH;
+    const minScrollY = playerBottom - (VIEWPORT.height - CAMERA_PLAYER_MARGIN_BOTTOM);
+    const maxScrollY = playerTop - CAMERA_PLAYER_MARGIN_TOP;
+    return Phaser.Math.Clamp(Phaser.Math.Clamp(scrollY, minScrollY, maxScrollY), 0, maxY);
   }
 
   private computeCameraTarget(
     snapshot: ReturnType<Player["getSnapshot"]>,
     camera: Phaser.Cameras.Scene2D.Camera,
   ): Phaser.Math.Vector2 {
-    let targetX = snapshot.x + PLAYER_GEOMETRY.hitboxW * 0.5 - VIEWPORT.width * 0.5;
-    let targetY = snapshot.y + snapshot.hitboxH * 0.5 - VIEWPORT.height * 0.5;
+    const centerX = snapshot.x + PLAYER_GEOMETRY.hitboxW * 0.5;
+    const feetY = snapshot.y + snapshot.hitboxH;
+    let targetX = centerX - VIEWPORT.width * 0.5;
+    let targetY = feetY - CAMERA_FOOT_ANCHOR_Y;
 
     targetX += this.cameraOffset.x;
     targetY += this.cameraOffset.y;
@@ -441,15 +488,15 @@ export class GameScene extends Phaser.Scene {
 
         if (tile === TILE_JUMP_THROUGH) {
           g.fillStyle(COLORS.tile, 1);
-          g.fillRect(x, y + 2, WORLD.tile, 3);
+          g.fillRect(x, y + JUMP_THRU_EDGE_HEIGHT, WORLD.tile, JUMP_THRU_BODY_HEIGHT);
           g.fillStyle(COLORS.tileEdge, 1);
-          g.fillRect(x, y, WORLD.tile, 2);
+          g.fillRect(x, y, WORLD.tile, JUMP_THRU_EDGE_HEIGHT);
         } else {
           g.fillStyle(COLORS.tile, 1);
           g.fillRect(x, y, WORLD.tile, WORLD.tile);
           if (tileAt(this.world, c, r - 1) === 0) {
             g.fillStyle(COLORS.tileEdge, 1);
-            g.fillRect(x, y, WORLD.tile, 2);
+            g.fillRect(x, y, WORLD.tile, TILE_EDGE_HEIGHT);
           }
         }
       }
@@ -471,10 +518,10 @@ export class GameScene extends Phaser.Scene {
     for (const spawn of spawns) {
       const color = this.refillColor(spawn.type);
       const glow = this.add
-        .ellipse(spawn.x, spawn.y, 14, 14, color, 0.16)
+        .ellipse(spawn.x, spawn.y, REFILL_GLOW_SIZE, REFILL_GLOW_SIZE, color, 0.16)
         .setDepth(2);
       const body = this.add
-        .rectangle(spawn.x, spawn.y, 8, 8, color, 0.95)
+        .rectangle(spawn.x, spawn.y, REFILL_BODY_SIZE, REFILL_BODY_SIZE, color, 0.95)
         .setAngle(45)
         .setStrokeStyle(1, 0xffffff, 0.9)
         .setDepth(4);
@@ -533,7 +580,7 @@ export class GameScene extends Phaser.Scene {
     const state = snapshot.state.toUpperCase();
     const wallSliding =
       !snapshot.onGround && snapshot.wallDir !== 0 && snapshot.vy > 0 && snapshot.state === "normal"
-        ? "  WALL-SLIDE"
+        ? " WALL"
         : "";
     const events = effects
       .map((e) => {
@@ -544,14 +591,14 @@ export class GameScene extends Phaser.Scene {
       })
       .join(", ");
 
-    this.hudText.setText(
-      `State: ${state}${wallSliding}` +
-        `  |  Dashes: ${snapshot.dashesLeft}` +
-        `  |  Stam: ${snapshot.stamina.toFixed(0)}` +
-        `  |  Vel: (${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)})` +
-        `  |  Cam: (${this.cameras.main.scrollX.toFixed(0)}, ${this.cameras.main.scrollY.toFixed(0)})` +
-        `  |  ${snapshot.onGround ? "GROUND" : "AIR"}` +
-        `${events ? `\nEffects: ${events}` : ""}`,
-    );
+    const lines = [
+      `${state}${wallSliding}  ${snapshot.onGround ? "GROUND" : "AIR"}  D:${snapshot.dashesLeft}  ST:${snapshot.stamina.toFixed(0)}`,
+      `VEL ${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)}  CAM ${this.cameras.main.scrollX.toFixed(0)}, ${this.cameras.main.scrollY.toFixed(0)}`,
+    ];
+    if (events) {
+      lines.push(`FX ${events}`);
+    }
+
+    this.hudText.setText(lines.join("\n"));
   }
 }

@@ -1,12 +1,12 @@
 export const WORLD = {
-  tile: 16,
+  tile: 8,
   cols: 52,
   rows: 30,
 } as const;
 
 export const VIEWPORT = {
-  width: WORLD.cols * WORLD.tile,
-  height: WORLD.rows * WORLD.tile,
+  width: 320,
+  height: 180,
 } as const;
 
 export const PLAYER_GEOMETRY = {

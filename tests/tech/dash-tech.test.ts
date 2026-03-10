@@ -250,7 +250,8 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayer(world, 120, 260);
+    const startY = 20 * WORLD.tile - 60;
+    const player = createPlayer(world, 120, startY);
     player.vx = 325;
     player.vy = 0;
     player.dashesLeft = 1;

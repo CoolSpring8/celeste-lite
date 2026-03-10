@@ -151,7 +151,8 @@ describe("Climb and dashless tech", () => {
       specs.push({ kind: "solidTile", col: 20, row });
     }
     const world = buildWorld(specs);
-    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, 272);
+    const wallBottom = 17 * WORLD.tile;
+    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom);
     const internals = player as unknown as {
       state: string;
       facing: 1 | -1;
@@ -176,7 +177,8 @@ describe("Climb and dashless tech", () => {
       specs.push({ kind: "solidTile", col: 20, row });
     }
     const world = buildWorld(specs);
-    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, 271);
+    const wallBottom = 17 * WORLD.tile;
+    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom - 1);
     const internals = player as unknown as {
       state: string;
       facing: 1 | -1;
@@ -194,6 +196,6 @@ describe("Climb and dashless tech", () => {
     const secondTap = stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
 
     expect(secondTap.snapshot.state).toBe("grab");
-    expect(secondTap.snapshot.y).toBe(272);
+    expect(secondTap.snapshot.y).toBe(wallBottom);
   });
 });

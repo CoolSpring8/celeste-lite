@@ -13,10 +13,11 @@ import {
   WorldEntity,
 } from "./types";
 
-const REFILL_PICKUP_SIZE = 12;
+const REFILL_PICKUP_SIZE = Math.max(6, Math.round(WORLD.tile * 0.75));
 const REFILL_RESPAWN_TIME = 2.5;
+const REFILL_BOB_AMPLITUDE = WORLD.tile * 0.1;
 const SPIKE_SIZE = WORLD.tile;
-const SPIKE_HEIGHT = 10;
+const SPIKE_HEIGHT = Math.max(5, Math.round(WORLD.tile * 0.625));
 const SPIKE_EPSILON = 0.0001;
 
 export class EntityWorld implements SolidGrid, CollisionWorld {
@@ -56,7 +57,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
         }
       }
 
-      const bob = Math.sin(timeSeconds * 4 + refill.x * 0.05) * 1.6;
+      const bob = Math.sin(timeSeconds * 4 + refill.x * 0.05) * REFILL_BOB_AMPLITUDE;
       refill.y = refill.baseY + bob;
     }
   }

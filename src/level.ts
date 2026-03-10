@@ -1,4 +1,4 @@
-import { WORLD } from "./constants";
+import { PLAYER_GEOMETRY, WORLD } from "./constants";
 import { EntityWorld } from "./entities/EntityWorld";
 import { LevelEntitySpec, SpikeDirection } from "./entities/types";
 
@@ -44,7 +44,8 @@ export interface LevelData {
 
 export function parseLevel(): LevelData {
   const lines = RAW.trim().split("\n");
-  let spawnX = 3 * WORLD.tile;
+  const spawnInsetX = Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5);
+  let spawnX = 3 * WORLD.tile + spawnInsetX;
   let spawnY = 20 * WORLD.tile;
   const entities: LevelEntitySpec[] = [];
 
@@ -58,7 +59,7 @@ export function parseLevel(): LevelData {
         entities.push({ kind: "jumpThruTile", col: c, row: r });
       } else {
         if (ch === "S") {
-          spawnX = c * WORLD.tile + 4;
+          spawnX = c * WORLD.tile + spawnInsetX;
           spawnY = r * WORLD.tile;
         } else if (ch === "D") {
           entities.push({
