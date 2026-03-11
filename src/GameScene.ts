@@ -4,7 +4,7 @@ import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { RefillEntity, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import { parseLevel } from "./level";
-import { addFloat, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
+import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
 import { PlayerView } from "./view/PlayerView";
@@ -24,6 +24,7 @@ const CAMERA_FOOT_ANCHOR_Y = Math.round(VIEWPORT.height * 0.46);
 const CAMERA_PLAYER_MARGIN_X = 12;
 const CAMERA_PLAYER_MARGIN_TOP = 18;
 const CAMERA_PLAYER_MARGIN_BOTTOM = 20;
+const CAMERA_VERTICAL_VISIBILITY_CATCHUP = 60;
 const TILE_EDGE_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.125));
 const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
 const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
@@ -373,7 +374,7 @@ export class GameScene extends Phaser.Scene {
       }
     }
     nextX = this.keepPlayerHorizontallyVisible(snapshot, nextX, maxX);
-    nextY = this.keepPlayerVerticallyVisible(snapshot, nextY, maxY);
+    nextY = this.keepPlayerVerticallyVisible(snapshot, nextY, maxY, dt);
 
     camera.setScroll(nextX, nextY);
     this.forceCameraSnapNextFrame = false;
@@ -393,12 +394,22 @@ export class GameScene extends Phaser.Scene {
     snapshot: ReturnType<Player["getSnapshot"]>,
     scrollY: number,
     maxY: number,
+    dt: number,
   ): number {
     const playerTop = snapshot.y;
     const playerBottom = snapshot.y + snapshot.hitboxH;
     const minScrollY = playerBottom - (VIEWPORT.height - CAMERA_PLAYER_MARGIN_BOTTOM);
     const maxScrollY = playerTop - CAMERA_PLAYER_MARGIN_TOP;
-    return Phaser.Math.Clamp(Phaser.Math.Clamp(scrollY, minScrollY, maxScrollY), 0, maxY);
+    const maxDelta = CAMERA_VERTICAL_VISIBILITY_CATCHUP * dt;
+
+    let nextY = scrollY;
+    if (nextY < minScrollY) {
+      nextY = approach(nextY, minScrollY, maxDelta);
+    } else if (nextY > maxScrollY) {
+      nextY = approach(nextY, maxScrollY, maxDelta);
+    }
+
+    return Phaser.Math.Clamp(nextY, 0, maxY);
   }
 
   private computeCameraTarget(
