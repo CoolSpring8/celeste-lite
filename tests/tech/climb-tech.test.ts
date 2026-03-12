@@ -36,6 +36,30 @@ describe("Climb and dashless tech", () => {
     expect(climbedOut).toBeTrue();
   });
 
+  test("climbing into ledge-top spikes stalls instead of climbhopping", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    for (let row = 15; row <= 19; row++) {
+      specs.push({ kind: "solidTile", col: 10, row });
+    }
+    specs.push({ kind: "spike", col: 10, row: 14, dir: "up" });
+    const world = buildWorld(specs);
+    const player = createPlayer(
+      world,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
+      18 * WORLD.tile,
+    );
+
+    let snapshot = player.getSnapshot();
+    for (let frame = 0; frame < 60; frame++) {
+      snapshot = stepOnce(player, makeInput({ grab: true, y: -1 })).snapshot;
+    }
+
+    expect(snapshot.state).toBe("grab");
+    expect(snapshot.vx).toBe(0);
+    expect(snapshot.vy).toBeCloseTo(0, 5);
+  });
+
   test("climbhop blocker matches the reference solid-above check", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);

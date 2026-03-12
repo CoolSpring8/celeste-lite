@@ -1388,6 +1388,28 @@ export class Player {
     this.toNormalState();
   }
 
+  private climbHopBlockedBySpike(): boolean {
+    const targetX = this.x + this.facing * PLAYER_GEOMETRY.hitboxW;
+    let targetY = this.y;
+
+    // Celeste spikes contribute a ledge blocker, so probe the ledge-top landing slot.
+    for (let i = 0; i < WORLD.tile; i++) {
+      if (!this.world.collideSolidAt(targetX, targetY, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
+        break;
+      }
+      targetY--;
+    }
+
+    return this.world.collidesWithSpikeAt(
+      targetX,
+      targetY,
+      PLAYER_GEOMETRY.hitboxW,
+      this.getHurtboxH(),
+      0,
+      0,
+    );
+  }
+
   private slipCheck(addY = 0): boolean {
     const y = this.y + 4 + addY;
     const x = this.facing === 1 ? this.x + PLAYER_GEOMETRY.hitboxW : this.x - 1;
@@ -1396,12 +1418,11 @@ export class Player {
   }
 
   private climbHopBlockedCheck(): boolean {
-    return this.world.collideSolidAt(
-      this.x,
-      this.y - 6,
-      PLAYER_GEOMETRY.hitboxW,
-      this.getHitboxH(),
-    );
+    if (this.climbHopBlockedBySpike()) {
+      return true;
+    }
+
+    return this.world.collideSolidAt(this.x, this.y - 6, PLAYER_GEOMETRY.hitboxW, this.getHitboxH());
   }
 
   private solidAtPoint(px: number, py: number): boolean {
