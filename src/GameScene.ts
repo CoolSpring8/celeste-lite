@@ -566,14 +566,8 @@ export class GameScene extends Phaser.Scene {
             if (c < WORLD.cols - 1 && this.tileDepths[r * WORLD.cols + c + 1] === 0) {
               g.fillRect(x + WORLD.tile - 1, y, 1, WORLD.tile);
             }
-          } else if (depth === 2) {
-            g.fillStyle(COLORS.earth1, 1);
-            g.fillRect(x, y, WORLD.tile, WORLD.tile);
-            
-            g.fillStyle(COLORS.earth2, 1);
-            g.fillRect(x + 1, y + 1, WORLD.tile - 2, WORLD.tile - 2);
           } else {
-            g.fillStyle(COLORS.earth2, 1);
+            g.fillStyle(COLORS.earth1, 1);
             g.fillRect(x, y, WORLD.tile, WORLD.tile);
           }
         }
