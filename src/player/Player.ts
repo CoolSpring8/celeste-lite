@@ -311,7 +311,6 @@ export class Player {
       stamina: this.stamina,
       drawW,
       hitboxH,
-      hurtboxH: this.getHurtboxH(),
       drawH,
       isCrouched: this.ducking,
       isFastFalling: this.isFastFalling,

@@ -3,17 +3,17 @@ import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PLAYER_VISUALS } from "../const
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 
 interface Afterimage {
-  rect: Phaser.GameObjects.Rectangle;
+  rect: Phaser.GameObjects.Graphics;
   life: number;
   maxLife: number;
 }
 
 export class PlayerView {
   private scene: Phaser.Scene;
-  private body: Phaser.GameObjects.Rectangle;
+  private body: Phaser.GameObjects.Graphics;
   private dashSlash: Phaser.GameObjects.Rectangle;
   private afterimages: Afterimage[] = [];
-  private afterimagePool: Phaser.GameObjects.Rectangle[] = [];
+  private afterimagePool: Phaser.GameObjects.Graphics[] = [];
   private trailTimer = 0;
   private dashParticleTimer = 0;
   private dashSlashTimer = 0;
@@ -35,8 +35,7 @@ export class PlayerView {
     this.ensurePixelTexture();
 
     this.body = this.scene.add
-      .rectangle(0, 0, PLAYER_GEOMETRY.drawW, PLAYER_GEOMETRY.drawH, COLORS.playerOneDash)
-      .setOrigin(0.5, 1)
+      .graphics()
       .setDepth(5);
 
     this.dashSlash = this.scene.add
@@ -93,9 +92,8 @@ export class PlayerView {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
 
-    this.body.setSize(snapshot.drawW, snapshot.drawH);
     this.body.setPosition(drawX, drawY);
-    this.body.setFillStyle(this.resolveColor(snapshot), 1);
+    this.drawSqrt11(this.body, snapshot.drawW, snapshot.drawH, this.resolveColor(snapshot));
 
     this.prevCrouched = snapshot.isCrouched;
     this.prevOnGround = snapshot.onGround;
@@ -263,13 +261,15 @@ export class PlayerView {
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
-    const rect = this.getAfterimageRect(snapshot.drawW, snapshot.drawH);
+    const rect = this.getAfterimageRect();
 
     rect
       .setPosition(drawX, drawY)
-      .setFillStyle(color, 1)
       .setAlpha(0.55)
-      .setVisible(true);
+      .setVisible(true)
+      .setScale(this.body.scaleX, this.body.scaleY);
+
+    this.drawSqrt11(rect, snapshot.drawW, snapshot.drawH, color, 1);
 
     this.afterimages.push({
       rect,
@@ -278,16 +278,14 @@ export class PlayerView {
     });
   }
 
-  private getAfterimageRect(drawW: number, drawH: number): Phaser.GameObjects.Rectangle {
+  private getAfterimageRect(): Phaser.GameObjects.Graphics {
     const rect = this.afterimagePool.pop();
     if (rect) {
-      rect.setSize(drawW, drawH);
       return rect;
     }
 
     return this.scene.add
-      .rectangle(0, 0, drawW, drawH, COLORS.playerCooldown)
-      .setOrigin(0.5, 1)
+      .graphics()
       .setDepth(4)
       .setVisible(false);
   }
@@ -464,5 +462,39 @@ export class PlayerView {
     g.fillRect(0, 0, 2, 2);
     g.generateTexture("pixel", 2, 2);
     g.destroy();
+  }
+
+  private drawSqrt11(
+    g: Phaser.GameObjects.Graphics,
+    w: number,
+    h: number,
+    color: number,
+    alpha: number = 1,
+  ): void {
+    g.clear();
+
+    const drawW = Math.max(w, 1);
+    const drawH = Math.max(h, 1);
+    const lineWidth = Math.max(1, Math.round(Math.min(drawW, drawH) / 8));
+    const toX = (nx: number) => nx * drawW;
+    const toY = (ny: number) => ny * drawH;
+
+    g.lineStyle(lineWidth, color, alpha);
+
+    // Author the glyph in the same local box as PLAYER_GEOMETRY: x in [-0.5, 0.5], y in [-1, 0].
+    g.beginPath();
+    g.moveTo(toX(2 / 16), toY(-2 / 16));
+    g.lineTo(toX(2 / 16), toY(-12 / 16));
+    g.moveTo(toX(6 / 16), toY(-2 / 16));
+    g.lineTo(toX(6 / 16), toY(-12 / 16));
+    g.strokePath();
+
+    g.beginPath();
+    g.moveTo(toX(-8 / 16), toY(-6 / 16));
+    g.lineTo(toX(-7 / 16), toY(-8 / 16));
+    g.lineTo(toX(-5 / 16), toY(0));
+    g.lineTo(toX(-2 / 16), toY(-1));
+    g.lineTo(toX(8 / 16), toY(-1));
+    g.strokePath();
   }
 }

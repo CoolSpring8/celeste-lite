@@ -15,8 +15,8 @@ export const PLAYER_GEOMETRY = {
   crouchHitboxH: 6,
   hurtboxH: 9,
   crouchHurtboxH: 4,
-  drawW: 10,
-  drawH: 16,
+  drawW: 8,
+  drawH: 11,
 } as const;
 
 export const PLAYER_VISUALS = {
