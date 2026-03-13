@@ -45,6 +45,7 @@ export class GameScene extends Phaser.Scene {
   private world!: EntityWorld;
   private spawnX!: number;
   private spawnY!: number;
+  private tileDepths!: Int32Array;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private pendingJumpEdges: Array<"down" | "up"> = [];
@@ -81,6 +82,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnX = level.spawnX;
     this.spawnY = level.spawnY;
 
+    this.computeTileDepths();
     this.tileGfx = this.add.graphics();
     this.drawTiles();
 
@@ -488,6 +490,44 @@ export class GameScene extends Phaser.Scene {
     return Phaser.Math.Clamp(safeY, 0, maxY);
   }
 
+  private computeTileDepths(): void {
+    this.tileDepths = new Int32Array(WORLD.cols * WORLD.rows);
+    this.tileDepths.fill(9999);
+    const queue: number[] = [];
+
+    for (let r = 0; r < WORLD.rows; r++) {
+      for (let c = 0; c < WORLD.cols; c++) {
+        const t = tileAt(this.world, c, r);
+        if (t === 0 || t === TILE_JUMP_THROUGH) {
+          const idx = r * WORLD.cols + c;
+          this.tileDepths[idx] = 0;
+          queue.push(idx);
+        }
+      }
+    }
+
+    let head = 0;
+    const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
+    while (head < queue.length) {
+      const idx = queue[head++];
+      const r = Math.floor(idx / WORLD.cols);
+      const c = idx % WORLD.cols;
+      const d = this.tileDepths[idx];
+
+      for (let i = 0; i < 4; i++) {
+        const nr = r + dirs[i * 2 + 1];
+        const nc = c + dirs[i * 2];
+        if (nr >= 0 && nr < WORLD.rows && nc >= 0 && nc < WORLD.cols) {
+          const nIdx = nr * WORLD.cols + nc;
+          if (this.tileDepths[nIdx] > d + 1) {
+            this.tileDepths[nIdx] = d + 1;
+            queue.push(nIdx);
+          }
+        }
+      }
+    }
+  }
+
   private drawTiles(): void {
     const g = this.tileGfx;
     for (let r = 0; r < WORLD.rows; r++) {
@@ -498,16 +538,43 @@ export class GameScene extends Phaser.Scene {
         if (tile === 0) continue;
 
         if (tile === TILE_JUMP_THROUGH) {
-          g.fillStyle(COLORS.tile, 1);
+          g.fillStyle(COLORS.earth1, 1);
           g.fillRect(x, y + JUMP_THRU_EDGE_HEIGHT, WORLD.tile, JUMP_THRU_BODY_HEIGHT);
-          g.fillStyle(COLORS.tileEdge, 1);
+          g.fillStyle(COLORS.earthHighlight, 1);
           g.fillRect(x, y, WORLD.tile, JUMP_THRU_EDGE_HEIGHT);
         } else {
-          g.fillStyle(COLORS.tile, 1);
-          g.fillRect(x, y, WORLD.tile, WORLD.tile);
-          if (tileAt(this.world, c, r - 1) === 0) {
-            g.fillStyle(COLORS.tileEdge, 1);
-            g.fillRect(x, y, WORLD.tile, TILE_EDGE_HEIGHT);
+          const depth = this.tileDepths[r * WORLD.cols + c];
+          
+          if (depth === 1) {
+            g.fillStyle(COLORS.earth0, 1);
+            g.fillRect(x, y, WORLD.tile, WORLD.tile);
+            
+            g.fillStyle(COLORS.earth1, 1);
+            g.fillRect(x, y + 3, WORLD.tile, 2);
+            g.fillRect(x + 3, y, 2, WORLD.tile);
+            
+            g.fillStyle(COLORS.earthHighlight, 1);
+            if (r > 0 && this.tileDepths[(r - 1) * WORLD.cols + c] === 0) {
+              g.fillRect(x, y, WORLD.tile, 1);
+            }
+            if (r < WORLD.rows - 1 && this.tileDepths[(r + 1) * WORLD.cols + c] === 0) {
+              g.fillRect(x, y + WORLD.tile - 1, WORLD.tile, 1);
+            }
+            if (c > 0 && this.tileDepths[r * WORLD.cols + c - 1] === 0) {
+              g.fillRect(x, y, 1, WORLD.tile);
+            }
+            if (c < WORLD.cols - 1 && this.tileDepths[r * WORLD.cols + c + 1] === 0) {
+              g.fillRect(x + WORLD.tile - 1, y, 1, WORLD.tile);
+            }
+          } else if (depth === 2) {
+            g.fillStyle(COLORS.earth1, 1);
+            g.fillRect(x, y, WORLD.tile, WORLD.tile);
+            
+            g.fillStyle(COLORS.earth2, 1);
+            g.fillRect(x + 1, y + 1, WORLD.tile - 2, WORLD.tile - 2);
+          } else {
+            g.fillStyle(COLORS.earth2, 1);
+            g.fillRect(x, y, WORLD.tile, WORLD.tile);
           }
         }
       }

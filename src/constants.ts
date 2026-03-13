@@ -233,6 +233,10 @@ export const COLORS = {
   playerTiredFlash: 0xff0000, // red flash while tired
   tile: 0x3a3a5c,
   tileEdge: 0x5a5a8c,
-  background: 0x16213e,
+  background: 0x0a0504,
   dust: 0xffffff,
+  earth0: 0x3b241c,
+  earthHighlight: 0xa87154,
+  earth1: 0x271612,
+  earth2: 0x190d0b,
 } as const;
