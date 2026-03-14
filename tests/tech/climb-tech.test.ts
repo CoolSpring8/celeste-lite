@@ -27,7 +27,7 @@ describe("Climb and dashless tech", () => {
     let climbedOut = false;
     for (let frame = 0; frame < 400; frame++) {
       const result = stepOnce(player, makeInput({ grab: true, y: -1 }));
-      if (frame > 10 && result.snapshot.state !== "grab") {
+      if (frame > 10 && result.snapshot.state !== "climb") {
         climbedOut = true;
         expect(result.snapshot.vy).toBeCloseTo(-120, 5);
         break;
@@ -56,7 +56,7 @@ describe("Climb and dashless tech", () => {
       snapshot = stepOnce(player, makeInput({ grab: true, y: -1 })).snapshot;
     }
 
-    expect(snapshot.state).toBe("grab");
+    expect(snapshot.state).toBe("climb");
     expect(snapshot.vx).toBe(0);
     expect(snapshot.vy).toBeCloseTo(0, 5);
   });
@@ -94,7 +94,7 @@ describe("Climb and dashless tech", () => {
     );
 
     stepOnce(player, makeInput({ grab: true }));
-    expect(player.getSnapshot().state).toBe("grab");
+    expect(player.getSnapshot().state).toBe("climb");
 
     stepOnce(player, makeInput({ grab: true, jump: true, jumpPressed: true, x: 0 }));
     expect(player.getSnapshot().stamina).toBeCloseTo(82.5, 5);
@@ -175,12 +175,12 @@ describe("Climb and dashless tech", () => {
     );
 
     stepOnce(player, makeInput({ grab: true }));
-    expect(player.getSnapshot().state).toBe("grab");
+    expect(player.getSnapshot().state).toBe("climb");
 
     let exhausted: ReturnType<typeof player.getSnapshot> | null = null;
     for (let frame = 0; frame < 240; frame++) {
       const result = stepOnce(player, makeInput({ grab: true, y: -1 }));
-      if (result.snapshot.state !== "grab") {
+      if (result.snapshot.state !== "climb") {
         exhausted = result.snapshot;
         break;
       }
@@ -200,13 +200,13 @@ describe("Climb and dashless tech", () => {
     const wallBottom = 17 * WORLD.tile;
     const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom);
     const internals = player as unknown as {
-      state: string;
+      forceState: (state: PlayerSnapshot["state"]) => void;
       facing: 1 | -1;
       refreshEnvironment: () => void;
       climbCheck: (dir: number, yAdd?: number) => boolean;
     };
 
-    internals.state = "grab";
+    internals.forceState("climb");
     internals.facing = 1;
     internals.refreshEnvironment();
 
@@ -227,12 +227,12 @@ describe("Climb and dashless tech", () => {
     const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom - 1);
     const internals = player as unknown as {
       climbNoMoveTimer: number;
-      state: string;
+      forceState: (state: PlayerSnapshot["state"]) => void;
       facing: 1 | -1;
       refreshEnvironment: () => void;
     };
 
-    internals.state = "grab";
+    internals.forceState("climb");
     internals.facing = 1;
     internals.refreshEnvironment();
     internals.climbNoMoveTimer = 0;
@@ -243,7 +243,7 @@ describe("Climb and dashless tech", () => {
     stepOnce(player, makeInput({ x: 1, grab: true }));
     const secondTap = stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
 
-    expect(secondTap.snapshot.state).toBe("grab");
+    expect(secondTap.snapshot.state).toBe("climb");
     expect(secondTap.snapshot.y).toBe(wallBottom);
   });
 });

@@ -1,4 +1,4 @@
-export type PlayerState = "normal" | "duck" | "grab" | "dash" | "dashAttack";
+export type PlayerState = "normal" | "climb" | "dash";
 
 export interface InputState {
   x: number;

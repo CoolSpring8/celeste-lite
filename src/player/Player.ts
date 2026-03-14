@@ -20,7 +20,6 @@ import { StateMachine } from "./StateMachine";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
-type PlayerMachineState = "normal" | "climb" | "dash";
 
 const EPSILON = 0.0001;
 const EMPTY_INPUT: InputState = {
@@ -58,7 +57,7 @@ export class Player {
   private autoJump = false;
   private autoJumpTimer = 0;
 
-  private readonly stateMachine: StateMachine<PlayerMachineState>;
+  private readonly stateMachine: StateMachine<PlayerState>;
   private frameDt = 0;
   private input: InputState = EMPTY_INPUT;
 
@@ -115,7 +114,7 @@ export class Player {
     this.wallSlideTimer = toFloat(cfg.gravity.wallSlideTime);
     this.maxFall = toFloat(cfg.gravity.maxFall);
 
-    this.stateMachine = new StateMachine<PlayerMachineState>("normal");
+    this.stateMachine = new StateMachine<PlayerState>("normal");
     this.stateMachine.setCallbacks(
       "normal",
       () => this.normalUpdate(),
@@ -409,26 +408,11 @@ export class Player {
   }
 
   get state(): PlayerState {
-    const state = this.stateMachine.state;
-    if (state === "climb") {
-      return "grab";
-    }
-    if (state === "normal" && this.ducking) {
-      return "duck";
-    }
-    return state;
+    return this.stateMachine.state;
   }
 
-  set state(value: PlayerState) {
-    if (value === "grab") {
-      this.stateMachine.state = "climb";
-      return;
-    }
-    if (value === "dash" || value === "dashAttack") {
-      this.stateMachine.state = "dash";
-      return;
-    }
-    this.stateMachine.state = "normal";
+  forceState(state: PlayerState): void {
+    this.stateMachine.forceState(state);
   }
 
   private refreshEnvironment(): void {
@@ -450,7 +434,7 @@ export class Player {
     this.hopWaitXSpeed = 0;
   }
 
-  private normalUpdate(): PlayerMachineState {
+  private normalUpdate(): PlayerState {
     const dt = this.frameDt;
     const input = this.input;
 
@@ -599,7 +583,7 @@ export class Player {
     this.wallSpeedRetentionTimer = 0;
   }
 
-  private climbUpdate(): PlayerMachineState {
+  private climbUpdate(): PlayerState {
     const dt = this.frameDt;
     const input = this.input;
     this.climbNoMoveTimer = subFloat(this.climbNoMoveTimer, dt);
@@ -748,7 +732,7 @@ export class Player {
   private dashEnd(): void {
   }
 
-  private dashUpdate(): PlayerMachineState {
+  private dashUpdate(): PlayerState {
     if (this.dashDir.y === 0) {
       this.applyDashJumpThruNudge();
 
@@ -935,7 +919,7 @@ export class Player {
     return this.hasDashPress() && this.dashCooldownTimer <= 0 && this.dashesLeft > 0;
   }
 
-  private startDash(): PlayerMachineState {
+  private startDash(): PlayerState {
     this.consumeDashPress();
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
     return "dash";

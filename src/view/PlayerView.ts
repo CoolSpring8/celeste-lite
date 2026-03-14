@@ -397,8 +397,7 @@ export class PlayerView {
     const enteredDuck =
       !this.prevCrouched &&
       snapshot.isCrouched &&
-      snapshot.onGround &&
-      snapshot.state === "duck";
+      snapshot.onGround;
     if (enteredDuck) {
       this.squash(PLAYER_VISUALS.duckSquashX, PLAYER_VISUALS.duckSquashY);
       return;
@@ -408,7 +407,6 @@ export class PlayerView {
       this.prevCrouched &&
       !snapshot.isCrouched &&
       this.prevOnGround &&
-      this.prevState === "duck" &&
       snapshot.onGround;
     if (exitedDuck) {
       this.squash(PLAYER_VISUALS.unduckSquashX, PLAYER_VISUALS.unduckSquashY);
@@ -608,7 +606,7 @@ export class PlayerView {
   }
 
   private resolveSqrt11Pose(snapshot: PlayerSnapshot): Sqrt11Pose {
-    return snapshot.state === "duck" || snapshot.isCrouched ? "duck" : "idle";
+    return snapshot.isCrouched ? "duck" : "idle";
   }
 
   private applyGlyphSprite(
