@@ -83,6 +83,9 @@ export class PlayerView {
   private dashSlashTimer = 0;
   private wallDustTimer = 0;
   private dashTrailColor: number = COLORS.playerOneDash;
+  private hairColor: number = COLORS.playerOneDash;
+  private hairFlashTimer = 0;
+  private lastHairDashes: number | null = null;
   private dashDirX = 1;
   private dashDirY = 0;
   private prevCrouched: boolean | null = null;
@@ -144,6 +147,7 @@ export class PlayerView {
 
   render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.syncFacing(snapshot.facing);
+    this.updateHairVisuals(snapshot, dt);
     this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
     this.processDuckStateTransition(snapshot);
@@ -449,7 +453,7 @@ export class PlayerView {
   }
 
   private resolveHairColor(snapshot: PlayerSnapshot): number {
-    return this.resolveHairColorByDashCount(snapshot.dashesLeft);
+    return this.hairColor;
   }
 
   private isTiredFlashVisible(): boolean {
@@ -457,15 +461,35 @@ export class PlayerView {
     return Math.floor(this.scene.time.now / intervalMs) % 2 === 1;
   }
 
-  private resolveHairColorByDashCount(dashesLeft: number): number {
+  private updateHairVisuals(snapshot: PlayerSnapshot, dt: number): void {
+    const dashesLeft = snapshot.dashesLeft;
+    const hairBaseColor = this.resolveHairBaseColorByDashCount(dashesLeft);
+    const spentHair = dashesLeft === 0 && dashesLeft < PLAYER_CONFIG.dash.maxDashes;
+
+    if (spentHair) {
+      this.hairColor = this.lerpColor(this.hairColor, COLORS.playerNoDash, 6 * dt);
+      this.hairFlashTimer = 0;
+    } else if (this.lastHairDashes !== null && this.lastHairDashes !== dashesLeft) {
+      this.hairColor = COLORS.playerHairFlash;
+      this.hairFlashTimer = PLAYER_VISUALS.hairFlashDuration;
+    } else if (this.hairFlashTimer > 0) {
+      this.hairColor = COLORS.playerHairFlash;
+      this.hairFlashTimer = Math.max(0, this.hairFlashTimer - dt);
+    } else {
+      this.hairColor = hairBaseColor;
+    }
+
+    this.lastHairDashes = dashesLeft;
+  }
+
+  private resolveHairBaseColorByDashCount(dashesLeft: number): number {
     if (dashesLeft <= 0) return COLORS.playerNoDash;
-    if (dashesLeft === 1) return COLORS.playerOneDash;
     if (dashesLeft === 2) return COLORS.playerTwoDash;
-    return COLORS.playerManyDash;
+    return COLORS.playerOneDash;
   }
 
   private captureDashVisuals(snapshot: PlayerSnapshot, effect: PlayerEffect): void {
-    this.dashTrailColor = this.resolveHairColorByDashCount(snapshot.dashesLeft);
+    this.dashTrailColor = this.resolveHairBaseColorByDashCount(snapshot.dashesLeft);
     this.dashEmitter.setParticleTint(this.dashTrailColor);
 
     const dx = effect.dirX ?? snapshot.facing;
@@ -578,5 +602,16 @@ export class PlayerView {
         g.fillRect(left + startX * pixelW, y, runWidth * pixelW, pixelH);
       }
     }
+  }
+
+  private lerpColor(from: number, to: number, t: number): number {
+    const clamped = Phaser.Math.Clamp(t, 0, 1);
+    const fromRgb = Phaser.Display.Color.IntegerToRGB(from);
+    const toRgb = Phaser.Display.Color.IntegerToRGB(to);
+    return Phaser.Display.Color.GetColor(
+      Phaser.Math.RoundTo(Phaser.Math.Linear(fromRgb.r, toRgb.r, clamped), 0),
+      Phaser.Math.RoundTo(Phaser.Math.Linear(fromRgb.g, toRgb.g, clamped), 0),
+      Phaser.Math.RoundTo(Phaser.Math.Linear(fromRgb.b, toRgb.b, clamped), 0),
+    );
   }
 }

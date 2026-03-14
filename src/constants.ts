@@ -53,6 +53,7 @@ export const PLAYER_VISUALS = {
   dashSlashLife: 0.06,
   dashSlashLength: 12,
   dashSlashThickness: 1,
+  hairFlashDuration: 0.12,
   tiredFlashInterval: 0.05,
 } as const;
 
@@ -230,7 +231,7 @@ export const COLORS = {
   playerOneDash: 0xac3232, // auburn-ish red
   playerTwoDash: 0xff6def, // pink
   playerManyDash: 0x62c462, // green
-  playerCooldown: 0xffffff, // white
+  playerHairFlash: 0xffffff, // white flash when dash count changes
   playerTiredFlash: 0xff0000, // red flash while tired
   tile: 0x3a3a5c,
   tileEdge: 0x5a5a8c,
