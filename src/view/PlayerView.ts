@@ -66,6 +66,7 @@ export class PlayerView {
   private prevCrouched: boolean | null = null;
   private prevOnGround = false;
   private prevState: PlayerSnapshot["state"] = "normal";
+  private facing: PlayerSnapshot["facing"] = 1;
   private tiredFlashTimer = PLAYER_VISUALS.tiredFlashInterval;
   private tiredFlash = false;
 
@@ -123,6 +124,7 @@ export class PlayerView {
 
   render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.updateTiredFlash(dt);
+    this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
     this.processDuckStateTransition(snapshot);
@@ -335,7 +337,7 @@ export class PlayerView {
   }
 
   private squash(scaleX: number, scaleY: number): void {
-    this.body.setScale(scaleX, scaleY);
+    this.body.setScale(Math.abs(scaleX) * this.facing, scaleY);
   }
 
   private applyFastFallScale(snapshot: PlayerSnapshot): void {
@@ -380,7 +382,7 @@ export class PlayerView {
 
   private relaxScale(dt: number): void {
     const delta = PLAYER_VISUALS.scaleRelaxRate * dt;
-    this.body.scaleX = this.approach(this.body.scaleX, 1, delta);
+    this.body.scaleX = this.approach(this.body.scaleX, this.facing, delta);
     this.body.scaleY = this.approach(this.body.scaleY, 1, delta);
   }
 
@@ -506,6 +508,11 @@ export class PlayerView {
     g.fillRect(0, 0, 2, 2);
     g.generateTexture("pixel", 2, 2);
     g.destroy();
+  }
+
+  private syncFacing(facing: PlayerSnapshot["facing"]): void {
+    this.facing = facing;
+    this.body.scaleX = Math.abs(this.body.scaleX) * facing;
   }
 
   private resolveSqrt11Pose(snapshot: PlayerSnapshot): Sqrt11Pose {
