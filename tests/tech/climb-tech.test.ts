@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
-import { PLAYER_GEOMETRY, WORLD } from "../../src/constants.ts";
+import { PLAYER_CONFIG, PLAYER_GEOMETRY, WORLD } from "../../src/constants.ts";
 import type { LevelEntitySpec } from "../../src/entities/types.ts";
+import type { PlayerSnapshot } from "../../src/player/types.ts";
 import {
   buildWorld,
   createPlayer,
@@ -102,6 +103,27 @@ describe("Climb and dashless tech", () => {
     const wallboost = player.getSnapshot();
     expect(wallboost.stamina).toBeCloseTo(110, 5);
     expect(wallboost.vx).toBeCloseTo(-125.6666666667, 5);
+  });
+
+  test("tired state uses the strict threshold and wallboost stamina grace", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 0, 0) as unknown as {
+      stamina: number;
+      wallBoostTimer: number;
+      getSnapshot: () => PlayerSnapshot;
+    };
+
+    player.stamina = 20;
+    player.wallBoostTimer = 0;
+    expect(player.getSnapshot().isTired).toBeFalse();
+
+    player.stamina = 0;
+    player.wallBoostTimer = PLAYER_CONFIG.climb.climbJumpBoostTime;
+    expect(player.getSnapshot().isTired).toBeFalse();
+
+    player.stamina = 0;
+    player.wallBoostTimer = 0;
+    expect(player.getSnapshot().isTired).toBeTrue();
   });
 
   test("wall speed retention refunds stored speed when the path clears inside the retention window", () => {

@@ -89,8 +89,6 @@ export class PlayerView {
   private prevOnGround = false;
   private prevState: PlayerSnapshot["state"] = "normal";
   private facing: PlayerSnapshot["facing"] = 1;
-  private tiredFlashTimer = PLAYER_VISUALS.tiredFlashInterval;
-  private tiredFlash = false;
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   private wallEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -145,7 +143,6 @@ export class PlayerView {
   }
 
   render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
-    this.updateTiredFlash(dt);
     this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
@@ -165,7 +162,7 @@ export class PlayerView {
       pose,
       snapshot.drawW,
       snapshot.drawH,
-      COLORS.playerBody,
+      this.resolveBodyColor(snapshot),
       this.resolveHairColor(snapshot),
     );
 
@@ -445,25 +442,19 @@ export class PlayerView {
     this.wallEmitter.emitParticleAt(px, py, count);
   }
 
+  private resolveBodyColor(snapshot: PlayerSnapshot): number {
+    return snapshot.isTired && this.isTiredFlashVisible()
+      ? COLORS.playerTiredFlash
+      : COLORS.playerBody;
+  }
+
   private resolveHairColor(snapshot: PlayerSnapshot): number {
-    const isTired = snapshot.stamina <= PLAYER_CONFIG.climb.tiredThreshold;
-    if (isTired) {
-      return this.tiredFlash ? COLORS.playerTiredFlash : COLORS.playerCooldown;
-    }
-
-    if (snapshot.dashCooldownActive) {
-      return COLORS.playerCooldown;
-    }
-
     return this.resolveHairColorByDashCount(snapshot.dashesLeft);
   }
 
-  private updateTiredFlash(dt: number): void {
-    this.tiredFlashTimer -= dt;
-    while (this.tiredFlashTimer <= 0) {
-      this.tiredFlash = !this.tiredFlash;
-      this.tiredFlashTimer += PLAYER_VISUALS.tiredFlashInterval;
-    }
+  private isTiredFlashVisible(): boolean {
+    const intervalMs = PLAYER_VISUALS.tiredFlashInterval * 1000;
+    return Math.floor(this.scene.time.now / intervalMs) % 2 === 1;
   }
 
   private resolveHairColorByDashCount(dashesLeft: number): number {

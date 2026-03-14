@@ -307,7 +307,7 @@ export class Player {
       wallDir: this.wallSlideDir,
       wallDustDir: this.wallDustDir,
       dashesLeft: this.dashesLeft,
-      dashCooldownActive: this.dashRefillCooldownTimer > 0,
+      isTired: this.isTired(),
       stamina: this.stamina,
       drawW,
       hitboxH,
@@ -1449,8 +1449,14 @@ export class Player {
     return this.dashAttackTimer > 0 && Math.abs(this.dashDir.x) <= EPSILON && this.dashDir.y < -0.9;
   }
 
+  private checkStamina(): number {
+    return this.wallBoostTimer > 0
+      ? addFloat(this.stamina, this.cfg.climb.jumpCost)
+      : this.stamina;
+  }
+
   private isTired(): boolean {
-    return this.stamina <= this.cfg.climb.tiredThreshold;
+    return this.checkStamina() < this.cfg.climb.tiredThreshold;
   }
 
   private hasJumpPress(): boolean {
