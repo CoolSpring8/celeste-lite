@@ -9,37 +9,59 @@ type PixelRun = readonly [x: number, width: number];
 interface PixelGlyph {
   width: number;
   height: number;
-  rows: readonly (readonly PixelRun[])[];
+  hairRows: readonly (readonly PixelRun[])[];
+  bodyRows: readonly (readonly PixelRun[])[];
 }
 
 const SQRT11_GLYPHS: Record<Sqrt11Pose, PixelGlyph> = {
   idle: {
     width: 8,
     height: 11,
-    rows: [
+    hairRows: [
       [],
       [[2, 6]],
       [[2, 6]],
       [[2, 1]],
-      [[2, 1], [4, 1], [6, 1]],
-      [[0, 1], [2, 1], [4, 1], [6, 1]],
-      [[0, 3], [4, 1], [6, 1]],
-      [[0, 3], [4, 1], [6, 1]],
-      [[0, 3], [4, 1], [6, 1]],
-      [[1, 1], [4, 1], [6, 1]],
-      [[1, 1], [4, 1], [6, 1]],
+      [[2, 1]],
+      [[0, 1], [2, 1]],
+      [[0, 3]],
+      [[0, 3]],
+      [[0, 3]],
+      [[1, 1]],
+      [[1, 1]],
+    ],
+    bodyRows: [
+      [],
+      [],
+      [],
+      [],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
     ],
   },
   duck: {
     width: 8,
     height: 6,
-    rows: [
+    hairRows: [
       [[3, 5]],
       [[2, 6]],
       [[0, 1], [2, 2]],
-      [[0, 3], [4, 1], [6, 1]],
-      [[0, 3], [4, 1], [6, 1]],
-      [[1, 1], [4, 1], [6, 1]],
+      [[0, 3]],
+      [[0, 3]],
+      [[1, 1]],
+    ],
+    bodyRows: [
+      [],
+      [],
+      [],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
     ],
   },
 };
@@ -138,7 +160,14 @@ export class PlayerView {
     const pose = this.resolveSqrt11Pose(snapshot);
 
     this.body.setPosition(drawX, drawY);
-    this.drawSqrt11(this.body, pose, snapshot.drawW, snapshot.drawH, this.resolveColor(snapshot));
+    this.drawSqrt11(
+      this.body,
+      pose,
+      snapshot.drawW,
+      snapshot.drawH,
+      COLORS.playerBody,
+      this.resolveHairColor(snapshot),
+    );
 
     this.prevCrouched = snapshot.isCrouched;
     this.prevOnGround = snapshot.onGround;
@@ -315,7 +344,7 @@ export class PlayerView {
       .setVisible(true)
       .setScale(this.body.scaleX, this.body.scaleY);
 
-    this.drawSqrt11(rect, pose, snapshot.drawW, snapshot.drawH, color, 1);
+    this.drawSqrt11(rect, pose, snapshot.drawW, snapshot.drawH, COLORS.playerBody, color, 1);
 
     this.afterimages.push({
       rect,
@@ -416,7 +445,7 @@ export class PlayerView {
     this.wallEmitter.emitParticleAt(px, py, count);
   }
 
-  private resolveColor(snapshot: PlayerSnapshot): number {
+  private resolveHairColor(snapshot: PlayerSnapshot): number {
     const isTired = snapshot.stamina <= PLAYER_CONFIG.climb.tiredThreshold;
     if (isTired) {
       return this.tiredFlash ? COLORS.playerTiredFlash : COLORS.playerCooldown;
@@ -524,7 +553,8 @@ export class PlayerView {
     pose: Sqrt11Pose,
     w: number,
     h: number,
-    color: number,
+    bodyColor: number,
+    hairColor: number,
     alpha: number = 1,
   ): void {
     g.clear();
@@ -535,9 +565,23 @@ export class PlayerView {
     const left = -(glyph.width * pixelW) / 2;
     const top = -glyph.height * pixelH;
 
+    this.drawGlyphRows(g, glyph.bodyRows, left, top, pixelW, pixelH, bodyColor, alpha);
+    this.drawGlyphRows(g, glyph.hairRows, left, top, pixelW, pixelH, hairColor, alpha);
+  }
+
+  private drawGlyphRows(
+    g: Phaser.GameObjects.Graphics,
+    rows: readonly (readonly PixelRun[])[],
+    left: number,
+    top: number,
+    pixelW: number,
+    pixelH: number,
+    color: number,
+    alpha: number,
+  ): void {
     g.fillStyle(color, alpha);
-    for (let rowIndex = 0; rowIndex < glyph.rows.length; rowIndex++) {
-      const row = glyph.rows[rowIndex];
+    for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+      const row = rows[rowIndex];
       const y = top + rowIndex * pixelH;
       for (const [startX, runWidth] of row) {
         g.fillRect(left + startX * pixelW, y, runWidth * pixelW, pixelH);

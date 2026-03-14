@@ -225,6 +225,7 @@ export const PLAYER_CONFIG: PlayerConfig = {
 };
 
 export const COLORS = {
+  playerBody: 0x5b6fe1, // fixed body color
   playerNoDash: 0x44b7ff, // cyan
   playerOneDash: 0xac3232, // auburn-ish red
   playerTwoDash: 0xff6def, // pink
