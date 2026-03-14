@@ -226,6 +226,7 @@ describe("Climb and dashless tech", () => {
     const wallBottom = 17 * WORLD.tile;
     const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom - 1);
     const internals = player as unknown as {
+      climbNoMoveTimer: number;
       state: string;
       facing: 1 | -1;
       refreshEnvironment: () => void;
@@ -234,6 +235,7 @@ describe("Climb and dashless tech", () => {
     internals.state = "grab";
     internals.facing = 1;
     internals.refreshEnvironment();
+    internals.climbNoMoveTimer = 0;
 
     stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
     stepOnce(player, makeInput({ x: 1, grab: true }));

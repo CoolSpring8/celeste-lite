@@ -16,11 +16,23 @@ import {
   subFloat,
   toFloat,
 } from "./math";
+import { StateMachine } from "./StateMachine";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
+type PlayerMachineState = "normal" | "climb" | "dash";
 
 const EPSILON = 0.0001;
+const EMPTY_INPUT: InputState = {
+  x: 0,
+  y: 0,
+  jump: false,
+  jumpPressed: false,
+  jumpReleased: false,
+  dash: false,
+  dashPressed: false,
+  grab: false,
+};
 
 export class Player {
   x: number;
@@ -30,7 +42,6 @@ export class Player {
   private remX = 0;
   private remY = 0;
 
-  state: PlayerState = "normal";
   facing: 1 | -1 = 1;
 
   onGround = false;
@@ -47,14 +58,14 @@ export class Player {
   private autoJump = false;
   private autoJumpTimer = 0;
 
+  private readonly stateMachine: StateMachine<PlayerMachineState>;
+  private frameDt = 0;
+  private input: InputState = EMPTY_INPUT;
+
   private dashCooldownTimer = 0;
   private dashPressBufferTimer = 0;
   private dashRefillCooldownTimer = 0;
-  private dashTimer = 0;
   private dashAttackTimer = 0;
-  private dashMotionPending = false;
-  private dashCoroutinePrimed = false;
-  private dashEndPending = false;
   private freezeRequestTimer = 0;
   private dashStartedOnGround = false;
 
@@ -81,7 +92,6 @@ export class Player {
   stamina: number;
 
   private beforeDashVx = 0;
-  private beforeDashVy = 0;
 
   private isFastFalling = false;
 
@@ -104,10 +114,36 @@ export class Player {
     this.stamina = toFloat(cfg.climb.max);
     this.wallSlideTimer = toFloat(cfg.gravity.wallSlideTime);
     this.maxFall = toFloat(cfg.gravity.maxFall);
+
+    this.stateMachine = new StateMachine<PlayerMachineState>("normal");
+    this.stateMachine.setCallbacks(
+      "normal",
+      () => this.normalUpdate(),
+      undefined,
+      () => this.normalBegin(),
+      () => this.normalEnd(),
+    );
+    this.stateMachine.setCallbacks(
+      "climb",
+      () => this.climbUpdate(),
+      undefined,
+      () => this.climbBegin(),
+      () => this.climbEnd(),
+    );
+    this.stateMachine.setCallbacks(
+      "dash",
+      () => this.dashUpdate(),
+      () => this.dashCoroutine(),
+      () => this.dashBegin(),
+      () => this.dashEnd(),
+    );
+    this.stateMachine.forceState("normal");
   }
 
   update(dt: number, input: InputState): void {
     dt = toFloat(dt);
+    this.frameDt = dt;
+    this.input = input;
     this.refreshEnvironment();
     this.wallDustDir = 0;
 
@@ -148,7 +184,7 @@ export class Player {
       }
     }
 
-    if (this.onGround && this.state !== "grab") {
+    if (this.onGround && this.stateMachine.state !== "climb") {
       this.autoJump = false;
       this.stamina = toFloat(this.cfg.climb.max);
       this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
@@ -209,7 +245,7 @@ export class Player {
       this.vy = lift.y;
     }
 
-    if (this.moveXInput !== 0 && this.state !== "grab") {
+    if (this.moveXInput !== 0 && this.stateMachine.state !== "climb") {
       this.facing = this.moveXInput as 1 | -1;
     }
 
@@ -217,22 +253,7 @@ export class Player {
     this.updateWallSpeedRetention(dt);
     this.updateHopWait();
 
-    switch (this.state) {
-      case "grab":
-        this.climbUpdate(dt, input);
-        break;
-      case "dash":
-        this.dashUpdate();
-        break;
-      case "normal":
-      case "duck":
-      case "dashAttack":
-      default:
-        this.normalUpdate(dt, input);
-        break;
-    }
-
-    this.updateDashCoroutine(dt);
+    this.stateMachine.update(dt);
 
     // Canonical order: pre-physics helper nudges before main movement step.
     this.applyJumpThruAssist(dt);
@@ -295,13 +316,12 @@ export class Player {
       ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
       : PLAYER_GEOMETRY.drawH;
 
-    const state = this.state === "normal" && this.ducking ? "duck" : this.state;
     return {
       x: this.x,
       y: this.y,
       vx: this.vx,
       vy: this.vy,
-      state,
+      state: this.state,
       facing: this.facing,
       onGround: this.onGround,
       wallDir: this.wallSlideDir,
@@ -331,7 +351,6 @@ export class Player {
     this.remX = 0;
     this.remY = 0;
 
-    this.state = "normal";
     this.facing = 1;
     this.ducking = false;
 
@@ -352,11 +371,7 @@ export class Player {
     this.dashCooldownTimer = 0;
     this.dashPressBufferTimer = 0;
     this.dashRefillCooldownTimer = 0;
-    this.dashTimer = 0;
     this.dashAttackTimer = 0;
-    this.dashMotionPending = false;
-    this.dashCoroutinePrimed = false;
-    this.dashEndPending = false;
     this.freezeRequestTimer = 0;
     this.dashStartedOnGround = false;
 
@@ -382,7 +397,6 @@ export class Player {
     this.stamina = toFloat(this.cfg.climb.max);
 
     this.beforeDashVx = 0;
-    this.beforeDashVy = 0;
 
     this.isFastFalling = false;
 
@@ -390,7 +404,31 @@ export class Player {
     this.liftVy = 0;
     this.liftTimer = 0;
 
+    this.stateMachine.forceState("normal");
     this.emit({ type: "respawn" });
+  }
+
+  get state(): PlayerState {
+    const state = this.stateMachine.state;
+    if (state === "climb") {
+      return "grab";
+    }
+    if (state === "normal" && this.ducking) {
+      return "duck";
+    }
+    return state;
+  }
+
+  set state(value: PlayerState) {
+    if (value === "grab") {
+      this.stateMachine.state = "climb";
+      return;
+    }
+    if (value === "dash" || value === "dashAttack") {
+      this.stateMachine.state = "dash";
+      return;
+    }
+    this.stateMachine.state = "normal";
   }
 
   private refreshEnvironment(): void {
@@ -401,15 +439,28 @@ export class Player {
     this.wallDir = this.world.wallDirAt(this.x, this.y, PLAYER_GEOMETRY.hitboxW, h);
   }
 
-  private normalUpdate(dt: number, input: InputState): void {
+  private normalBegin(): void {
+    this.maxFall = toFloat(this.cfg.gravity.maxFall);
+  }
+
+  private normalEnd(): void {
+    this.wallBoostTimer = 0;
+    this.wallSpeedRetentionTimer = 0;
+    this.hopWaitX = 0;
+    this.hopWaitXSpeed = 0;
+  }
+
+  private normalUpdate(): PlayerMachineState {
+    const dt = this.frameDt;
+    const input = this.input;
+
     if (this.tryStartGrab(input)) {
-      return;
+      return "climb";
     }
 
     if (this.canDash()) {
       this.applyLiftBoost();
-      this.startDash();
-      return;
+      return this.startDash();
     }
 
     if (this.ducking) {
@@ -444,14 +495,14 @@ export class Player {
     if (this.hasJumpPress()) {
       if (this.jumpGraceTimer > 0) {
         this.jump();
-        return;
+        return "normal";
       }
 
       if (this.canUnDuck()) {
         if (this.wallJumpCheck(1)) {
           if (this.facing === 1 && input.grab && this.stamina > 0) {
             this.climbJump();
-            return;
+            return "normal";
           }
 
           if (this.isUpDashAttackActive()) {
@@ -459,13 +510,13 @@ export class Player {
           } else {
             this.wallJump(-1);
           }
-          return;
+          return "normal";
         }
 
         if (this.wallJumpCheck(-1)) {
           if (this.facing === -1 && input.grab && this.stamina > 0) {
             this.climbJump();
-            return;
+            return "normal";
           }
 
           if (this.isUpDashAttackActive()) {
@@ -473,10 +524,12 @@ export class Player {
           } else {
             this.wallJump(1);
           }
-          return;
+          return "normal";
         }
       }
     }
+
+    return "normal";
   }
 
   private updateVertical(dt: number, input: InputState): void {
@@ -523,7 +576,32 @@ export class Player {
     this.updateVariableJump(input);
   }
 
-  private climbUpdate(dt: number, input: InputState): void {
+  private climbBegin(): void {
+    this.autoJump = false;
+    this.vx = 0;
+    this.remX = 0;
+    this.vy = mulFloat(this.vy, this.cfg.climb.climbGrabYMult);
+    this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
+    this.climbNoMoveTimer = toFloat(this.cfg.climb.noMoveTime);
+    this.wallBoostTimer = 0;
+    this.lastClimbMove = 0;
+
+    for (let i = 0; i < this.cfg.climb.checkDist; i++) {
+      if (!this.world.collideSolidAt(this.x + this.facing, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
+        this.x += this.facing;
+      } else {
+        break;
+      }
+    }
+  }
+
+  private climbEnd(): void {
+    this.wallSpeedRetentionTimer = 0;
+  }
+
+  private climbUpdate(): PlayerMachineState {
+    const dt = this.frameDt;
+    const input = this.input;
     this.climbNoMoveTimer = subFloat(this.climbNoMoveTimer, dt);
 
     if (this.wallDir !== 0) {
@@ -540,19 +618,17 @@ export class Player {
       } else {
         this.climbJump();
       }
-      return;
+      return "normal";
     }
 
     if (this.canDash()) {
       this.applyLiftBoost();
-      this.startDash();
-      return;
+      return this.startDash();
     }
 
     if (!input.grab) {
       this.applyLiftBoost();
-      this.toNormalState();
-      return;
+      return "normal";
     }
 
     if (
@@ -566,8 +642,7 @@ export class Player {
       if (this.vy < 0) {
         this.climbHop();
       }
-      this.toNormalState();
-      return;
+      return "normal";
     }
 
     let target = 0;
@@ -589,7 +664,7 @@ export class Player {
           trySlip = true;
         } else if (this.slipCheck()) {
           this.climbHop();
-          return;
+          return "normal";
         }
       } else if (input.y === 1) {
         target = this.cfg.climb.climbDownSpeed;
@@ -640,21 +715,46 @@ export class Player {
 
     if (this.stamina <= 0) {
       this.applyLiftBoost();
-      this.toNormalState();
-      return;
+      return "normal";
     }
 
     this.vx = 0;
     this.remX = 0;
+    return "climb";
   }
 
-  private dashUpdate(): void {
+  private dashBegin(): void {
+    this.dashStartedOnGround = this.onGround;
+    this.dashCooldownTimer = toFloat(this.cfg.dash.cooldown);
+    this.dashRefillCooldownTimer = toFloat(this.cfg.dash.refillCooldown);
+    this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
+    this.dashAttackTimer = toFloat(this.cfg.dash.attackTime);
+
+    this.beforeDashVx = this.vx;
+    this.hopWaitX = 0;
+    this.hopWaitXSpeed = 0;
+    this.vx = 0;
+    this.vy = 0;
+    this.dashDir = { x: 0, y: 0 };
+
+    if (!this.onGround && this.ducking && this.canUnDuck()) {
+      this.setDucking(false);
+    }
+
+    this.emit({ type: "dash_begin" });
+    this.requestFreeze(this.cfg.dash.freezeTime);
+  }
+
+  private dashEnd(): void {
+  }
+
+  private dashUpdate(): PlayerMachineState {
     if (this.dashDir.y === 0) {
       this.applyDashJumpThruNudge();
 
       if (this.hasJumpPress() && this.canUnDuck() && this.jumpGraceTimer > 0) {
         this.superJump();
-        return;
+        return "normal";
       }
     }
 
@@ -662,23 +762,25 @@ export class Player {
       if (this.hasJumpPress() && this.canUnDuck()) {
         if (this.wallJumpCheck(1)) {
           this.superWallJump(-1);
-          return;
+          return "normal";
         }
         if (this.wallJumpCheck(-1)) {
           this.superWallJump(1);
-          return;
+          return "normal";
         }
       }
     } else if (this.hasJumpPress() && this.canUnDuck()) {
       if (this.wallJumpCheck(1)) {
         this.wallJump(-1);
-        return;
+        return "normal";
       }
       if (this.wallJumpCheck(-1)) {
         this.wallJump(1);
-        return;
+        return "normal";
       }
     }
+
+    return "dash";
   }
 
   private tryStartGrab(input: InputState): boolean {
@@ -688,7 +790,7 @@ export class Player {
     if (sign(this.vx) === -this.facing) return false;
 
     if (this.climbCheck(this.facing)) {
-      this.enterClimb();
+      this.setDucking(false);
       return true;
     }
 
@@ -700,35 +802,13 @@ export class Player {
 
         if (this.climbCheck(this.facing, -i)) {
           this.y -= i;
-          this.enterClimb();
+          this.setDucking(false);
           return true;
         }
       }
     }
 
     return false;
-  }
-
-  private enterClimb(): void {
-    this.leaveNormalState();
-    this.setDucking(false);
-    this.state = "grab";
-    this.autoJump = false;
-    this.vx = 0;
-    this.remX = 0;
-    this.vy = mulFloat(this.vy, this.cfg.climb.climbGrabYMult);
-    this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
-    this.climbNoMoveTimer = toFloat(this.cfg.climb.noMoveTime);
-    this.wallBoostTimer = 0;
-    this.lastClimbMove = 0;
-
-    for (let i = 0; i < this.cfg.climb.checkDist; i++) {
-      if (!this.world.collideSolidAt(this.x + this.facing, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
-        this.x += this.facing;
-      } else {
-        break;
-      }
-    }
   }
 
   private jump(emitEffect = true): void {
@@ -744,7 +824,6 @@ export class Player {
     this.vy = toFloat(this.cfg.jump.speed);
     this.applyLiftBoost();
     this.varJumpSpeed = this.vy;
-    this.toNormalState();
 
     if (emitEffect) {
       this.emit({ type: "jump", dirX: sign(this.vx) || this.facing, dirY: -1 });
@@ -770,7 +849,6 @@ export class Player {
     this.vy = toFloat(this.cfg.jump.speed);
     this.applyLiftBoost();
     this.varJumpSpeed = this.vy;
-    this.toNormalState();
 
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
   }
@@ -789,7 +867,6 @@ export class Player {
     this.vy = toFloat(this.cfg.jump.superWallJumpSpeed);
     this.applyLiftBoost();
     this.varJumpSpeed = this.vy;
-    this.toNormalState();
 
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
   }
@@ -838,7 +915,6 @@ export class Player {
     }
 
     this.varJumpSpeed = this.vy;
-    this.toNormalState();
 
     const type = wasDucking
       ? (this.dashStartedOnGround ? "hyper" : "wavedash")
@@ -859,33 +935,10 @@ export class Player {
     return this.hasDashPress() && this.dashCooldownTimer <= 0 && this.dashesLeft > 0;
   }
 
-  private startDash(): void {
-    this.leaveNormalState();
+  private startDash(): PlayerMachineState {
     this.consumeDashPress();
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
-    this.dashCooldownTimer = toFloat(this.cfg.dash.cooldown);
-    this.dashRefillCooldownTimer = toFloat(this.cfg.dash.refillCooldown);
-    this.dashAttackTimer = toFloat(this.cfg.dash.attackTime);
-    this.dashStartedOnGround = this.onGround;
-
-    this.beforeDashVx = this.vx;
-    this.beforeDashVy = this.vy;
-    this.hopWaitX = 0;
-
-    this.vx = 0;
-    this.vy = 0;
-    this.dashDir = { x: 0, y: 0 };
-
-    if (!this.onGround && this.ducking && this.canUnDuck()) {
-      this.setDucking(false);
-    }
-
-    this.emit({ type: "dash_begin" });
-    this.dashMotionPending = true;
-    this.dashCoroutinePrimed = false;
-    this.dashEndPending = false;
-    this.requestFreeze(this.cfg.dash.freezeTime);
-    this.state = "dash";
+    return "dash";
   }
 
   private beginDashMotion(): void {
@@ -915,8 +968,6 @@ export class Player {
       this.applyDashSlide(false);
     }
 
-    this.dashTimer = toFloat(this.cfg.dash.duration);
-
     this.emit({ type: "dash_start", dirX: this.dashDir.x, dirY: this.dashDir.y });
   }
 
@@ -932,8 +983,6 @@ export class Player {
     if (this.vy < 0) {
       this.vy = mulFloat(this.vy, this.cfg.dash.endDashUpMult);
     }
-
-    this.toNormalState();
   }
 
   private moveX(amount: number): void {
@@ -1022,7 +1071,7 @@ export class Player {
         this.applyDashSlide(!this.dashStartedOnGround);
       }
 
-      if (step > 0 && this.vy > 0 && this.state !== "grab") {
+      if (step > 0 && this.vy > 0 && this.stateMachine.state !== "climb") {
         const impact = clamp01Float(this.vy / this.cfg.gravity.fastMaxFall);
         this.emit({ type: "land", impact });
       }
@@ -1040,7 +1089,7 @@ export class Player {
 
   private applyJumpThruAssist(dt: number): void {
     if (this.onGround || this.vy > 0) return;
-    if (this.state === "grab" && this.lastClimbMove !== -1) return;
+    if (this.stateMachine.state === "climb" && this.lastClimbMove !== -1) return;
     if (!this.world.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
 
     this.moveY(mulFloat(this.cfg.jump.jumpThruAssistSpeed, dt));
@@ -1091,7 +1140,7 @@ export class Player {
   }
 
   private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
-    if (this.state !== "dash") return "none";
+    if (this.stateMachine.state !== "dash") return "none";
 
     if (this.onGround && this.duckFreeAt(this.x + sign)) {
       this.setDucking(true);
@@ -1115,7 +1164,7 @@ export class Player {
   }
 
   private tryDashDownwardCornerCorrection(h: number): boolean {
-    if (this.state !== "dash" || this.dashStartedOnGround || this.vy <= 0) {
+    if (this.stateMachine.state !== "dash" || this.dashStartedOnGround || this.vy <= 0) {
       return false;
     }
 
@@ -1382,7 +1431,6 @@ export class Player {
     this.vy = minFloat(this.vy, this.cfg.climb.climbHopY);
     this.forceMoveX = 0;
     this.forceMoveXTimer = toFloat(this.cfg.climb.climbHopForceTime);
-    this.toNormalState();
   }
 
   private climbHopBlockedBySpike(): boolean {
@@ -1490,29 +1538,6 @@ export class Player {
     return footY - PLAYER_GEOMETRY.hitboxH;
   }
 
-  private toNormalState(): void {
-    if (this.state === "grab") {
-      this.wallSpeedRetentionTimer = 0;
-    }
-    this.state = "normal";
-    this.maxFall = toFloat(this.cfg.gravity.maxFall);
-    this.dashTimer = 0;
-    this.dashMotionPending = false;
-    this.dashCoroutinePrimed = false;
-    this.dashEndPending = false;
-  }
-
-  private leaveNormalState(): void {
-    if (this.state !== "normal" && this.state !== "duck" && this.state !== "dashAttack") {
-      return;
-    }
-
-    this.wallBoostTimer = 0;
-    this.wallSpeedRetentionTimer = 0;
-    this.hopWaitX = 0;
-    this.hopWaitXSpeed = 0;
-  }
-
   private emit(effect: PlayerEffect): void {
     this.effects.push(effect);
   }
@@ -1527,35 +1552,13 @@ export class Player {
     this.freezeRequestTimer = maxFloat(this.freezeRequestTimer, duration);
   }
 
-  private updateDashCoroutine(dt: number): void {
-    dt = toFloat(dt);
+  private *dashCoroutine(): Generator<number | null, void, unknown> {
+    yield null;
 
-    if (this.state !== "dash") {
-      return;
-    }
+    this.beginDashMotion();
+    yield toFloat(this.cfg.dash.duration);
 
-    if (!this.dashCoroutinePrimed) {
-      this.dashCoroutinePrimed = true;
-      return;
-    }
-
-    if (this.dashMotionPending) {
-      this.dashMotionPending = false;
-      this.beginDashMotion();
-      return;
-    }
-
-    if (this.dashTimer > 0) {
-      this.dashTimer = stepTimer(this.dashTimer, dt);
-      if (this.dashTimer <= 0) {
-        this.dashEndPending = true;
-      }
-      return;
-    }
-
-    if (this.dashEndPending) {
-      this.dashEndPending = false;
-      this.finishDash();
-    }
+    this.finishDash();
+    this.stateMachine.state = "normal";
   }
 }
