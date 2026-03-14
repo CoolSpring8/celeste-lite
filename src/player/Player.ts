@@ -770,7 +770,6 @@ export class Player {
     this.vy = toFloat(this.cfg.jump.speed);
     this.applyLiftBoost();
     this.varJumpSpeed = this.vy;
-    this.facing = dir as 1 | -1;
     this.toNormalState();
 
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
@@ -790,7 +789,6 @@ export class Player {
     this.vy = toFloat(this.cfg.jump.superWallJumpSpeed);
     this.applyLiftBoost();
     this.varJumpSpeed = this.vy;
-    this.facing = dir as 1 | -1;
     this.toNormalState();
 
     this.emit({ type: "wall_jump", wallDir: -dir, dirX: dir, dirY: -1 });
