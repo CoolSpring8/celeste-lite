@@ -2,6 +2,48 @@ import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PLAYER_VISUALS } from "../constants";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 
+type Sqrt11Pose = "idle" | "duck";
+
+type PixelRun = readonly [x: number, width: number];
+
+interface PixelGlyph {
+  width: number;
+  height: number;
+  rows: readonly (readonly PixelRun[])[];
+}
+
+const SQRT11_GLYPHS: Record<Sqrt11Pose, PixelGlyph> = {
+  idle: {
+    width: 8,
+    height: 11,
+    rows: [
+      [],
+      [[2, 6]],
+      [[2, 6]],
+      [[2, 1]],
+      [[2, 1], [4, 1], [6, 1]],
+      [[0, 1], [2, 1], [4, 1], [6, 1]],
+      [[0, 3], [4, 1], [6, 1]],
+      [[0, 3], [4, 1], [6, 1]],
+      [[0, 3], [4, 1], [6, 1]],
+      [[1, 1], [4, 1], [6, 1]],
+      [[1, 1], [4, 1], [6, 1]],
+    ],
+  },
+  duck: {
+    width: 8,
+    height: 6,
+    rows: [
+      [[3, 5]],
+      [[2, 6]],
+      [[0, 1], [2, 2]],
+      [[0, 3], [4, 1], [6, 1]],
+      [[0, 3], [4, 1], [6, 1]],
+      [[1, 1], [4, 1], [6, 1]],
+    ],
+  },
+};
+
 interface Afterimage {
   rect: Phaser.GameObjects.Graphics;
   life: number;
@@ -91,9 +133,10 @@ export class PlayerView {
 
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
+    const pose = this.resolveSqrt11Pose(snapshot);
 
     this.body.setPosition(drawX, drawY);
-    this.drawSqrt11(this.body, snapshot.drawW, snapshot.drawH, this.resolveColor(snapshot));
+    this.drawSqrt11(this.body, pose, snapshot.drawW, snapshot.drawH, this.resolveColor(snapshot));
 
     this.prevCrouched = snapshot.isCrouched;
     this.prevOnGround = snapshot.onGround;
@@ -262,6 +305,7 @@ export class PlayerView {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
     const rect = this.getAfterimageRect();
+    const pose = this.resolveSqrt11Pose(snapshot);
 
     rect
       .setPosition(drawX, drawY)
@@ -269,7 +313,7 @@ export class PlayerView {
       .setVisible(true)
       .setScale(this.body.scaleX, this.body.scaleY);
 
-    this.drawSqrt11(rect, snapshot.drawW, snapshot.drawH, color, 1);
+    this.drawSqrt11(rect, pose, snapshot.drawW, snapshot.drawH, color, 1);
 
     this.afterimages.push({
       rect,
@@ -464,8 +508,13 @@ export class PlayerView {
     g.destroy();
   }
 
+  private resolveSqrt11Pose(snapshot: PlayerSnapshot): Sqrt11Pose {
+    return snapshot.state === "duck" || snapshot.isCrouched ? "duck" : "idle";
+  }
+
   private drawSqrt11(
     g: Phaser.GameObjects.Graphics,
+    pose: Sqrt11Pose,
     w: number,
     h: number,
     color: number,
@@ -473,28 +522,19 @@ export class PlayerView {
   ): void {
     g.clear();
 
-    const drawW = Math.max(w, 1);
-    const drawH = Math.max(h, 1);
-    const lineWidth = Math.max(1, Math.round(Math.min(drawW, drawH) / 8));
-    const toX = (nx: number) => nx * drawW;
-    const toY = (ny: number) => ny * drawH;
+    const glyph = SQRT11_GLYPHS[pose];
+    const pixelW = Math.max(w, 1) / glyph.width;
+    const pixelH = Math.max(h, 1) / glyph.height;
+    const left = -(glyph.width * pixelW) / 2;
+    const top = -glyph.height * pixelH;
 
-    g.lineStyle(lineWidth, color, alpha);
-
-    // Author the glyph in the same local box as PLAYER_GEOMETRY: x in [-0.5, 0.5], y in [-1, 0].
-    g.beginPath();
-    g.moveTo(toX(2 / 16), toY(-2 / 16));
-    g.lineTo(toX(2 / 16), toY(-12 / 16));
-    g.moveTo(toX(6 / 16), toY(-2 / 16));
-    g.lineTo(toX(6 / 16), toY(-12 / 16));
-    g.strokePath();
-
-    g.beginPath();
-    g.moveTo(toX(-8 / 16), toY(-6 / 16));
-    g.lineTo(toX(-7 / 16), toY(-8 / 16));
-    g.lineTo(toX(-5 / 16), toY(0));
-    g.lineTo(toX(-2 / 16), toY(-1));
-    g.lineTo(toX(8 / 16), toY(-1));
-    g.strokePath();
+    g.fillStyle(color, alpha);
+    for (let rowIndex = 0; rowIndex < glyph.rows.length; rowIndex++) {
+      const row = glyph.rows[rowIndex];
+      const y = top + rowIndex * pixelH;
+      for (const [startX, runWidth] of row) {
+        g.fillRect(left + startX * pixelW, y, runWidth * pixelW, pixelH);
+      }
+    }
   }
 }
