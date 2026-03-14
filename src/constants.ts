@@ -225,9 +225,9 @@ export const PLAYER_CONFIG: PlayerConfig = {
 };
 
 export const COLORS = {
-  playerNoDash: 0x5bc0eb, // cyan
-  playerOneDash: 0xb24139, // auburn-ish red
-  playerTwoDash: 0xf08ad6, // pink
+  playerNoDash: 0x44b7ff, // cyan
+  playerOneDash: 0xac3232, // auburn-ish red
+  playerTwoDash: 0xff6def, // pink
   playerManyDash: 0x62c462, // green
   playerCooldown: 0xffffff, // white
   playerTiredFlash: 0xff0000, // red flash while tired
