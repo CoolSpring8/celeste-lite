@@ -67,17 +67,23 @@ const SQRT11_GLYPHS: Record<Sqrt11Pose, PixelGlyph> = {
 };
 
 interface Afterimage {
-  rect: Phaser.GameObjects.Graphics;
+  sprite: GlyphSprite;
   life: number;
   maxLife: number;
 }
 
+interface GlyphSprite {
+  container: Phaser.GameObjects.Container;
+  body: Phaser.GameObjects.Image;
+  hair: Phaser.GameObjects.Image;
+}
+
 export class PlayerView {
   private scene: Phaser.Scene;
-  private body: Phaser.GameObjects.Graphics;
+  private playerSprite: GlyphSprite;
   private dashSlash: Phaser.GameObjects.Rectangle;
   private afterimages: Afterimage[] = [];
-  private afterimagePool: Phaser.GameObjects.Graphics[] = [];
+  private afterimagePool: GlyphSprite[] = [];
   private trailTimer = 0;
   private dashParticleTimer = 0;
   private dashSlashTimer = 0;
@@ -99,10 +105,9 @@ export class PlayerView {
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
     this.ensurePixelTexture();
+    this.ensureGlyphTextures();
 
-    this.body = this.scene.add
-      .graphics()
-      .setDepth(5);
+    this.playerSprite = this.createGlyphSprite(5);
 
     this.dashSlash = this.scene.add
       .rectangle(
@@ -160,10 +165,11 @@ export class PlayerView {
     const drawY = snapshot.y + snapshot.hitboxH;
     const pose = this.resolveSqrt11Pose(snapshot);
 
-    this.body.setPosition(drawX, drawY);
-    this.drawSqrt11(
-      this.body,
+    this.applyGlyphSprite(
+      this.playerSprite,
       pose,
+      drawX,
+      drawY,
       snapshot.drawW,
       snapshot.drawH,
       this.resolveBodyColor(snapshot),
@@ -176,16 +182,16 @@ export class PlayerView {
   }
 
   destroy(): void {
-    this.body.destroy();
+    this.destroyGlyphSprite(this.playerSprite);
     this.dashSlash.destroy();
     this.dashEmitter.destroy();
     this.wallEmitter.destroy();
 
     for (const a of this.afterimages) {
-      a.rect.destroy();
+      this.destroyGlyphSprite(a.sprite);
     }
-    for (const rect of this.afterimagePool) {
-      rect.destroy();
+    for (const sprite of this.afterimagePool) {
+      this.destroyGlyphSprite(sprite);
     }
 
     this.afterimages = [];
@@ -307,14 +313,14 @@ export class PlayerView {
       const a = this.afterimages[i];
       a.life -= dt;
       if (a.life <= 0) {
-        a.rect.setVisible(false);
-        this.afterimagePool.push(a.rect);
+        a.sprite.container.setVisible(false);
+        this.afterimagePool.push(a.sprite);
         this.afterimages[i] = this.afterimages[this.afterimages.length - 1];
         this.afterimages.pop();
         continue;
       }
 
-      a.rect.alpha = a.life / a.maxLife;
+      a.sprite.container.alpha = a.life / a.maxLife;
     }
   }
 
@@ -336,38 +342,37 @@ export class PlayerView {
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
     const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
     const drawY = snapshot.y + snapshot.hitboxH;
-    const rect = this.getAfterimageRect();
+    const sprite = this.getAfterimageSprite();
     const pose = this.resolveSqrt11Pose(snapshot);
 
-    rect
+    sprite.container
       .setPosition(drawX, drawY)
       .setAlpha(0.55)
       .setVisible(true)
-      .setScale(this.body.scaleX, this.body.scaleY);
-
-    this.drawSqrt11(rect, pose, snapshot.drawW, snapshot.drawH, COLORS.playerBody, color, 1);
+      .setScale(this.playerSprite.container.scaleX, this.playerSprite.container.scaleY);
+    this.setGlyphSpritePose(sprite, pose, snapshot.drawW, snapshot.drawH);
+    this.setGlyphSpriteColors(sprite, COLORS.playerBody, color);
 
     this.afterimages.push({
-      rect,
+      sprite,
       life: 0.14,
       maxLife: 0.14,
     });
   }
 
-  private getAfterimageRect(): Phaser.GameObjects.Graphics {
-    const rect = this.afterimagePool.pop();
-    if (rect) {
-      return rect;
+  private getAfterimageSprite(): GlyphSprite {
+    const sprite = this.afterimagePool.pop();
+    if (sprite) {
+      return sprite;
     }
 
-    return this.scene.add
-      .graphics()
-      .setDepth(4)
-      .setVisible(false);
+    const created = this.createGlyphSprite(4);
+    created.container.setVisible(false);
+    return created;
   }
 
   private squash(scaleX: number, scaleY: number): void {
-    this.body.setScale(Math.abs(scaleX) * this.facing, scaleY);
+    this.playerSprite.container.setScale(Math.abs(scaleX) * this.facing, scaleY);
   }
 
   private applyFastFallScale(snapshot: PlayerSnapshot): void {
@@ -412,8 +417,16 @@ export class PlayerView {
 
   private relaxScale(dt: number): void {
     const delta = PLAYER_VISUALS.scaleRelaxRate * dt;
-    this.body.scaleX = this.approach(this.body.scaleX, this.facing, delta);
-    this.body.scaleY = this.approach(this.body.scaleY, 1, delta);
+    this.playerSprite.container.scaleX = this.approach(
+      this.playerSprite.container.scaleX,
+      this.facing,
+      delta,
+    );
+    this.playerSprite.container.scaleY = this.approach(
+      this.playerSprite.container.scaleY,
+      1,
+      delta,
+    );
   }
 
   private approach(current: number, target: number, maxDelta: number): number {
@@ -554,34 +567,81 @@ export class PlayerView {
     g.destroy();
   }
 
+  private ensureGlyphTextures(): void {
+    for (const pose of Object.keys(SQRT11_GLYPHS) as Sqrt11Pose[]) {
+      this.ensureGlyphTexture(pose, "body", SQRT11_GLYPHS[pose].bodyRows);
+      this.ensureGlyphTexture(pose, "hair", SQRT11_GLYPHS[pose].hairRows);
+    }
+  }
+
+  private ensureGlyphTexture(
+    pose: Sqrt11Pose,
+    layer: "body" | "hair",
+    rows: readonly (readonly PixelRun[])[],
+  ): void {
+    const key = this.glyphTextureKey(pose, layer);
+    if (this.scene.textures.exists(key)) return;
+
+    const glyph = SQRT11_GLYPHS[pose];
+    const g = this.scene.add.graphics();
+    this.drawGlyphRows(g, rows, 0, 0, 1, 1, 0xffffff, 1);
+    g.generateTexture(key, glyph.width, glyph.height);
+    g.destroy();
+  }
+
+  private createGlyphSprite(depth: number): GlyphSprite {
+    const body = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "body")).setOrigin(0.5, 1);
+    const hair = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "hair")).setOrigin(0.5, 1);
+    const container = this.scene.add.container(0, 0, [body, hair]).setDepth(depth);
+    return { container, body, hair };
+  }
+
+  private destroyGlyphSprite(sprite: GlyphSprite): void {
+    sprite.body.destroy();
+    sprite.hair.destroy();
+    sprite.container.destroy();
+  }
+
   private syncFacing(facing: PlayerSnapshot["facing"]): void {
     this.facing = facing;
-    this.body.scaleX = Math.abs(this.body.scaleX) * facing;
+    this.playerSprite.container.scaleX = Math.abs(this.playerSprite.container.scaleX) * facing;
   }
 
   private resolveSqrt11Pose(snapshot: PlayerSnapshot): Sqrt11Pose {
     return snapshot.state === "duck" || snapshot.isCrouched ? "duck" : "idle";
   }
 
-  private drawSqrt11(
-    g: Phaser.GameObjects.Graphics,
+  private applyGlyphSprite(
+    sprite: GlyphSprite,
     pose: Sqrt11Pose,
+    x: number,
+    y: number,
     w: number,
     h: number,
     bodyColor: number,
     hairColor: number,
-    alpha: number = 1,
   ): void {
-    g.clear();
+    sprite.container.setPosition(x, y);
+    this.setGlyphSpritePose(sprite, pose, w, h);
+    this.setGlyphSpriteColors(sprite, bodyColor, hairColor);
+  }
 
-    const glyph = SQRT11_GLYPHS[pose];
-    const pixelW = Math.max(w, 1) / glyph.width;
-    const pixelH = Math.max(h, 1) / glyph.height;
-    const left = -(glyph.width * pixelW) / 2;
-    const top = -glyph.height * pixelH;
+  private setGlyphSpritePose(sprite: GlyphSprite, pose: Sqrt11Pose, w: number, h: number): void {
+    sprite.body
+      .setTexture(this.glyphTextureKey(pose, "body"))
+      .setDisplaySize(w, h);
+    sprite.hair
+      .setTexture(this.glyphTextureKey(pose, "hair"))
+      .setDisplaySize(w, h);
+  }
 
-    this.drawGlyphRows(g, glyph.bodyRows, left, top, pixelW, pixelH, bodyColor, alpha);
-    this.drawGlyphRows(g, glyph.hairRows, left, top, pixelW, pixelH, hairColor, alpha);
+  private setGlyphSpriteColors(sprite: GlyphSprite, bodyColor: number, hairColor: number): void {
+    sprite.body.setTint(bodyColor);
+    sprite.hair.setTint(hairColor);
+  }
+
+  private glyphTextureKey(pose: Sqrt11Pose, layer: "body" | "hair"): string {
+    return `sqrt11-${pose}-${layer}`;
   }
 
   private drawGlyphRows(
