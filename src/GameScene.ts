@@ -4,6 +4,7 @@ import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { RefillEntity, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import { parseLevel } from "./level";
+import { PlayerControls } from "./input/PlayerControls";
 import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
@@ -48,8 +49,7 @@ export class GameScene extends Phaser.Scene {
   private tileDepths!: Int32Array;
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
-  private pendingJumpEdges: Array<"down" | "up"> = [];
-  private pendingDashPresses = 0;
+  private controls!: PlayerControls;
 
   private accumulator = 0;
   private readonly fixedDt = toFloat(1 / 60);
@@ -116,15 +116,12 @@ export class GameScene extends Phaser.Scene {
       right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
       up: kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
       down: kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN),
-      a: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
-      d: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
-      w: kb.addKey(Phaser.Input.Keyboard.KeyCodes.W),
-      s: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
       grab: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
       dash: kb.addKey(Phaser.Input.Keyboard.KeyCodes.X),
       jump: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
       restart: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
     };
+    this.controls = new PlayerControls();
     this.keys.jump.on("down", this.onJumpDown, this);
     this.keys.jump.on("up", this.onJumpUp, this);
     this.keys.dash.on("down", this.onDashDown, this);
@@ -144,7 +141,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         VIEWPORT.width - 8,
         VIEWPORT.height - 8,
-        "Move: arrows / WASD\nC jump  X dash  Z grab  R reset",
+        "Move: arrow keys\nC jump  X dash  Z grab  R reset",
         {
           fontFamily: "monospace",
           fontSize: "9px",
@@ -166,7 +163,7 @@ export class GameScene extends Phaser.Scene {
       this.player.hardRespawn(this.spawnX, this.spawnY);
       this.world.resetTransientState();
       this.syncRefillViews();
-      this.clearInputEdgeQueues();
+      this.controls.clearTransientState();
       this.forceCameraSnap();
       this.cameras.main.fadeIn(80, 10, 10, 20);
       this.accumulator = 0;
@@ -205,7 +202,7 @@ export class GameScene extends Phaser.Scene {
         this.player.hardRespawn(this.spawnX, this.spawnY);
         this.world.resetTransientState();
         this.syncRefillViews();
-        this.clearInputEdgeQueues();
+        this.controls.clearTransientState();
         this.forceCameraSnap();
         if (spiked) {
           this.cameras.main.flash(180, 0, 0, 0, false);
@@ -297,7 +294,7 @@ export class GameScene extends Phaser.Scene {
       this.keys.jump.off("up", this.onJumpUp, this);
       this.keys.dash.off("down", this.onDashDown, this);
     }
-    this.clearInputEdgeQueues();
+    this.controls?.reset();
     this.playerView?.destroy();
     this.refillEmitter?.destroy();
     for (const refill of this.refills) {
@@ -308,51 +305,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gatherStepInput(): InputState {
-    let x = 0;
-    let y = 0;
-    if (this.keys.left.isDown || this.keys.a.isDown) x -= 1;
-    if (this.keys.right.isDown || this.keys.d.isDown) x += 1;
-    if (this.keys.up.isDown || this.keys.w.isDown) y -= 1;
-    if (this.keys.down.isDown || this.keys.s.isDown) y += 1;
+    this.controls.setCheck("leftArrow", this.keys.left.isDown);
+    this.controls.setCheck("rightArrow", this.keys.right.isDown);
+    this.controls.setCheck("upArrow", this.keys.up.isDown);
+    this.controls.setCheck("downArrow", this.keys.down.isDown);
+    this.controls.setCheck("jump", this.keys.jump.isDown);
+    this.controls.setCheck("dash", this.keys.dash.isDown);
+    this.controls.setCheck("grab", this.keys.grab.isDown);
 
-    const jump = this.keys.jump.isDown;
-    const jumpEdge = this.pendingJumpEdges.shift();
-    const jumpPressed = jumpEdge === "down";
-    const jumpReleased = jumpEdge === "up";
-    const dash = this.keys.dash.isDown;
-    const dashPressed = this.pendingDashPresses > 0;
-    if (dashPressed) this.pendingDashPresses--;
-    const grab = this.keys.grab.isDown;
-
-    return {
-      x,
-      y,
-      jump,
-      jumpPressed,
-      jumpReleased,
-      dash,
-      dashPressed,
-      grab,
-    };
+    return this.controls.update(this.fixedDt);
   }
 
   private onJumpDown(event: KeyboardEvent): void {
     if (event.repeat) return;
-    this.pendingJumpEdges.push("down");
+    this.controls.queuePress("jump");
   }
 
   private onJumpUp(): void {
-    this.pendingJumpEdges.push("up");
+    this.controls.queueRelease("jump");
   }
 
   private onDashDown(event: KeyboardEvent): void {
     if (event.repeat) return;
-    this.pendingDashPresses++;
-  }
-
-  private clearInputEdgeQueues(): void {
-    this.pendingJumpEdges.length = 0;
-    this.pendingDashPresses = 0;
+    this.controls.queuePress("dash");
   }
 
   private updateCamera(snapshot: ReturnType<Player["getSnapshot"]>, dt: number): void {

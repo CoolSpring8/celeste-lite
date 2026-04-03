@@ -3,6 +3,8 @@ export type PlayerState = "normal" | "climb" | "dash";
 export interface InputState {
   x: number;
   y: number;
+  aimX: number;
+  aimY: number;
   jump: boolean;
   jumpPressed: boolean;
   jumpReleased: boolean;

@@ -25,6 +25,8 @@ const EPSILON = 0.0001;
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
+  aimX: 0,
+  aimY: 0,
   jump: false,
   jumpPressed: false,
   jumpReleased: false,
@@ -248,7 +250,7 @@ export class Player {
       this.facing = this.moveXInput as 1 | -1;
     }
 
-    this.lastAim = dashDirection(input.x, input.y, this.facing);
+    this.lastAim = dashDirection(input.aimX, input.aimY, this.facing);
     this.updateWallSpeedRetention(dt);
     this.updateHopWait();
 

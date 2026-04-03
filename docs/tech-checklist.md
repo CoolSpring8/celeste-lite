@@ -38,7 +38,7 @@ Legend:
 | Grounded Ultras | WORKS | 390 burst observed from 325 * 1.2 |
 | Grounded Ultra Cancel | EXCLUDED | Requires dash interruption sources not present |
 | Delayed Ultra | WORKS | Landing after a down-diagonal dash still applies the ultra slide conversion |
-| Demodash | EXCLUDED | No dedicated crouch-dash/manual-demo input path yet, and the exact solution is not in the local reference file |
+| Demodash | EXCLUDED | Input system implements Monocle-style directional handling but demo-specific startup behavior doesn't emerge |
 | Demohyper | EXCLUDED | Depends on the excluded demo input path |
 | Up Diagonal Demo | EXCLUDED | Depends on the excluded demo input path |
 | Wallbounce | WORKS | Updash + wall jump yields super wall jump values (170/-160) |
