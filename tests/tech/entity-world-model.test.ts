@@ -3,6 +3,8 @@ import { WORLD } from "../../src/constants.ts";
 import { Hitbox } from "../../src/entities/core/Hitbox.ts";
 import { EntityWorld } from "../../src/entities/EntityWorld.ts";
 import {
+  CameraControllerEntity,
+  CameraKillboxEntity,
   JumpThruTilesEntity,
   RefillPickupEntity,
   SolidTilesEntity,
@@ -41,6 +43,27 @@ describe("EntityWorld Monocle model", () => {
     expect(jumpThru?.grid.getCell(8, 9)).toBeTrue();
     expect(world.collideSolidAt(6 * WORLD.tile, 7 * WORLD.tile, WORLD.tile, WORLD.tile)).toBeTrue();
     expect(world.overlapsJumpThrough(8 * WORLD.tile, 9 * WORLD.tile, WORLD.tile, WORLD.tile)).toBeTrue();
+  });
+
+  test("camera helpers are tracked through world entities", () => {
+    const world = EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, []);
+
+    expect(world.getEntity(CameraControllerEntity)).toBe(world.cameraController);
+    expect(world.getEntities(CameraKillboxEntity)).toHaveLength(0);
+
+    world.setCameraKillboxes([
+      { x: 8, y: 16, w: 24, h: 32 },
+      { x: 48, y: 56, w: 16, h: 8, active: false },
+    ]);
+
+    const killboxes = world.getEntities(CameraKillboxEntity);
+    expect(killboxes).toHaveLength(2);
+    expect(killboxes[0]?.bounds).toEqual({ x: 8, y: 16, w: 24, h: 32 });
+    expect(killboxes[1]?.active).toBeFalse();
+    expect(killboxes[1]?.collidable).toBeFalse();
+
+    world.clearCameraKillboxes();
+    expect(world.getEntities(CameraKillboxEntity)).toHaveLength(0);
   });
 
   test("typed collision queries work against tracked hitbox entities", () => {

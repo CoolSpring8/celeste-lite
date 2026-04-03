@@ -2,7 +2,7 @@ import { WORLD } from "../constants";
 import { Entity } from "./core/Entity";
 import { Grid } from "./core/Grid";
 import { Hitbox } from "./core/Hitbox";
-import type { Aabb, RefillType, SpikeDirection } from "./types";
+import type { Aabb, CameraLockMode, RefillType, SpikeDirection } from "./types";
 
 const REFILL_SIZE = 8;
 
@@ -12,6 +12,41 @@ export abstract class WorldEntity extends Entity {
   protected constructor(id: number, x = 0, y = 0) {
     super(x, y);
     this.id = id;
+  }
+}
+
+export class CameraControllerEntity extends WorldEntity {
+  readonly kind = "cameraController";
+  offsetX = 0;
+  offsetY = 0;
+  anchorX = 0;
+  anchorY = 0;
+  anchorLerpX = 0;
+  anchorLerpY = 0;
+  anchorIgnoreX = false;
+  anchorIgnoreY = false;
+  lockMode: CameraLockMode = "none";
+  upwardMaxY = Number.POSITIVE_INFINITY;
+
+  constructor(id: number) {
+    super(id, 0, 0);
+    this.collidable = false;
+  }
+}
+
+export class CameraKillboxEntity extends WorldEntity {
+  readonly kind = "cameraKillbox";
+  active = true;
+
+  constructor(id: number, x: number, y: number, w: number, h: number, active = true) {
+    super(id, x, y);
+    this.active = active;
+    this.collidable = active;
+    this.collider = new Hitbox(w, h);
+  }
+
+  get bounds(): Aabb {
+    return this.collider?.bounds ?? { x: this.x, y: this.y, w: 0, h: 0 };
   }
 }
 

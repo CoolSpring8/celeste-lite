@@ -5,6 +5,8 @@ import { Collider } from "./core/Collider";
 import { Entity, type EntityType } from "./core/Entity";
 import { Tracker } from "./core/Tracker";
 import {
+  CameraControllerEntity,
+  CameraKillboxEntity,
   JumpThruTilesEntity,
   RefillPickupEntity,
   SolidTilesEntity,
@@ -13,6 +15,7 @@ import {
 } from "./runtime";
 import {
   Aabb,
+  CameraKillboxSpec,
   LevelEntitySpec,
   SpikeDirection,
 } from "./types";
@@ -33,6 +36,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
   readonly tracker = new Tracker();
   readonly entities: WorldEntity[] = [];
+  readonly cameraController: CameraControllerEntity;
   readonly solidTiles: SolidTilesEntity;
   readonly jumpThruTiles: JumpThruTilesEntity;
 
@@ -44,6 +48,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     this.data = new Uint8Array(cols * rows);
     this.data.fill(TILE_EMPTY);
 
+    this.cameraController = this.addEntity(new CameraControllerEntity(this.nextId()));
     this.solidTiles = this.addEntity(new SolidTilesEntity(this.nextId(), cols, rows));
     this.jumpThruTiles = this.addEntity(new JumpThruTilesEntity(this.nextId(), cols, rows));
 
@@ -62,6 +67,10 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
   get spikes(): readonly SpikeHazardEntity[] {
     return this.getEntities(SpikeHazardEntity);
+  }
+
+  get cameraKillboxes(): readonly CameraKillboxEntity[] {
+    return this.getEntities(CameraKillboxEntity);
   }
 
   update(dt: number, timeSeconds: number): void {
@@ -334,6 +343,28 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     return hits;
   }
 
+  setCameraKillboxes(killboxes: ReadonlyArray<CameraKillboxSpec>): void {
+    this.clearCameraKillboxes();
+    for (const box of killboxes) {
+      this.addEntity(
+        new CameraKillboxEntity(
+          this.nextId(),
+          box.x,
+          box.y,
+          box.w,
+          box.h,
+          box.active !== false,
+        ),
+      );
+    }
+  }
+
+  clearCameraKillboxes(): void {
+    for (const killbox of [...this.cameraKillboxes]) {
+      this.removeEntity(killbox);
+    }
+  }
+
   private addSpec(spec: LevelEntitySpec): void {
     if (spec.kind === "solidTile" || spec.kind === "jumpThruTile") {
       this.addTile(spec.kind, spec.col, spec.row);
@@ -380,6 +411,15 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     this.entities.push(entity);
     this.tracker.track(entity);
     return entity;
+  }
+
+  private removeEntity(entity: WorldEntity): void {
+    const index = this.entities.indexOf(entity);
+    if (index >= 0) {
+      this.entities.splice(index, 1);
+    }
+    this.tracker.untrack(entity);
+    entity.collider = null;
   }
 
   private nextId(): number {

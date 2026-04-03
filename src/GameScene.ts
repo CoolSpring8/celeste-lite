@@ -2,7 +2,7 @@ import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { type RefillPickupEntity } from "./entities/runtime";
-import { RefillType } from "./entities/types";
+import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import { parseLevel } from "./level";
 import { PlayerControls } from "./input/PlayerControls";
@@ -17,8 +17,6 @@ interface RefillView {
   body: Phaser.GameObjects.Rectangle;
 }
 
-type CameraLockMode = "none" | "finalBoss" | "boostSequence";
-
 const CAMERA_SMOOTH_BASE = 0.01;
 const CAMERA_SETTLE_EPSILON = 0.75;
 const CAMERA_BOOST_UPWARD_MAX_Y_OFFSET = 48;
@@ -32,14 +30,6 @@ const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
 const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
 const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
-
-interface CameraKillbox {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-  active?: boolean;
-}
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -62,16 +52,8 @@ export class GameScene extends Phaser.Scene {
   private helpText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
-  private cameraOffset = new Phaser.Math.Vector2(0, 0);
-  private cameraAnchor = new Phaser.Math.Vector2(0, 0);
-  private cameraAnchorLerp = new Phaser.Math.Vector2(0, 0);
-  private cameraAnchorIgnoreX = false;
-  private cameraAnchorIgnoreY = false;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
-  private cameraLockMode: CameraLockMode = "none";
-  private cameraUpwardMaxY = Number.POSITIVE_INFINITY;
-  private cameraKillboxes: CameraKillbox[] = [];
 
   constructor() {
     super("GameScene");
@@ -237,7 +219,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   setCameraOffset(x: number, y: number): void {
-    this.cameraOffset.set(x, y);
+    this.world.cameraController.offsetX = x;
+    this.world.cameraController.offsetY = y;
   }
 
   setCameraAnchor(
@@ -247,22 +230,27 @@ export class GameScene extends Phaser.Scene {
     lerpY: number,
     opts?: { ignoreX?: boolean; ignoreY?: boolean },
   ): void {
-    this.cameraAnchor.set(x, y);
-    this.cameraAnchorLerp.set(Phaser.Math.Clamp(lerpX, 0, 1), Phaser.Math.Clamp(lerpY, 0, 1));
-    this.cameraAnchorIgnoreX = !!opts?.ignoreX;
-    this.cameraAnchorIgnoreY = !!opts?.ignoreY;
+    const controller = this.world.cameraController;
+    controller.anchorX = x;
+    controller.anchorY = y;
+    controller.anchorLerpX = Phaser.Math.Clamp(lerpX, 0, 1);
+    controller.anchorLerpY = Phaser.Math.Clamp(lerpY, 0, 1);
+    controller.anchorIgnoreX = !!opts?.ignoreX;
+    controller.anchorIgnoreY = !!opts?.ignoreY;
   }
 
   clearCameraAnchor(): void {
-    this.cameraAnchorLerp.set(0, 0);
-    this.cameraAnchorIgnoreX = false;
-    this.cameraAnchorIgnoreY = false;
+    const controller = this.world.cameraController;
+    controller.anchorLerpX = 0;
+    controller.anchorLerpY = 0;
+    controller.anchorIgnoreX = false;
+    controller.anchorIgnoreY = false;
   }
 
   setCameraLockMode(mode: CameraLockMode): void {
-    this.cameraLockMode = mode;
+    this.world.cameraController.lockMode = mode;
     if (mode !== "boostSequence") {
-      this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
+      this.world.cameraController.upwardMaxY = Number.POSITIVE_INFINITY;
     }
   }
 
@@ -270,17 +258,17 @@ export class GameScene extends Phaser.Scene {
     this.forceCameraUpdate = force;
   }
 
-  setCameraKillboxes(killboxes: ReadonlyArray<CameraKillbox>): void {
-    this.cameraKillboxes = killboxes.map((box) => ({ ...box }));
+  setCameraKillboxes(killboxes: ReadonlyArray<CameraKillboxSpec>): void {
+    this.world.setCameraKillboxes(killboxes);
   }
 
   clearCameraKillboxes(): void {
-    this.cameraKillboxes = [];
+    this.world.clearCameraKillboxes();
   }
 
   forceCameraSnap(): void {
     this.forceCameraSnapNextFrame = true;
-    this.cameraUpwardMaxY = Number.POSITIVE_INFINITY;
+    this.world.cameraController.upwardMaxY = Number.POSITIVE_INFINITY;
   }
 
   addCameraImpulse(x: number, y: number): void {
@@ -394,25 +382,26 @@ export class GameScene extends Phaser.Scene {
     snapshot: ReturnType<Player["getSnapshot"]>,
     camera: Phaser.Cameras.Scene2D.Camera,
   ): Phaser.Math.Vector2 {
+    const controller = this.world.cameraController;
     const centerX = snapshot.x + PLAYER_GEOMETRY.hitboxW * 0.5;
     const feetY = snapshot.y + snapshot.hitboxH;
     let targetX = centerX - VIEWPORT.width * 0.5;
     let targetY = feetY - CAMERA_FOOT_ANCHOR_Y;
 
-    targetX += this.cameraOffset.x;
-    targetY += this.cameraOffset.y;
+    targetX += controller.offsetX;
+    targetY += controller.offsetY;
 
-    if (this.cameraAnchorLerp.lengthSq() > 0) {
-      if (this.cameraAnchorIgnoreX && !this.cameraAnchorIgnoreY) {
-        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
-      } else if (!this.cameraAnchorIgnoreX && this.cameraAnchorIgnoreY) {
-        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
-      } else if (this.cameraAnchorLerp.x === this.cameraAnchorLerp.y) {
-        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
-        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
+    if (controller.anchorLerpX > 0 || controller.anchorLerpY > 0) {
+      if (controller.anchorIgnoreX && !controller.anchorIgnoreY) {
+        targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
+      } else if (!controller.anchorIgnoreX && controller.anchorIgnoreY) {
+        targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
+      } else if (controller.anchorLerpX === controller.anchorLerpY) {
+        targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
+        targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
       } else {
-        targetX = Phaser.Math.Linear(targetX, this.cameraAnchor.x, this.cameraAnchorLerp.x);
-        targetY = Phaser.Math.Linear(targetY, this.cameraAnchor.y, this.cameraAnchorLerp.y);
+        targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
+        targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
       }
     }
 
@@ -421,19 +410,19 @@ export class GameScene extends Phaser.Scene {
     let clampedX = Phaser.Math.Clamp(targetX, 0, maxX);
     let clampedY = Phaser.Math.Clamp(targetY, 0, maxY);
 
-    if (this.cameraLockMode !== "none") {
-      if (this.cameraLockMode !== "boostSequence") {
+    if (controller.lockMode !== "none") {
+      if (controller.lockMode !== "boostSequence") {
         clampedX = Math.max(clampedX, camera.scrollX);
       }
 
-      if (this.cameraLockMode === "finalBoss") {
+      if (controller.lockMode === "finalBoss") {
         clampedY = Math.max(clampedY, camera.scrollY);
-      } else if (this.cameraLockMode === "boostSequence") {
-        this.cameraUpwardMaxY = Math.min(
+      } else if (controller.lockMode === "boostSequence") {
+        controller.upwardMaxY = Math.min(
           camera.scrollY + CAMERA_BOOST_UPWARD_MAX_Y_OFFSET,
-          this.cameraUpwardMaxY,
+          controller.upwardMaxY,
         );
-        clampedY = Math.min(clampedY, this.cameraUpwardMaxY);
+        clampedY = Math.min(clampedY, controller.upwardMaxY);
       }
     }
 
@@ -446,21 +435,22 @@ export class GameScene extends Phaser.Scene {
     targetY: number,
     maxY: number,
   ): number {
-    if (this.cameraKillboxes.length === 0) return targetY;
+    if (this.world.cameraKillboxes.length === 0) return targetY;
 
     let safeY = targetY;
     const playerLeft = snapshot.x;
     const playerRight = snapshot.x + PLAYER_GEOMETRY.hitboxW;
     const playerTop = snapshot.y;
 
-    for (const box of this.cameraKillboxes) {
-      if (box.active === false) continue;
+    for (const box of this.world.cameraKillboxes) {
+      if (!box.active || !box.collidable) continue;
+      const bounds = box.bounds;
 
-      const overlapsX = playerRight > box.x && playerLeft < box.x + box.w;
+      const overlapsX = playerRight > bounds.x && playerLeft < bounds.x + bounds.w;
       if (!overlapsX) continue;
-      if (playerTop >= box.y + box.h) continue;
+      if (playerTop >= bounds.y + bounds.h) continue;
 
-      safeY = Math.min(safeY, box.y - VIEWPORT.height);
+      safeY = Math.min(safeY, bounds.y - VIEWPORT.height);
     }
 
     return Phaser.Math.Clamp(safeY, 0, maxY);
