@@ -10,12 +10,12 @@ import {
   maxFloat,
   minFloat,
   mulFloat,
-  roundToEvenInt,
   sign,
   stepTimer,
   subFloat,
   toFloat,
 } from "./math";
+import { Actor, type MoveCollisionResult } from "./Actor";
 import { StateMachine } from "./StateMachine";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
@@ -35,13 +35,9 @@ const EMPTY_INPUT: InputState = {
   grab: false,
 };
 
-export class Player {
-  x: number;
-  y: number;
+export class Player extends Actor {
   vx = 0;
   vy = 0;
-  private remX = 0;
-  private remY = 0;
 
   facing: 1 | -1 = 1;
 
@@ -103,13 +99,10 @@ export class Player {
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
 
-  private world: CollisionWorld;
   private cfg: PlayerConfig;
 
   constructor(x: number, y: number, world: CollisionWorld, cfg: PlayerConfig = PLAYER_CONFIG) {
-    this.x = x;
-    this.y = y;
-    this.world = world;
+    super(x, y, world);
     this.cfg = cfg;
     this.dashesLeft = cfg.dash.maxDashes;
     this.stamina = toFloat(cfg.climb.max);
@@ -263,8 +256,8 @@ export class Player {
       this.setDucking(false);
     }
 
-    this.moveX(mulFloat(this.vx, dt));
-    this.moveY(mulFloat(this.vy, dt));
+    this.moveH(mulFloat(this.vx, dt));
+    this.moveV(mulFloat(this.vy, dt));
 
     this.refreshEnvironment();
 
@@ -349,8 +342,7 @@ export class Player {
     this.y = y;
     this.vx = 0;
     this.vy = 0;
-    this.remX = 0;
-    this.remY = 0;
+    this.clearMovementRemainders();
 
     this.facing = 1;
     this.ducking = false;
@@ -565,7 +557,7 @@ export class Player {
   private climbBegin(): void {
     this.autoJump = false;
     this.vx = 0;
-    this.remX = 0;
+    this.clearHorizontalRemainder();
     this.vy = mulFloat(this.vy, this.cfg.climb.climbGrabYMult);
     this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
     this.climbNoMoveTimer = toFloat(this.cfg.climb.noMoveTime);
@@ -705,7 +697,7 @@ export class Player {
     }
 
     this.vx = 0;
-    this.remX = 0;
+    this.clearHorizontalRemainder();
     return "climb";
   }
 
@@ -971,114 +963,12 @@ export class Player {
     }
   }
 
-  private moveX(amount: number): void {
-    this.remX = addFloat(this.remX, amount);
-    let move = roundToEvenInt(this.remX);
-    this.remX = subFloat(this.remX, move);
-    const h = this.getHitboxH();
-
-    while (move !== 0) {
-      const step = sign(move);
-      const nextX = this.x + step;
-
-      if (
-        !this.world.collideAt(
-          nextX,
-          this.y,
-          PLAYER_GEOMETRY.hitboxW,
-          h,
-          this.y,
-          false,
-        )
-      ) {
-        this.x = nextX;
-        move -= step;
-        continue;
-      }
-
-      const dashCollision = this.tryDashHorizontalCollision(step, h);
-      if (dashCollision === "corrected") {
-        move -= step;
-        continue;
-      }
-
-      if (dashCollision === "ducked") {
-        break;
-      }
-
-      if (this.wallSpeedRetentionTimer <= 0) {
-        this.wallSpeedRetained = this.vx;
-        this.wallSpeedRetentionTimer = toFloat(this.cfg.movement.wallSpeedRetentionTime);
-      }
-
-      this.vx = 0;
-      this.remX = 0;
-      this.dashAttackTimer = 0;
-      break;
-    }
-  }
-
-  private moveY(amount: number): void {
-    this.remY = addFloat(this.remY, amount);
-    let move = roundToEvenInt(this.remY);
-    this.remY = subFloat(this.remY, move);
-    const h = this.getHitboxH();
-
-    while (move !== 0) {
-      const step = sign(move);
-      const nextY = this.y + step;
-
-      if (
-        !this.world.collideAt(
-          this.x,
-          nextY,
-          PLAYER_GEOMETRY.hitboxW,
-          h,
-          this.y,
-          step > 0,
-        )
-      ) {
-        this.y = nextY;
-        move -= step;
-        continue;
-      }
-
-      if (step < 0 && this.tryUpCornerCorrectionY(h)) {
-        move -= step;
-        continue;
-      }
-
-      if (step > 0 && this.tryDashDownwardCornerCorrection(h)) {
-        move -= step;
-        continue;
-      }
-
-      if (step > 0 && this.isDownDiagonalDash() && this.vy > 0) {
-        this.applyDashSlide(!this.dashStartedOnGround);
-      }
-
-      if (step > 0 && this.vy > 0 && this.stateMachine.state !== "climb") {
-        const impact = clamp01Float(this.vy / this.cfg.gravity.fastMaxFall);
-        this.emit({ type: "land", impact });
-      }
-
-      if (step < 0 && this.varJumpTimer < this.cfg.jump.varTime - this.cfg.jump.ceilingVarJumpGrace) {
-        this.varJumpTimer = 0;
-      }
-
-      this.vy = 0;
-      this.remY = 0;
-      this.dashAttackTimer = 0;
-      break;
-    }
-  }
-
   private applyJumpThruAssist(dt: number): void {
     if (this.onGround || this.vy > 0) return;
     if (this.stateMachine.state === "climb" && this.lastClimbMove !== -1) return;
     if (!this.world.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
 
-    this.moveY(mulFloat(this.cfg.jump.jumpThruAssistSpeed, dt));
+    this.moveV(mulFloat(this.cfg.jump.jumpThruAssistSpeed, dt));
   }
 
   private applyDashFloorSnap(): void {
@@ -1106,7 +996,7 @@ export class Player {
     if (!wouldHitSolid && !wouldHitJumpThru) return;
 
     this.y += dist;
-    this.remY = 0;
+    this.clearVerticalRemainder();
   }
 
   private applyDashJumpThruNudge(): void {
@@ -1122,7 +1012,7 @@ export class Player {
     if (nudgeY === null) return;
 
     this.y = nudgeY;
-    this.remY = 0;
+    this.clearVerticalRemainder();
   }
 
   private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
@@ -1368,12 +1258,12 @@ export class Player {
   private tryDuckCorrection(dt: number): void {
     for (let i = this.cfg.movement.duckCorrectCheck; i > 0; i--) {
       if (this.canUnDuckAt(this.x + i)) {
-        this.moveX(mulFloat(this.cfg.movement.duckCorrectSlide, dt));
+        this.moveH(mulFloat(this.cfg.movement.duckCorrectSlide, dt));
         break;
       }
 
       if (this.canUnDuckAt(this.x - i)) {
-        this.moveX(mulFloat(-this.cfg.movement.duckCorrectSlide, dt));
+        this.moveH(mulFloat(-this.cfg.movement.duckCorrectSlide, dt));
         break;
       }
     }
@@ -1536,6 +1426,69 @@ export class Player {
 
   private requestFreeze(duration: number): void {
     this.freezeRequestTimer = maxFloat(this.freezeRequestTimer, duration);
+  }
+
+  protected getMoveWidth(): number {
+    return PLAYER_GEOMETRY.hitboxW;
+  }
+
+  protected getMoveHeight(): number {
+    return this.getHitboxH();
+  }
+
+  protected onCollideH(step: number): MoveCollisionResult {
+    const dashCollision = this.tryDashHorizontalCollision(step, this.getHitboxH());
+    if (dashCollision === "corrected") {
+      return "moved";
+    }
+    if (dashCollision === "ducked") {
+      return "break";
+    }
+
+    return "none";
+  }
+
+  protected onCollideV(step: number): MoveCollisionResult {
+    const h = this.getHitboxH();
+    if (step < 0 && this.tryUpCornerCorrectionY(h)) {
+      return "moved";
+    }
+
+    if (step > 0 && this.tryDashDownwardCornerCorrection(h)) {
+      return "moved";
+    }
+
+    return "none";
+  }
+
+  protected afterBlockedH(_step: number): void {
+    if (this.wallSpeedRetentionTimer <= 0) {
+      this.wallSpeedRetained = this.vx;
+      this.wallSpeedRetentionTimer = toFloat(this.cfg.movement.wallSpeedRetentionTime);
+    }
+
+    this.vx = 0;
+    this.clearHorizontalRemainder();
+    this.dashAttackTimer = 0;
+  }
+
+  protected afterBlockedV(step: number): void {
+    if (step > 0 && this.isDownDiagonalDash() && this.vy > 0) {
+      this.applyDashSlide(!this.dashStartedOnGround);
+    }
+
+    if (step > 0 && this.vy > 0 && this.stateMachine.state !== "climb") {
+      const impact = clamp01Float(this.vy / this.cfg.gravity.fastMaxFall);
+      this.emit({ type: "land", impact });
+    }
+
+    if (step < 0 && this.varJumpTimer < this.cfg.jump.varTime - this.cfg.jump.ceilingVarJumpGrace) {
+      this.varJumpTimer = 0;
+    }
+
+    this.vy = 0;
+    this.clearVerticalRemainder();
+    this.dashAttackTimer = 0;
   }
 
   private *dashCoroutine(): Generator<number | null, void, unknown> {
