@@ -1,4 +1,4 @@
-import { WORLD } from "../constants";
+import { SPIKE_HITBOX_THICKNESS, SPIKE_RENDER_HEIGHT, WORLD } from "../constants";
 import { SolidGrid, TILE_EMPTY, TILE_JUMP_THROUGH, TILE_SOLID } from "../grid";
 import { CollisionWorld, GroundProbe } from "./CollisionWorld";
 import { Collider } from "./core/Collider";
@@ -20,11 +20,11 @@ import {
   SpikeDirection,
 } from "./types";
 
-const REFILL_PICKUP_SIZE = Math.max(6, Math.round(WORLD.tile * 0.75));
+const REFILL_PICKUP_SIZE = 6;
 const REFILL_RESPAWN_TIME = 2.5;
 const REFILL_BOB_AMPLITUDE = WORLD.tile * 0.1;
 const SPIKE_SIZE = WORLD.tile;
-const SPIKE_HEIGHT = Math.max(5, Math.round(WORLD.tile * 0.625));
+const SPIKE_HEIGHT = SPIKE_RENDER_HEIGHT;
 const SPIKE_EPSILON = 0.0001;
 
 type CollisionTarget = Entity | Collider | Aabb;
@@ -453,16 +453,22 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
   private spikeDangerBounds(spike: SpikeHazardEntity): Aabb {
     const h = Math.min(SPIKE_HEIGHT, WORLD.tile);
+    const thickness = Math.min(SPIKE_HITBOX_THICKNESS, h);
     switch (spike.dir) {
       case "up":
-        return { x: spike.x, y: spike.y + WORLD.tile - h, w: WORLD.tile, h };
+        return { x: spike.x, y: spike.y + WORLD.tile - h, w: WORLD.tile, h: thickness };
       case "down":
-        return { x: spike.x, y: spike.y, w: WORLD.tile, h };
+        return { x: spike.x, y: spike.y, w: WORLD.tile, h: thickness };
       case "left":
-        return { x: spike.x + WORLD.tile - h, y: spike.y, w: h, h: WORLD.tile };
+        return {
+          x: spike.x + WORLD.tile - h,
+          y: spike.y,
+          w: thickness,
+          h: WORLD.tile,
+        };
       case "right":
       default:
-        return { x: spike.x, y: spike.y, w: h, h: WORLD.tile };
+        return { x: spike.x, y: spike.y, w: thickness, h: WORLD.tile };
     }
   }
 

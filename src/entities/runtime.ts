@@ -1,10 +1,34 @@
-import { WORLD } from "../constants";
+import { SPIKE_HITBOX_THICKNESS, SPIKE_RENDER_HEIGHT, WORLD } from "../constants";
 import { Entity } from "./core/Entity";
 import { Grid } from "./core/Grid";
 import { Hitbox } from "./core/Hitbox";
 import type { Aabb, CameraLockMode, RefillType, SpikeDirection } from "./types";
 
 const REFILL_SIZE = 8;
+
+function spikeHitbox(dir: SpikeDirection): Hitbox {
+  switch (dir) {
+    case "up":
+      return new Hitbox(
+        WORLD.tile,
+        SPIKE_HITBOX_THICKNESS,
+        0,
+        WORLD.tile - SPIKE_RENDER_HEIGHT,
+      );
+    case "down":
+      return new Hitbox(WORLD.tile, SPIKE_HITBOX_THICKNESS);
+    case "left":
+      return new Hitbox(
+        SPIKE_HITBOX_THICKNESS,
+        WORLD.tile,
+        WORLD.tile - SPIKE_RENDER_HEIGHT,
+        0,
+      );
+    case "right":
+    default:
+      return new Hitbox(SPIKE_HITBOX_THICKNESS, WORLD.tile);
+  }
+}
 
 export abstract class WorldEntity extends Entity {
   readonly id: number;
@@ -105,6 +129,6 @@ export class SpikeHazardEntity extends WorldEntity {
   constructor(id: number, x: number, y: number, dir: SpikeDirection) {
     super(id, x, y);
     this.dir = dir;
-    this.collider = new Hitbox(WORLD.tile, WORLD.tile);
+    this.collider = spikeHitbox(dir);
   }
 }

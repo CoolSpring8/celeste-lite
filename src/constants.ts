@@ -4,6 +4,9 @@ export const WORLD = {
   rows: 30,
 } as const;
 
+export const SPIKE_RENDER_HEIGHT = 5;
+export const SPIKE_HITBOX_THICKNESS = 3;
+
 export const VIEWPORT = {
   width: 320,
   height: 180,
