@@ -1,5 +1,6 @@
 import { PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
 import { CollisionWorld } from "../entities/CollisionWorld";
+import { Hitbox } from "../entities/core/Hitbox";
 import {
   addFloat,
   approach,
@@ -45,7 +46,11 @@ export class Player extends Actor {
   onJumpThrough = false;
   wallDir = 0;
 
-  private ducking = false;
+  private readonly normalHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH);
+  private readonly duckHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHitboxH);
+  private readonly normalHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hurtboxH);
+  private readonly duckHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHurtboxH);
+  private hurtbox: Hitbox;
   private moveXInput = 0;
 
   private jumpGraceTimer = 0;
@@ -104,6 +109,8 @@ export class Player extends Actor {
   constructor(x: number, y: number, world: CollisionWorld, cfg: PlayerConfig = PLAYER_CONFIG) {
     super(x, y, world);
     this.cfg = cfg;
+    this.collider = this.normalHitbox;
+    this.hurtbox = this.normalHurtbox;
     this.dashesLeft = cfg.dash.maxDashes;
     this.stamina = toFloat(cfg.climb.max);
     this.wallSlideTimer = toFloat(cfg.gravity.wallSlideTime);
@@ -132,6 +139,10 @@ export class Player extends Actor {
       () => this.dashEnd(),
     );
     this.stateMachine.forceState("normal");
+  }
+
+  private get ducking(): boolean {
+    return this.collider === this.duckHitbox;
   }
 
   update(dt: number, input: InputState): void {
@@ -200,19 +211,15 @@ export class Player extends Actor {
 
     if (this.dashRefillCooldownTimer > 0) {
       this.dashRefillCooldownTimer = stepTimer(this.dashRefillCooldownTimer, dt);
-    } else if (
-      this.onGround &&
-      this.dashesLeft < this.cfg.dash.maxDashes &&
-      !this.world.collidesWithSpikeAt(
-        this.x,
-        this.getHurtboxTop(),
-        PLAYER_GEOMETRY.hitboxW,
-        this.getHurtboxH(),
-        this.vx,
-        this.vy,
-      )
-    ) {
-      this.dashesLeft = this.cfg.dash.maxDashes;
+    } else {
+      const hurtbox = this.getHurtboxBounds();
+      if (
+        this.onGround &&
+        this.dashesLeft < this.cfg.dash.maxDashes &&
+        !this.world.collidesWithSpikeAt(hurtbox.x, hurtbox.y, hurtbox.w, hurtbox.h, this.vx, this.vy)
+      ) {
+        this.dashesLeft = this.cfg.dash.maxDashes;
+      }
     }
 
     if (this.varJumpTimer > 0) {
@@ -275,17 +282,15 @@ export class Player extends Actor {
   }
 
   getCollisionBounds(): { x: number; y: number; w: number; h: number } {
-    const h = this.getHitboxH();
-    return { x: this.x, y: this.y, w: PLAYER_GEOMETRY.hitboxW, h };
+    return this.getHitboxBounds();
   }
 
   getHitboxBounds(): { x: number; y: number; w: number; h: number } {
-    return this.getCollisionBounds();
+    return this.bodyBoundsFor(this.requireBodyHitbox(), this.x, this.y);
   }
 
   getHurtboxBounds(): { x: number; y: number; w: number; h: number } {
-    const h = this.getHurtboxH();
-    return { x: this.x, y: this.getHurtboxTop(), w: PLAYER_GEOMETRY.hitboxW, h };
+    return this.bodyBoundsFor(this.hurtbox, this.x, this.y);
   }
 
   tryRefill(targetDashes: number | "max"): boolean {
@@ -345,7 +350,8 @@ export class Player extends Actor {
     this.clearMovementRemainders();
 
     this.facing = 1;
-    this.ducking = false;
+    this.collider = this.normalHitbox;
+    this.hurtbox = this.normalHurtbox;
 
     this.onGround = false;
     this.onJumpThrough = false;
@@ -410,11 +416,11 @@ export class Player extends Actor {
   }
 
   private refreshEnvironment(): void {
-    const h = this.getHitboxH();
-    const ground = this.world.probeGround(this.x, this.y, PLAYER_GEOMETRY.hitboxW, h);
+    const body = this.getHitboxBounds();
+    const ground = this.world.probeGround(body.x, body.y, body.w, body.h);
     this.onGround = ground.onGround;
     this.onJumpThrough = ground.onJumpThrough;
-    this.wallDir = this.world.wallDirAt(this.x, this.y, PLAYER_GEOMETRY.hitboxW, h);
+    this.wallDir = this.world.wallDirAt(body.x, body.y, body.w, body.h);
   }
 
   private normalBegin(): void {
@@ -565,7 +571,7 @@ export class Player extends Actor {
     this.lastClimbMove = 0;
 
     for (let i = 0; i < this.cfg.climb.checkDist; i++) {
-      if (!this.world.collideSolidAt(this.x + this.facing, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
+      if (!this.bodyCollidesAt(this.x + this.facing, this.y)) {
         this.x += this.facing;
       } else {
         break;
@@ -610,12 +616,7 @@ export class Player extends Actor {
     }
 
     if (
-      !this.world.collideSolidAt(
-        this.x + this.facing,
-        this.y,
-        PLAYER_GEOMETRY.hitboxW,
-        this.getHitboxH(),
-      )
+      !this.bodyCollidesAt(this.x + this.facing, this.y)
     ) {
       if (this.vy < 0) {
         this.climbHop();
@@ -631,7 +632,7 @@ export class Player extends Actor {
         target = this.cfg.climb.climbUpSpeed;
 
         const blockedAbove =
-          this.world.collideSolidAt(this.x, this.y - 1, PLAYER_GEOMETRY.hitboxW, this.getHitboxH()) ||
+          this.bodyCollidesAt(this.x, this.y - 1) ||
           (this.climbHopBlockedCheck() && this.slipCheck(-1));
 
         if (blockedAbove) {
@@ -673,12 +674,7 @@ export class Player extends Actor {
     if (
       input.y !== 1 &&
       this.vy > 0 &&
-      !this.world.collideSolidAt(
-        this.x + this.facing,
-        this.y + 1,
-        PLAYER_GEOMETRY.hitboxW,
-        this.getHitboxH(),
-      )
+      !this.bodyCollidesAt(this.x + this.facing, this.y + 1)
     ) {
       this.vy = 0;
     }
@@ -774,7 +770,7 @@ export class Player extends Actor {
 
     if (input.y < 1) {
       for (let i = 1; i <= this.cfg.climb.upCheckDist; i++) {
-        if (this.world.collideSolidAt(this.x, this.y - i, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
+        if (this.bodyCollidesAt(this.x, this.y - i)) {
           continue;
         }
 
@@ -966,7 +962,8 @@ export class Player extends Actor {
   private applyJumpThruAssist(dt: number): void {
     if (this.onGround || this.vy > 0) return;
     if (this.stateMachine.state === "climb" && this.lastClimbMove !== -1) return;
-    if (!this.world.overlapsJumpThrough(this.x, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) return;
+    const body = this.getHitboxBounds();
+    if (!this.world.overlapsJumpThrough(body.x, body.y, body.w, body.h)) return;
 
     this.moveV(mulFloat(this.cfg.jump.jumpThruAssistSpeed, dt));
   }
@@ -979,17 +976,19 @@ export class Player extends Actor {
     const h = this.getHitboxH();
     const dist = this.cfg.dash.floorSnapDist;
     if (dist <= 0) return;
+    const nextBounds = this.bodyBoundsFor(this.requireBodyHitbox(), this.x, this.y + dist);
+    const body = this.getHitboxBounds();
 
     const wouldHitSolid = this.world.collideSolidAt(
-      this.x,
-      this.y + dist,
-      PLAYER_GEOMETRY.hitboxW,
-      h,
+      nextBounds.x,
+      nextBounds.y,
+      nextBounds.w,
+      nextBounds.h,
     );
     const wouldHitJumpThru = this.world.wouldLandOnJumpThruAt(
-      this.x,
-      this.y,
-      PLAYER_GEOMETRY.hitboxW,
+      body.x,
+      body.y,
+      body.w,
       h,
       dist,
     );
@@ -1001,12 +1000,13 @@ export class Player extends Actor {
 
   private applyDashJumpThruNudge(): void {
     if (this.dashDir.y !== 0) return;
+    const body = this.getHitboxBounds();
 
     const nudgeY = this.world.findJumpThruNudgeY(
-      this.x,
-      this.y,
-      PLAYER_GEOMETRY.hitboxW,
-      this.getHitboxH(),
+      body.x,
+      body.y,
+      body.w,
+      body.h,
       this.cfg.dash.hJumpThruNudge,
     );
     if (nudgeY === null) return;
@@ -1015,7 +1015,7 @@ export class Player extends Actor {
     this.clearVerticalRemainder();
   }
 
-  private tryDashHorizontalCollision(sign: number, h: number): DashHorizontalCollisionResult {
+  private tryDashHorizontalCollision(sign: number): DashHorizontalCollisionResult {
     if (this.stateMachine.state !== "dash") return "none";
 
     if (this.onGround && this.duckFreeAt(this.x + sign)) {
@@ -1027,7 +1027,7 @@ export class Player extends Actor {
       for (let i = 1; i <= this.cfg.movement.dashCornerCorrection; i++) {
         for (const j of [1, -1]) {
           const yOffset = i * j;
-          if (!this.world.collideSolidAt(this.x + sign, this.y + yOffset, PLAYER_GEOMETRY.hitboxW, h)) {
+          if (!this.bodyCollidesAt(this.x + sign, this.y + yOffset)) {
             this.y += yOffset;
             this.x += sign;
             return "corrected";
@@ -1039,14 +1039,14 @@ export class Player extends Actor {
     return "none";
   }
 
-  private tryDashDownwardCornerCorrection(h: number): boolean {
+  private tryDashDownwardCornerCorrection(): boolean {
     if (this.stateMachine.state !== "dash" || this.dashStartedOnGround || this.vy <= 0) {
       return false;
     }
 
     if (this.vx <= 0) {
       for (let i = -1; i >= -this.cfg.movement.dashCornerCorrection; i--) {
-        if (!this.onGroundAt(this.x + i, this.y, h)) {
+        if (!this.onGroundAt(this.x + i, this.y)) {
           this.x += i;
           this.y += 1;
           return true;
@@ -1056,7 +1056,7 @@ export class Player extends Actor {
 
     if (this.vx >= 0) {
       for (let i = 1; i <= this.cfg.movement.dashCornerCorrection; i++) {
-        if (!this.onGroundAt(this.x + i, this.y, h)) {
+        if (!this.onGroundAt(this.x + i, this.y)) {
           this.x += i;
           this.y += 1;
           return true;
@@ -1067,10 +1067,10 @@ export class Player extends Actor {
     return false;
   }
 
-  private tryUpCornerCorrectionY(h: number): boolean {
+  private tryUpCornerCorrectionY(): boolean {
     if (this.vx <= 0) {
       for (let i = 1; i <= this.cfg.movement.upwardCornerCorrection; i++) {
-        if (!this.world.collideSolidAt(this.x - i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h)) {
+        if (!this.bodyCollidesAt(this.x - i, this.y - 1)) {
           this.x -= i;
           this.y -= 1;
           return true;
@@ -1080,7 +1080,7 @@ export class Player extends Actor {
 
     if (this.vx >= 0) {
       for (let i = 1; i <= this.cfg.movement.upwardCornerCorrection; i++) {
-        if (!this.world.collideSolidAt(this.x + i, this.y - 1, PLAYER_GEOMETRY.hitboxW, h)) {
+        if (!this.bodyCollidesAt(this.x + i, this.y - 1)) {
           this.x += i;
           this.y -= 1;
           return true;
@@ -1131,7 +1131,7 @@ export class Player extends Actor {
     const dir = sign(this.wallSpeedRetained);
     if (
       dir !== 0 &&
-      !this.world.collideSolidAt(this.x + dir, this.y, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())
+      !this.bodyCollidesAt(this.x + dir, this.y)
     ) {
       this.vx = this.wallSpeedRetained;
       this.wallSpeedRetentionTimer = 0;
@@ -1185,12 +1185,7 @@ export class Player extends Actor {
 
   private tryEnterDuck(): boolean {
     if (this.ducking || !this.onGround) return false;
-
-    const delta = PLAYER_GEOMETRY.hitboxH - PLAYER_GEOMETRY.crouchHitboxH;
-    if (delta <= 0) return false;
-
-    this.y += delta;
-    this.ducking = true;
+    this.setDucking(true);
     return true;
   }
 
@@ -1205,54 +1200,29 @@ export class Player extends Actor {
   private setDucking(value: boolean): void {
     if (this.ducking === value) return;
 
-    const delta = PLAYER_GEOMETRY.hitboxH - PLAYER_GEOMETRY.crouchHitboxH;
-    if (delta <= 0) {
-      this.ducking = value;
-      return;
-    }
+    const footY = this.getHitboxBottom();
+    const nextHitbox = value ? this.duckHitbox : this.normalHitbox;
+    const nextHurtbox = value ? this.duckHurtbox : this.normalHurtbox;
 
-    if (value) {
-      this.y += delta;
-    } else {
-      this.y -= delta;
-    }
-
-    this.ducking = value;
+    this.collider = nextHitbox;
+    this.hurtbox = nextHurtbox;
+    this.y = this.entityYForFoot(nextHitbox, footY);
   }
 
   private canUnDuck(): boolean {
     if (!this.ducking) return true;
 
-    const standTop = this.getStandTopAt(this.x, this.y);
-    return !this.world.collideSolidAt(
-      this.x,
-      standTop,
-      PLAYER_GEOMETRY.hitboxW,
-      PLAYER_GEOMETRY.hitboxH,
-    );
+    return !this.bodyCollidesAtFoot(this.normalHitbox, this.x, this.getHitboxBottom());
   }
 
   private canUnDuckAt(x: number): boolean {
     if (!this.ducking) return true;
 
-    const standTop = this.getStandTopAt(x, this.y);
-    return !this.world.collideSolidAt(
-      x,
-      standTop,
-      PLAYER_GEOMETRY.hitboxW,
-      PLAYER_GEOMETRY.hitboxH,
-    );
+    return !this.bodyCollidesAtFoot(this.normalHitbox, x, this.getHitboxBottom());
   }
 
   private duckFreeAt(x: number): boolean {
-    const footY = this.y + this.getHitboxH();
-    const crouchTop = footY - PLAYER_GEOMETRY.crouchHitboxH;
-    return !this.world.collideSolidAt(
-      x,
-      crouchTop,
-      PLAYER_GEOMETRY.hitboxW,
-      PLAYER_GEOMETRY.crouchHitboxH,
-    );
+    return !this.bodyCollidesAtFoot(this.duckHitbox, x, this.getHitboxBottom());
   }
 
   private tryDuckCorrection(dt: number): void {
@@ -1271,29 +1241,20 @@ export class Player extends Actor {
 
   private wallJumpCheck(dir: number): boolean {
     return this.climbBoundsCheck(dir) &&
-      this.world.collideSolidAt(
-        this.x + dir * this.cfg.jump.wallJumpCheckDist,
-        this.y,
-        PLAYER_GEOMETRY.hitboxW,
-        this.getHitboxH(),
-      );
+      this.bodyCollidesAt(this.x + dir * this.cfg.jump.wallJumpCheckDist, this.y);
   }
 
   private climbBoundsCheck(dir: number): boolean {
-    const left = this.x + dir * this.cfg.climb.checkDist;
-    const right = this.x + PLAYER_GEOMETRY.hitboxW - 1 + dir * this.cfg.climb.checkDist;
+    const bounds = this.getHitboxBounds();
+    const left = bounds.x + dir * this.cfg.climb.checkDist;
+    const right = bounds.x + bounds.w - 1 + dir * this.cfg.climb.checkDist;
     const worldRight = WORLD.cols * WORLD.tile;
     return left >= 0 && right < worldRight;
   }
 
   private climbCheck(dir: number, yAdd = 0): boolean {
     return this.climbBoundsCheck(dir) &&
-      this.world.collideSolidAt(
-        this.x + dir * this.cfg.climb.checkDist,
-        this.y + yAdd,
-        PLAYER_GEOMETRY.hitboxW,
-        this.getHitboxH(),
-      );
+      this.bodyCollidesAt(this.x + dir * this.cfg.climb.checkDist, this.y + yAdd);
   }
 
   private climbHop(): void {
@@ -1310,12 +1271,12 @@ export class Player extends Actor {
   }
 
   private climbHopBlockedBySpike(): boolean {
-    const targetX = this.x + this.facing * PLAYER_GEOMETRY.hitboxW;
+    const targetX = this.x + this.facing * this.getHitboxBounds().w;
     let targetY = this.y;
 
     // Celeste spikes contribute a ledge blocker, so probe the ledge-top landing slot.
     for (let i = 0; i < WORLD.tile; i++) {
-      if (!this.world.collideSolidAt(targetX, targetY, PLAYER_GEOMETRY.hitboxW, this.getHitboxH())) {
+      if (!this.bodyCollidesAt(targetX, targetY)) {
         break;
       }
       targetY--;
@@ -1343,7 +1304,7 @@ export class Player extends Actor {
       return true;
     }
 
-    return this.world.collideSolidAt(this.x, this.y - 6, PLAYER_GEOMETRY.hitboxW, this.getHitboxH());
+    return this.bodyCollidesAt(this.x, this.y - 6);
   }
 
   private solidAtPoint(px: number, py: number): boolean {
@@ -1351,16 +1312,12 @@ export class Player extends Actor {
   }
 
   private isFacingWallSolid(): boolean {
-    return this.world.collideSolidAt(
-      this.x + this.facing,
-      this.y,
-      PLAYER_GEOMETRY.hitboxW,
-      this.getHitboxH(),
-    );
+    return this.bodyCollidesAt(this.x + this.facing, this.y);
   }
 
-  private onGroundAt(x: number, y: number, h: number): boolean {
-    return this.world.probeGround(x, y, PLAYER_GEOMETRY.hitboxW, h).onGround;
+  private onGroundAt(x: number, y: number): boolean {
+    const bounds = this.getHitboxBounds();
+    return this.world.probeGround(x, y, bounds.w, bounds.h).onGround;
   }
 
   private isDownDiagonalDash(): boolean {
@@ -1397,21 +1354,49 @@ export class Player extends Actor {
     this.dashPressBufferTimer = 0;
   }
 
+  private requireBodyHitbox(): Hitbox {
+    const collider = this.collider;
+    if (collider === null || !(collider instanceof Hitbox)) {
+      throw new Error("Player requires a hitbox collider");
+    }
+
+    return collider;
+  }
+
+  private bodyBoundsFor(hitbox: Hitbox, entityX: number, entityY: number): { x: number; y: number; w: number; h: number } {
+    return {
+      x: entityX + hitbox.left,
+      y: entityY + hitbox.top,
+      w: hitbox.width,
+      h: hitbox.height,
+    };
+  }
+
+  private bodyCollidesAt(entityX: number, entityY: number, hitbox: Hitbox = this.requireBodyHitbox()): boolean {
+    const bounds = this.bodyBoundsFor(hitbox, entityX, entityY);
+    return this.world.collideSolidAt(bounds.x, bounds.y, bounds.w, bounds.h);
+  }
+
+  private bodyCollidesAtFoot(hitbox: Hitbox, entityX: number, footY: number): boolean {
+    const bounds = this.bodyBoundsFor(hitbox, entityX, this.entityYForFoot(hitbox, footY));
+    return this.world.collideSolidAt(bounds.x, bounds.y, bounds.w, bounds.h);
+  }
+
+  private getHitboxBottom(): number {
+    const bounds = this.getHitboxBounds();
+    return bounds.y + bounds.h;
+  }
+
+  private entityYForFoot(hitbox: Hitbox, footY: number): number {
+    return footY - hitbox.bottom;
+  }
+
   private getHitboxH(): number {
-    return this.ducking ? PLAYER_GEOMETRY.crouchHitboxH : PLAYER_GEOMETRY.hitboxH;
+    return this.requireBodyHitbox().height;
   }
 
   private getHurtboxH(): number {
-    return this.ducking ? PLAYER_GEOMETRY.crouchHurtboxH : PLAYER_GEOMETRY.hurtboxH;
-  }
-
-  private getHurtboxTop(): number {
-    return this.y;
-  }
-
-  private getStandTopAt(x: number, y: number): number {
-    const footY = y + PLAYER_GEOMETRY.crouchHitboxH;
-    return footY - PLAYER_GEOMETRY.hitboxH;
+    return this.hurtbox.height;
   }
 
   private emit(effect: PlayerEffect): void {
@@ -1428,16 +1413,8 @@ export class Player extends Actor {
     this.freezeRequestTimer = maxFloat(this.freezeRequestTimer, duration);
   }
 
-  protected getMoveWidth(): number {
-    return PLAYER_GEOMETRY.hitboxW;
-  }
-
-  protected getMoveHeight(): number {
-    return this.getHitboxH();
-  }
-
   protected onCollideH(step: number): MoveCollisionResult {
-    const dashCollision = this.tryDashHorizontalCollision(step, this.getHitboxH());
+    const dashCollision = this.tryDashHorizontalCollision(step);
     if (dashCollision === "corrected") {
       return "moved";
     }
@@ -1449,12 +1426,11 @@ export class Player extends Actor {
   }
 
   protected onCollideV(step: number): MoveCollisionResult {
-    const h = this.getHitboxH();
-    if (step < 0 && this.tryUpCornerCorrectionY(h)) {
+    if (step < 0 && this.tryUpCornerCorrectionY()) {
       return "moved";
     }
 
-    if (step > 0 && this.tryDashDownwardCornerCorrection(h)) {
+    if (step > 0 && this.tryDashDownwardCornerCorrection()) {
       return "moved";
     }
 

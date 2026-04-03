@@ -1,5 +1,6 @@
 import { Entity } from "../entities/core/Entity";
 import { CollisionWorld } from "../entities/CollisionWorld";
+import type { Aabb } from "../entities/types";
 import { addFloat, roundToEvenInt, sign, subFloat } from "./math";
 
 export type MoveCollisionResult = "none" | "moved" | "break";
@@ -35,8 +36,10 @@ export abstract class Actor extends Entity {
     while (move !== 0) {
       const step = sign(move);
       const nextX = this.x + step;
+      const currentBounds = this.getCollisionBoundsAt(this.x, this.y);
+      const nextBounds = this.getCollisionBoundsAt(nextX, this.y);
 
-      if (!this.world.collideAt(nextX, this.y, this.getMoveWidth(), this.getMoveHeight(), this.y, false)) {
+      if (!this.world.collideAt(nextBounds.x, nextBounds.y, nextBounds.w, nextBounds.h, currentBounds.y, false)) {
         this.x = nextX;
         move -= step;
         continue;
@@ -65,14 +68,16 @@ export abstract class Actor extends Entity {
     while (move !== 0) {
       const step = sign(move);
       const nextY = this.y + step;
+      const currentBounds = this.getCollisionBoundsAt(this.x, this.y);
+      const nextBounds = this.getCollisionBoundsAt(this.x, nextY);
 
       if (
         !this.world.collideAt(
-          this.x,
-          nextY,
-          this.getMoveWidth(),
-          this.getMoveHeight(),
-          this.y,
+          nextBounds.x,
+          nextBounds.y,
+          nextBounds.w,
+          nextBounds.h,
+          currentBounds.y,
           step > 0,
         )
       ) {
@@ -125,6 +130,17 @@ export abstract class Actor extends Entity {
   protected afterBlockedV(_step: number): void {
   }
 
-  protected abstract getMoveWidth(): number;
-  protected abstract getMoveHeight(): number;
+  protected getCollisionBoundsAt(x: number, y: number): Aabb {
+    const collider = this.collider;
+    if (collider === null) {
+      throw new Error("Actor movement requires an attached collider");
+    }
+
+    return {
+      x: x + collider.left,
+      y: y + collider.top,
+      w: collider.width,
+      h: collider.height,
+    };
+  }
 }
