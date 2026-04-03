@@ -1,7 +1,8 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
-import { RefillEntity, RefillType } from "./entities/types";
+import { type RefillPickupEntity } from "./entities/runtime";
+import { RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import { parseLevel } from "./level";
 import { PlayerControls } from "./input/PlayerControls";
@@ -11,7 +12,7 @@ import { InputState, PlayerEffect } from "./player/types";
 import { PlayerView } from "./view/PlayerView";
 
 interface RefillView {
-  entity: RefillEntity;
+  entity: RefillPickupEntity;
   glow: Phaser.GameObjects.Ellipse;
   body: Phaser.GameObjects.Rectangle;
 }
@@ -561,7 +562,7 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private createRefills(spawns: ReadonlyArray<RefillEntity>): void {
+  private createRefills(spawns: ReadonlyArray<RefillPickupEntity>): void {
     for (const spawn of spawns) {
       const color = this.refillColor(spawn.type);
       const glow = this.add

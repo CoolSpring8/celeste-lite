@@ -1,16 +1,20 @@
 import { WORLD } from "../constants";
 import { SolidGrid, TILE_EMPTY, TILE_JUMP_THROUGH, TILE_SOLID } from "../grid";
 import { CollisionWorld, GroundProbe } from "./CollisionWorld";
+import { Collider } from "./core/Collider";
+import { Entity, type EntityType } from "./core/Entity";
+import { Tracker } from "./core/Tracker";
+import {
+  JumpThruTilesEntity,
+  RefillPickupEntity,
+  SolidTilesEntity,
+  SpikeHazardEntity,
+  WorldEntity,
+} from "./runtime";
 import {
   Aabb,
-  JumpThruTileEntity,
   LevelEntitySpec,
-  RefillEntity,
-  SolidTileEntity,
-  SpikeEntity,
   SpikeDirection,
-  TileEntity,
-  WorldEntity,
 } from "./types";
 
 const REFILL_PICKUP_SIZE = Math.max(6, Math.round(WORLD.tile * 0.75));
@@ -20,15 +24,17 @@ const SPIKE_SIZE = WORLD.tile;
 const SPIKE_HEIGHT = Math.max(5, Math.round(WORLD.tile * 0.625));
 const SPIKE_EPSILON = 0.0001;
 
+type CollisionTarget = Entity | Collider | Aabb;
+
 export class EntityWorld implements SolidGrid, CollisionWorld {
   readonly cols: number;
   readonly rows: number;
   readonly data: Uint8Array;
 
+  readonly tracker = new Tracker();
   readonly entities: WorldEntity[] = [];
-  readonly tiles: TileEntity[] = [];
-  readonly refills: RefillEntity[] = [];
-  readonly spikes: SpikeEntity[] = [];
+  readonly solidTiles: SolidTilesEntity;
+  readonly jumpThruTiles: JumpThruTilesEntity;
 
   private nextEntityId = 1;
 
@@ -38,6 +44,9 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     this.data = new Uint8Array(cols * rows);
     this.data.fill(TILE_EMPTY);
 
+    this.solidTiles = this.addEntity(new SolidTilesEntity(this.nextId(), cols, rows));
+    this.jumpThruTiles = this.addEntity(new JumpThruTilesEntity(this.nextId(), cols, rows));
+
     for (const spec of specs) {
       this.addSpec(spec);
     }
@@ -45,6 +54,14 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
   static fromSpecs(cols: number, rows: number, specs: LevelEntitySpec[]): EntityWorld {
     return new EntityWorld(cols, rows, specs);
+  }
+
+  get refills(): readonly RefillPickupEntity[] {
+    return this.getEntities(RefillPickupEntity);
+  }
+
+  get spikes(): readonly SpikeHazardEntity[] {
+    return this.getEntities(SpikeHazardEntity);
   }
 
   update(dt: number, timeSeconds: number): void {
@@ -71,18 +88,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
   }
 
   collideSolidAt(x: number, y: number, w: number, h: number): boolean {
-    const left = Math.floor(x / WORLD.tile);
-    const right = Math.floor((x + w - 1) / WORLD.tile);
-    const top = Math.floor(y / WORLD.tile);
-    const bottom = Math.floor((y + h - 1) / WORLD.tile);
-
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        if (this.tileAtCell(c, r) === TILE_SOLID) return true;
-      }
-    }
-
-    return false;
+    return this.solidTiles.grid.collidesRectValues(x, y, w, h);
   }
 
   collideAt(
@@ -101,16 +107,22 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     const beforeBottom = fromY + h;
     const afterBottom = y + h;
 
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        const tile = this.tileAtCell(c, r);
-        if (tile === TILE_SOLID) return true;
+    for (let row = top; row <= bottom; row++) {
+      for (let col = left; col <= right; col++) {
+        const tile = this.tileAtCell(col, row);
+        if (tile === TILE_SOLID) {
+          return true;
+        }
 
-        if (!movingDown || tile !== TILE_JUMP_THROUGH) continue;
+        if (!movingDown || tile !== TILE_JUMP_THROUGH) {
+          continue;
+        }
 
-        const tileTop = r * WORLD.tile;
+        const tileTop = row * WORLD.tile;
         const crossedTop = beforeBottom <= tileTop && afterBottom > tileTop;
-        if (crossedTop) return true;
+        if (crossedTop) {
+          return true;
+        }
       }
     }
 
@@ -133,13 +145,15 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
     let onJumpThrough = false;
 
-    for (let c = left; c <= right; c++) {
-      const tile = this.tileAtCell(c, row);
+    for (let col = left; col <= right; col++) {
+      const tile = this.tileAtCell(col, row);
       if (tile === TILE_SOLID) {
         return { onGround: true, onJumpThrough: false };
       }
 
-      if (tile !== TILE_JUMP_THROUGH) continue;
+      if (tile !== TILE_JUMP_THROUGH) {
+        continue;
+      }
 
       const tileTop = row * WORLD.tile;
       const crossedTop = beforeBottom <= tileTop && afterBottom > tileTop;
@@ -152,28 +166,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
   }
 
   overlapsJumpThrough(x: number, y: number, w: number, h: number): boolean {
-    const left = Math.floor(x / WORLD.tile);
-    const right = Math.floor((x + w - 1) / WORLD.tile);
-    const top = Math.floor(y / WORLD.tile);
-    const bottom = Math.floor((y + h - 1) / WORLD.tile);
-
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
-
-        const tileX = c * WORLD.tile;
-        const tileY = r * WORLD.tile;
-        const intersects =
-          x < tileX + WORLD.tile &&
-          x + w > tileX &&
-          y < tileY + WORLD.tile &&
-          y + h > tileY;
-
-        if (intersects) return true;
-      }
-    }
-
-    return false;
+    return this.jumpThruTiles.grid.collidesRectValues(x, y, w, h);
   }
 
   wouldLandOnJumpThruAt(x: number, y: number, w: number, h: number, dist: number): boolean {
@@ -184,11 +177,13 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     const fromRow = Math.floor(beforeBottom / WORLD.tile);
     const toRow = Math.floor(afterBottom / WORLD.tile);
 
-    for (let r = fromRow; r <= toRow; r++) {
-      for (let c = left; c <= right; c++) {
-        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
+    for (let row = fromRow; row <= toRow; row++) {
+      for (let col = left; col <= right; col++) {
+        if (this.tileAtCell(col, row) !== TILE_JUMP_THROUGH) {
+          continue;
+        }
 
-        const tileTop = r * WORLD.tile;
+        const tileTop = row * WORLD.tile;
         if (beforeBottom <= tileTop && afterBottom > tileTop) {
           return true;
         }
@@ -207,16 +202,23 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
 
     let bestY: number | null = null;
 
-    for (let r = top; r <= bottom; r++) {
-      for (let c = left; c <= right; c++) {
-        if (this.tileAtCell(c, r) !== TILE_JUMP_THROUGH) continue;
+    for (let row = top; row <= bottom; row++) {
+      for (let col = left; col <= right; col++) {
+        if (this.tileAtCell(col, row) !== TILE_JUMP_THROUGH) {
+          continue;
+        }
 
-        const tileTop = r * WORLD.tile;
+        const tileTop = row * WORLD.tile;
         const penetration = bodyBottom - tileTop;
-        if (penetration <= 0 || penetration > maxNudge) continue;
+        if (penetration <= 0 || penetration > maxNudge) {
+          continue;
+        }
 
         const nudgeY = tileTop - h;
-        if (nudgeY >= y) continue;
+        if (nudgeY >= y) {
+          continue;
+        }
+
         if (bestY === null || nudgeY > bestY) {
           bestY = nudgeY;
         }
@@ -229,11 +231,13 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
   consumeTouchingRefills(
     playerBounds: Aabb,
     tryConsume: (target: number | "max") => boolean,
-  ): RefillEntity[] {
-    const consumed: RefillEntity[] = [];
+  ): RefillPickupEntity[] {
+    const consumed: RefillPickupEntity[] = [];
 
     for (const refill of this.refills) {
-      if (!refill.active) continue;
+      if (!refill.active) {
+        continue;
+      }
 
       const size = REFILL_PICKUP_SIZE;
       const pickupBox = {
@@ -243,8 +247,12 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
         h: size,
       };
 
-      if (!this.overlapAabb(playerBounds, pickupBox)) continue;
-      if (!tryConsume(refill.type)) continue;
+      if (!this.overlapAabb(playerBounds, pickupBox)) {
+        continue;
+      }
+      if (!tryConsume(refill.type)) {
+        continue;
+      }
 
       refill.active = false;
       refill.respawnTimer = refill.respawnDelay;
@@ -254,9 +262,14 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     return consumed;
   }
 
-  collidesWithSpike(hurtbox: Aabb, vx = 0, vy = 0): SpikeEntity | null {
+  collidesWithSpike(hurtbox: Aabb, vx = 0, vy = 0): SpikeHazardEntity | null {
     for (const spike of this.spikes) {
-      if (this.isSafeFromSpike(spike, vx, vy)) continue;
+      if (this.isSafeFromSpike(spike, vx, vy)) {
+        continue;
+      }
+      if (!spike.collider?.collidesRect(hurtbox)) {
+        continue;
+      }
 
       const probe = this.spikeProbeBounds(hurtbox, spike.dir);
       const danger = this.spikeDangerBounds(spike);
@@ -279,6 +292,48 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     return this.collidesWithSpike({ x, y, w, h }, vx, vy) !== null;
   }
 
+  getEntity<T extends Entity>(type: EntityType<T>): T | null {
+    return this.tracker.getEntity(type);
+  }
+
+  getEntities<T extends Entity>(type: EntityType<T>): readonly T[] {
+    return this.tracker.getEntities(type);
+  }
+
+  collideCheck<T extends WorldEntity>(type: EntityType<T>, target: CollisionTarget): boolean {
+    return this.collideFirst(type, target) !== null;
+  }
+
+  collideFirst<T extends WorldEntity>(type: EntityType<T>, target: CollisionTarget): T | null {
+    for (const entity of this.getEntities(type)) {
+      if (!entity.collidable || entity.collider === null) {
+        continue;
+      }
+
+      if (this.targetCollides(entity.collider, target)) {
+        return entity;
+      }
+    }
+
+    return null;
+  }
+
+  collideAll<T extends WorldEntity>(type: EntityType<T>, target: CollisionTarget): T[] {
+    const hits: T[] = [];
+
+    for (const entity of this.getEntities(type)) {
+      if (!entity.collidable || entity.collider === null) {
+        continue;
+      }
+
+      if (this.targetCollides(entity.collider, target)) {
+        hits.push(entity);
+      }
+    }
+
+    return hits;
+  }
+
   private addSpec(spec: LevelEntitySpec): void {
     if (spec.kind === "solidTile" || spec.kind === "jumpThruTile") {
       this.addTile(spec.kind, spec.col, spec.row);
@@ -286,75 +341,45 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     }
 
     if (spec.kind === "refill") {
-      const refill: RefillEntity = {
-        id: this.nextId(),
-        kind: "refill",
-        x: spec.x,
-        y: spec.y,
-        w: 8,
-        h: 8,
-        type: spec.type,
-        active: true,
-        baseY: spec.y,
-        respawnTimer: 0,
-        respawnDelay: REFILL_RESPAWN_TIME,
-      };
-      this.entities.push(refill);
-      this.refills.push(refill);
+      this.addEntity(
+        new RefillPickupEntity(
+          this.nextId(),
+          spec.x,
+          spec.y,
+          spec.type,
+          REFILL_RESPAWN_TIME,
+        ),
+      );
       return;
     }
 
-    const spike: SpikeEntity = {
-      id: this.nextId(),
-      kind: "spike",
-      x: spec.col * WORLD.tile,
-      y: spec.row * WORLD.tile,
-      w: WORLD.tile,
-      h: WORLD.tile,
-      dir: spec.dir,
-    };
-    this.entities.push(spike);
-    this.spikes.push(spike);
+    this.addEntity(
+      new SpikeHazardEntity(
+        this.nextId(),
+        spec.col * WORLD.tile,
+        spec.row * WORLD.tile,
+        spec.dir,
+      ),
+    );
   }
 
   private addTile(kind: "solidTile" | "jumpThruTile", col: number, row: number): void {
-    const id = this.nextId();
-    const x = col * WORLD.tile;
-    const y = row * WORLD.tile;
-    const w = WORLD.tile;
-    const h = WORLD.tile;
     const idx = row * this.cols + col;
 
     if (kind === "solidTile") {
       this.data[idx] = TILE_SOLID;
-      const solid: SolidTileEntity = {
-        id,
-        kind,
-        col,
-        row,
-        x,
-        y,
-        w,
-        h,
-      };
-      this.entities.push(solid);
-      this.tiles.push(solid);
+      this.solidTiles.grid.setCell(col, row, true);
       return;
     }
 
     this.data[idx] = TILE_JUMP_THROUGH;
-    const jumpThru: JumpThruTileEntity = {
-      id,
-      kind,
-      col,
-      row,
-      x,
-      y,
-      w,
-      h,
-    };
-    this.entities.push(jumpThru);
-    this.tiles.push(jumpThru);
+    this.jumpThruTiles.grid.setCell(col, row, true);
+  }
+
+  private addEntity<T extends WorldEntity>(entity: T): T {
+    this.entities.push(entity);
+    this.tracker.track(entity);
+    return entity;
   }
 
   private nextId(): number {
@@ -363,23 +388,41 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     return id;
   }
 
+  private targetCollides(source: Collider, target: CollisionTarget): boolean {
+    if (target instanceof Entity) {
+      if (!target.collidable || target.collider === null) {
+        return false;
+      }
+
+      return source.collides(target.collider);
+    }
+
+    if (target instanceof Collider) {
+      return source.collides(target);
+    }
+
+    return source.collidesRect(target);
+  }
+
   private tileAtCell(col: number, row: number): number {
-    if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) return TILE_EMPTY;
+    if (col < 0 || row < 0 || col >= this.cols || row >= this.rows) {
+      return TILE_EMPTY;
+    }
     return this.data[row * this.cols + col];
   }
 
-  private spikeDangerBounds(spike: SpikeEntity): Aabb {
-    const h = Math.min(SPIKE_HEIGHT, Math.min(spike.w, spike.h));
+  private spikeDangerBounds(spike: SpikeHazardEntity): Aabb {
+    const h = Math.min(SPIKE_HEIGHT, WORLD.tile);
     switch (spike.dir) {
       case "up":
-        return { x: spike.x, y: spike.y + spike.h - h, w: spike.w, h };
+        return { x: spike.x, y: spike.y + WORLD.tile - h, w: WORLD.tile, h };
       case "down":
-        return { x: spike.x, y: spike.y, w: spike.w, h };
+        return { x: spike.x, y: spike.y, w: WORLD.tile, h };
       case "left":
-        return { x: spike.x + spike.w - h, y: spike.y, w: h, h: spike.h };
+        return { x: spike.x + WORLD.tile - h, y: spike.y, w: h, h: WORLD.tile };
       case "right":
       default:
-        return { x: spike.x, y: spike.y, w: h, h: spike.h };
+        return { x: spike.x, y: spike.y, w: h, h: WORLD.tile };
     }
   }
 
@@ -397,7 +440,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     }
   }
 
-  private isSafeFromSpike(spike: SpikeEntity, vx: number, vy: number): boolean {
+  private isSafeFromSpike(spike: SpikeHazardEntity, vx: number, vy: number): boolean {
     switch (spike.dir) {
       case "up":
         return vy < -SPIKE_EPSILON;
@@ -416,13 +459,13 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
   }
 }
 
-export function spikeTrianglePoints(spike: SpikeEntity): Array<{ x: number; y: number }> {
+export function spikeTrianglePoints(spike: SpikeHazardEntity): Array<{ x: number; y: number }> {
   const tris = spikeTriangles(spike);
   return tris[0];
 }
 
 export function spikeTriangles(
-  spike: SpikeEntity,
+  spike: SpikeHazardEntity,
 ): Array<Array<{ x: number; y: number }>> {
   const x = spike.x;
   const y = spike.y;
