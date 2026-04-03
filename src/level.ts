@@ -45,8 +45,8 @@ export interface LevelData {
 export function parseLevel(): LevelData {
   const lines = RAW.trim().split("\n");
   const spawnInsetX = Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5);
-  let spawnX = 3 * WORLD.tile + spawnInsetX;
-  let spawnY = 20 * WORLD.tile;
+  let spawnX = 3 * WORLD.tile + spawnInsetX + PLAYER_GEOMETRY.hitboxW * 0.5;
+  let spawnY = 20 * WORLD.tile + PLAYER_GEOMETRY.hitboxH;
   const entities: LevelEntitySpec[] = [];
 
   for (let r = 0; r < WORLD.rows; r++) {
@@ -57,11 +57,11 @@ export function parseLevel(): LevelData {
         entities.push({ kind: "solidTile", col: c, row: r });
       } else if (ch === "=") {
         entities.push({ kind: "jumpThruTile", col: c, row: r });
-      } else {
-        if (ch === "S") {
-          spawnX = c * WORLD.tile + spawnInsetX;
-          spawnY = r * WORLD.tile;
-        } else if (ch === "D") {
+        } else {
+          if (ch === "S") {
+            spawnX = c * WORLD.tile + spawnInsetX + PLAYER_GEOMETRY.hitboxW * 0.5;
+            spawnY = r * WORLD.tile + PLAYER_GEOMETRY.hitboxH;
+          } else if (ch === "D") {
           entities.push({
             kind: "refill",
             x: c * WORLD.tile + WORLD.tile * 0.5,

@@ -46,10 +46,10 @@ export class Player extends Actor {
   onJumpThrough = false;
   wallDir = 0;
 
-  private readonly normalHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH);
-  private readonly duckHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHitboxH);
-  private readonly normalHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hurtboxH);
-  private readonly duckHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHurtboxH);
+  private readonly normalHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hitboxH, -4, -11);
+  private readonly duckHitbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHitboxH, -4, -6);
+  private readonly normalHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.hurtboxH, -4, -11);
+  private readonly duckHurtbox = new Hitbox(PLAYER_GEOMETRY.hitboxW, PLAYER_GEOMETRY.crouchHurtboxH, -4, -6);
   private hurtbox: Hitbox;
   private moveXInput = 0;
 
@@ -268,7 +268,7 @@ export class Player extends Actor {
 
     this.refreshEnvironment();
 
-    if (this.y > WORLD.rows * WORLD.tile + 32) {
+    if (this.getHitboxBounds().y > WORLD.rows * WORLD.tile + 32) {
       this.emit({ type: "fell_out" });
     }
 
@@ -316,8 +316,8 @@ export class Player extends Actor {
       : PLAYER_GEOMETRY.drawH;
 
     return {
-      x: this.x,
-      y: this.y,
+      x: this.getHitboxBounds().x,
+      y: this.getHitboxBounds().y,
       vx: this.vx,
       vy: this.vy,
       state: this.state,
@@ -1282,21 +1282,17 @@ export class Player extends Actor {
       targetY--;
     }
 
-    return this.world.collidesWithSpikeAt(
-      targetX,
-      targetY,
-      PLAYER_GEOMETRY.hitboxW,
-      this.getHurtboxH(),
-      0,
-      0,
-    );
+    const hurtbox = this.bodyBoundsFor(this.hurtbox, targetX, targetY);
+    return this.world.collidesWithSpikeAt(hurtbox.x, hurtbox.y, hurtbox.w, hurtbox.h, 0, 0);
   }
 
   private slipCheck(addY = 0): boolean {
-    const y = this.y + 4 + addY;
-    const x = this.facing === 1 ? this.x + PLAYER_GEOMETRY.hitboxW : this.x - 1;
+    const bounds = this.getHitboxBounds();
+    const x = this.facing === 1 ? bounds.x + bounds.w : bounds.x - 1;
+    const firstY = bounds.y + 4 + addY;
+    const secondY = bounds.y + addY * 2;
 
-    return !this.solidAtPoint(x, y) && !this.solidAtPoint(x, y - 4);
+    return !this.solidAtPoint(x, firstY) && !this.solidAtPoint(x, secondY);
   }
 
   private climbHopBlockedCheck(): boolean {
@@ -1316,8 +1312,8 @@ export class Player extends Actor {
   }
 
   private onGroundAt(x: number, y: number): boolean {
-    const bounds = this.getHitboxBounds();
-    return this.world.probeGround(x, y, bounds.w, bounds.h).onGround;
+    const bounds = this.bodyBoundsFor(this.requireBodyHitbox(), x, y);
+    return this.world.probeGround(bounds.x, bounds.y, bounds.w, bounds.h).onGround;
   }
 
   private isDownDiagonalDash(): boolean {

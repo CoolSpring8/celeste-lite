@@ -49,7 +49,12 @@ export function createPlayer(
   x: number,
   y: number,
 ): Player {
-  return new Player(x, y, world, PLAYER_CONFIG);
+  return new Player(
+    x + PLAYER_GEOMETRY.hitboxW * 0.5,
+    y + PLAYER_GEOMETRY.hitboxH,
+    world,
+    PLAYER_CONFIG,
+  );
 }
 
 export function createPlayerOnFloor(
