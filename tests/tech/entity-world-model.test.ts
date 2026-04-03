@@ -80,6 +80,31 @@ describe("EntityWorld Monocle model", () => {
     expect(world.collideAll(RefillPickupEntity, refillProbe)).toHaveLength(1);
   });
 
+  test("refill bobbing keeps the pickup position fixed and only offsets visuals", () => {
+    const world = EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, [
+      { kind: "refill", x: 64, y: 72, type: "max" },
+    ]);
+
+    const refill = world.refills[0];
+    expect(refill).not.toBeUndefined();
+
+    world.update(1 / 60, 0.5);
+
+    expect(refill?.x).toBe(64);
+    expect(refill?.y).toBe(72);
+    expect(refill?.baseY).toBe(72);
+    expect(refill?.visualY).not.toBe(72);
+    expect(refill?.bounds).toEqual({
+      x: 56,
+      y: 64,
+      w: 16,
+      h: 16,
+    });
+
+    world.resetTransientState();
+    expect(refill?.visualY).toBe(72);
+  });
+
   test("spike colliders are thin rectangles aligned to the pointed edge", () => {
     const world = EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, [
       { kind: "spike", col: 8, row: 9, dir: "up" },

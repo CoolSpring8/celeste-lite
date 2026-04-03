@@ -84,7 +84,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
       }
 
       const bob = Math.sin(timeSeconds * 4 + refill.x * 0.05) * REFILL_BOB_AMPLITUDE;
-      refill.y = refill.baseY + bob;
+      refill.visualOffsetY = bob;
     }
   }
 
@@ -92,7 +92,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     for (const refill of this.refills) {
       refill.active = true;
       refill.respawnTimer = 0;
-      refill.y = refill.baseY;
+      refill.visualOffsetY = 0;
     }
   }
 

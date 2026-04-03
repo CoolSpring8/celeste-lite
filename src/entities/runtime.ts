@@ -4,7 +4,7 @@ import { Grid } from "./core/Grid";
 import { Hitbox } from "./core/Hitbox";
 import type { Aabb, CameraLockMode, RefillType, SpikeDirection } from "./types";
 
-const REFILL_SIZE = 8;
+const REFILL_SIZE = 16;
 
 function spikeHitbox(dir: SpikeDirection): Hitbox {
   switch (dir) {
@@ -101,6 +101,7 @@ export class RefillPickupEntity extends WorldEntity {
   readonly type: RefillType;
   active = true;
   baseY: number;
+  visualOffsetY = 0;
   respawnTimer = 0;
   respawnDelay: number;
 
@@ -110,6 +111,10 @@ export class RefillPickupEntity extends WorldEntity {
     this.baseY = y;
     this.respawnDelay = respawnDelay;
     this.collider = new Hitbox(REFILL_SIZE, REFILL_SIZE, -REFILL_SIZE / 2, -REFILL_SIZE / 2);
+  }
+
+  get visualY(): number {
+    return this.baseY + this.visualOffsetY;
   }
 
   get bounds(): Aabb {

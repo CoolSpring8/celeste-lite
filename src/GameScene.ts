@@ -30,6 +30,7 @@ const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
 const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
 const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
+const REFILL_CONSUME_FREEZE_TIME = 0.05;
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -170,7 +171,7 @@ export class GameScene extends Phaser.Scene {
       this.world.update(this.fixedDt, this.time.now / 1000);
       this.player.update(this.fixedDt, this.gatherStepInput());
       const freeze = this.player.consumeFreezeRequest();
-      this.updateRefills();
+      const refillFreeze = this.updateRefills();
 
       let stepEffects = this.player.consumeEffects();
       const fellOut = stepEffects.some((e) => e.type === "fell_out");
@@ -202,8 +203,9 @@ export class GameScene extends Phaser.Scene {
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
 
-      if (freeze > 0) {
-        this.freezeTimer = maxFloat(this.freezeTimer, freeze);
+      const stepFreeze = maxFloat(freeze, refillFreeze);
+      if (stepFreeze > 0) {
+        this.freezeTimer = maxFloat(this.freezeTimer, stepFreeze);
         this.accumulator = 0;
         break;
       }
@@ -550,10 +552,10 @@ export class GameScene extends Phaser.Scene {
     for (const spawn of spawns) {
       const color = this.refillColor(spawn.type);
       const glow = this.add
-        .ellipse(spawn.x, spawn.y, REFILL_GLOW_SIZE, REFILL_GLOW_SIZE, color, 0.16)
+        .ellipse(spawn.x, spawn.visualY, REFILL_GLOW_SIZE, REFILL_GLOW_SIZE, color, 0.16)
         .setDepth(2);
       const body = this.add
-        .rectangle(spawn.x, spawn.y, REFILL_BODY_SIZE, REFILL_BODY_SIZE, color, 0.95)
+        .rectangle(spawn.x, spawn.visualY, REFILL_BODY_SIZE, REFILL_BODY_SIZE, color, 0.95)
         .setAngle(45)
         .setStrokeStyle(1, 0xffffff, 0.9)
         .setDepth(4);
@@ -568,26 +570,27 @@ export class GameScene extends Phaser.Scene {
     this.syncRefillViews();
   }
 
-  private updateRefills(): void {
-    if (this.refills.length === 0) return;
+  private updateRefills(): number {
+    if (this.refills.length === 0) return 0;
 
     const player = this.player.getHitboxBounds();
     const consumed = this.world.consumeTouchingRefills(player, (target) => this.player.tryRefill(target));
     for (const refill of consumed) {
       this.refillEmitter.setParticleTint(this.refillColor(refill.type));
-      this.refillEmitter.emitParticleAt(refill.x, refill.y, 7);
+      this.refillEmitter.emitParticleAt(refill.x, refill.visualY, 7);
       this.cameras.main.shake(40, 0.0012);
     }
 
     this.syncRefillViews();
+    return consumed.length > 0 ? REFILL_CONSUME_FREEZE_TIME : 0;
   }
 
   private syncRefillViews(): void {
     for (const refill of this.refills) {
       refill.glow.setVisible(refill.entity.active);
       refill.body.setVisible(refill.entity.active);
-      refill.glow.setPosition(refill.entity.x, refill.entity.y);
-      refill.body.setPosition(refill.entity.x, refill.entity.y);
+      refill.glow.setPosition(refill.entity.x, refill.entity.visualY);
+      refill.body.setPosition(refill.entity.x, refill.entity.visualY);
     }
   }
 
