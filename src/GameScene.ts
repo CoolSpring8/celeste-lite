@@ -140,7 +140,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    const frameDt = toFloat(Math.min(delta / 1000, 0.1));
+    const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
 
     if (this.keys.restart.isDown) {
       this.player.hardRespawn(this.spawnX, this.spawnY);
@@ -156,15 +156,14 @@ export class GameScene extends Phaser.Scene {
     const effects: PlayerEffect[] = [];
 
     if (this.freezeTimer > 0) {
-      this.freezeTimer = stepTimer(this.freezeTimer, frameDt);
+      this.freezeTimer = stepTimer(this.freezeTimer, rawFrameDt);
       const snapshot = this.player.getSnapshot();
-      this.playerView.render(snapshot, effects, frameDt);
-      this.updateCamera(snapshot, frameDt);
+      this.playerView.render(snapshot);
       this.updateHUD(snapshot, effects);
       return;
     }
 
-    this.accumulator = addFloat(this.accumulator, frameDt);
+    this.accumulator = addFloat(this.accumulator, rawFrameDt);
     let steps = 0;
 
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
@@ -196,6 +195,9 @@ export class GameScene extends Phaser.Scene {
         this.accumulator = 0;
       }
 
+      const snapshot = this.player.getSnapshot();
+      this.playerView.tick(snapshot, stepEffects, this.fixedDt);
+      this.updateCamera(snapshot, this.fixedDt);
       effects.push(...stepEffects);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
@@ -212,8 +214,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     const snapshot = this.player.getSnapshot();
-    this.playerView.render(snapshot, effects, frameDt);
-    this.updateCamera(snapshot, frameDt);
+    this.playerView.render(snapshot);
 
     this.updateHUD(snapshot, effects);
   }

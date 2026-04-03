@@ -84,7 +84,6 @@ export class PlayerView {
   private dashSlash: Phaser.GameObjects.Rectangle;
   private afterimages: Afterimage[] = [];
   private afterimagePool: GlyphSprite[] = [];
-  private trailTimer = 0;
   private dashParticleTimer = 0;
   private dashSlashTimer = 0;
   private wallDustTimer = 0;
@@ -93,7 +92,6 @@ export class PlayerView {
   private dashDirY = 0;
   private prevCrouched: boolean | null = null;
   private prevOnGround = false;
-  private prevState: PlayerSnapshot["state"] = "normal";
   private facing: PlayerSnapshot["facing"] = 1;
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
@@ -147,7 +145,7 @@ export class PlayerView {
     this.wallEmitter.setDepth(2);
   }
 
-  render(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
+  tick(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);
     this.processEffects(snapshot, effects);
@@ -156,6 +154,13 @@ export class PlayerView {
     this.updateAfterimages(dt);
     this.updateDashSlash(dt);
     this.updateTrail(snapshot, dt);
+
+    this.prevCrouched = snapshot.isCrouched;
+    this.prevOnGround = snapshot.onGround;
+  }
+
+  render(snapshot: PlayerSnapshot): void {
+    this.syncFacing(snapshot.facing);
 
     const drawX = snapshot.x;
     const drawY = snapshot.y;
@@ -171,10 +176,6 @@ export class PlayerView {
       this.resolveBodyColor(snapshot),
       this.resolveHairColor(snapshot),
     );
-
-    this.prevCrouched = snapshot.isCrouched;
-    this.prevOnGround = snapshot.onGround;
-    this.prevState = snapshot.state;
   }
 
   destroy(): void {
@@ -199,8 +200,10 @@ export class PlayerView {
       switch (effect.type) {
         case "dash_begin":
           this.captureDashVisuals(snapshot, effect);
-          this.emitDashBeginBurst(snapshot);
           this.squash(0.72, 1.28);
+          break;
+        case "dash_trail":
+          this.spawnAfterimageEffect(effect);
           break;
         case "super":
           this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
@@ -270,22 +273,11 @@ export class PlayerView {
       }
     }
 
-    const dashActive = snapshot.state === "dash" &&
-      (Math.abs(snapshot.vx) > 0.001 || Math.abs(snapshot.vy) > 0.001);
+    const dashActive = this.isDashActive(snapshot);
 
     if (!dashActive) {
-      if (this.prevState === "dash") {
-        this.spawnAfterimage(snapshot, this.dashTrailColor);
-      }
-      this.trailTimer = 0;
       this.dashParticleTimer = 0;
       return;
-    }
-
-    this.trailTimer -= dt;
-    if (this.trailTimer <= 0) {
-      this.trailTimer = PLAYER_VISUALS.dashTrailInterval;
-      this.spawnAfterimage(snapshot, this.dashTrailColor);
     }
 
     this.dashParticleTimer -= dt;
@@ -336,17 +328,52 @@ export class PlayerView {
   }
 
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
-    const drawX = snapshot.x;
-    const drawY = snapshot.y;
+    this.spawnAfterimageFrame(
+      snapshot.x,
+      snapshot.y,
+      this.resolveSqrt11Pose(snapshot),
+      snapshot.drawW,
+      snapshot.drawH,
+      color,
+    );
+  }
+
+  private spawnAfterimageEffect(effect: PlayerEffect): void {
+    if (
+      effect.trailX === undefined ||
+      effect.trailY === undefined ||
+      effect.trailDrawW === undefined ||
+      effect.trailDrawH === undefined
+    ) {
+      return;
+    }
+
+    this.spawnAfterimageFrame(
+      effect.trailX,
+      effect.trailY,
+      effect.trailCrouched ? "duck" : "idle",
+      effect.trailDrawW,
+      effect.trailDrawH,
+      effect.dashColor ?? this.dashTrailColor,
+    );
+  }
+
+  private spawnAfterimageFrame(
+    x: number,
+    y: number,
+    pose: Sqrt11Pose,
+    drawW: number,
+    drawH: number,
+    color: number,
+  ): void {
     const sprite = this.getAfterimageSprite();
-    const pose = this.resolveSqrt11Pose(snapshot);
 
     sprite.container
-      .setPosition(drawX, drawY)
+      .setPosition(x, y)
       .setAlpha(0.55)
       .setVisible(true)
       .setScale(this.playerSprite.container.scaleX, this.playerSprite.container.scaleY);
-    this.setGlyphSpritePose(sprite, pose, snapshot.drawW, snapshot.drawH);
+    this.setGlyphSpritePose(sprite, pose, drawW, drawH);
     this.setGlyphSpriteColors(sprite, COLORS.playerBody, color);
 
     this.afterimages.push({
@@ -486,14 +513,6 @@ export class PlayerView {
     this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
   }
 
-  private emitDashBeginBurst(snapshot: PlayerSnapshot): void {
-    const cx = snapshot.centerX;
-    const cy = snapshot.centerY;
-    this.dashEmitter.speedX = { min: -90, max: 90 };
-    this.dashEmitter.speedY = { min: -90, max: 90 };
-    this.dashEmitter.emitParticleAt(cx, cy, 1);
-  }
-
   private emitDashCommitBurst(snapshot: PlayerSnapshot): void {
     const cx = snapshot.centerX;
     const cy = snapshot.centerY;
@@ -572,6 +591,11 @@ export class PlayerView {
   private syncFacing(facing: PlayerSnapshot["facing"]): void {
     this.facing = facing;
     this.playerSprite.container.scaleX = Math.abs(this.playerSprite.container.scaleX) * facing;
+  }
+
+  private isDashActive(snapshot: PlayerSnapshot): boolean {
+    return snapshot.state === "dash" &&
+      (Math.abs(snapshot.vx) > 0.001 || Math.abs(snapshot.vy) > 0.001);
   }
 
   private resolveSqrt11Pose(snapshot: PlayerSnapshot): Sqrt11Pose {

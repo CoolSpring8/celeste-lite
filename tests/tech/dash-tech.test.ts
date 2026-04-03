@@ -39,6 +39,38 @@ describe("Dash tech", () => {
     expect(commit.snapshot.vx).toBeGreaterThan(0);
   });
 
+  test("dash trail effects follow the canonical start, 0.08s, end schedule with no freeze-start trails", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    stepOnce(player, makeInput());
+
+    const press = stepOnce(player, makeInput({ x: 1, dashPressed: true }));
+    expect(press.effects.some((effect) => effect.type === "dash_trail")).toBeFalse();
+
+    for (let frame = 0; frame < 3; frame++) {
+      const frozen = stepOnce(player, makeInput({ x: 1 }));
+      expect(frozen.effects.some((effect) => effect.type === "dash_trail")).toBeFalse();
+    }
+
+    const trailFrames: number[] = [];
+    const trailXs: number[] = [];
+    for (let frame = 0; frame < 20; frame++) {
+      const result = stepOnce(player, makeInput({ x: 1 }));
+      const trail = result.effects.find((effect) => effect.type === "dash_trail");
+      if (trail) {
+        trailFrames.push(frame);
+        trailXs.push(trail.trailX ?? NaN);
+      }
+    }
+
+    expect(trailFrames).toEqual([0, 5, 10]);
+    expect(trailXs[0]).toBeLessThan(trailXs[1]);
+    expect(trailXs[1]).toBeLessThan(trailXs[2]);
+  });
+
   test("superdash gives 260 horizontal speed and full jump height", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);

@@ -15,6 +15,7 @@ export interface InputState {
 
 export type PlayerEffectType =
   | "dash_begin"
+  | "dash_trail"
   | "super"
   | "hyper"
   | "wavedash"
@@ -36,6 +37,11 @@ export interface PlayerEffect {
   extended?: boolean;
   reverse?: boolean;
   dashColor?: number;
+  trailX?: number;
+  trailY?: number;
+  trailDrawW?: number;
+  trailDrawH?: number;
+  trailCrouched?: boolean;
 }
 
 export interface PlayerSnapshot {

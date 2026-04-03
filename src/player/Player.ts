@@ -23,6 +23,7 @@ import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
 
 const EPSILON = 0.0001;
+const DASH_TRAIL_INTERVAL = 0.08;
 const HAIR_FLASH_DURATION = 0.12;
 const USED_HAIR_LERP_RATE = 6;
 const EMPTY_INPUT: InputState = {
@@ -70,6 +71,7 @@ export class Player extends Actor {
   private dashPressBufferTimer = 0;
   private dashRefillCooldownTimer = 0;
   private dashAttackTimer = 0;
+  private dashTrailTimer = 0;
   private freezeRequestTimer = 0;
   private dashStartedOnGround = false;
 
@@ -393,6 +395,7 @@ export class Player extends Actor {
     this.dashPressBufferTimer = 0;
     this.dashRefillCooldownTimer = 0;
     this.dashAttackTimer = 0;
+    this.dashTrailTimer = 0;
     this.freezeRequestTimer = 0;
     this.dashStartedOnGround = false;
 
@@ -727,6 +730,7 @@ export class Player extends Actor {
     this.dashRefillCooldownTimer = toFloat(this.cfg.dash.refillCooldown);
     this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
     this.dashAttackTimer = toFloat(this.cfg.dash.attackTime);
+    this.dashTrailTimer = 0;
 
     this.beforeDashVx = this.vx;
     this.hopWaitX = 0;
@@ -747,6 +751,13 @@ export class Player extends Actor {
   }
 
   private dashUpdate(): PlayerState {
+    if (this.dashTrailTimer > 0) {
+      this.dashTrailTimer = stepTimer(this.dashTrailTimer, this.frameDt);
+      if (this.dashTrailTimer <= 0) {
+        this.emitDashTrail();
+      }
+    }
+
     if (this.dashDir.y === 0) {
       this.applyDashJumpThruNudge();
 
@@ -973,9 +984,12 @@ export class Player extends Actor {
       dirY: this.dashDir.y,
       dashColor: this.resolveDashTrailColor(),
     });
+    this.emitDashTrail();
+    this.dashTrailTimer = DASH_TRAIL_INTERVAL;
   }
 
   private finishDash(): void {
+    this.emitDashTrail();
     this.autoJump = true;
     this.autoJumpTimer = 0;
 
@@ -1454,6 +1468,22 @@ export class Player extends Actor {
 
   private resolveDashTrailColor(): number {
     return this.wasDashB ? COLORS.playerOneDash : COLORS.playerNoDash;
+  }
+
+  private emitDashTrail(): void {
+    const drawH = this.ducking
+      ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
+      : PLAYER_GEOMETRY.drawH;
+
+    this.emit({
+      type: "dash_trail",
+      dashColor: this.resolveDashTrailColor(),
+      trailX: this.x,
+      trailY: this.y,
+      trailDrawW: PLAYER_GEOMETRY.drawW,
+      trailDrawH: drawH,
+      trailCrouched: this.ducking,
+    });
   }
 
   private lerpColor(from: number, to: number, t: number): number {
