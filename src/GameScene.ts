@@ -593,8 +593,7 @@ export class GameScene extends Phaser.Scene {
   private refillColor(type: RefillType): number {
     if (type === "max") return 0x8af6ff;
     if (type <= 1) return COLORS.playerOneDash;
-    if (type === 2) return COLORS.playerTwoDash;
-    return COLORS.playerManyDash;
+    return COLORS.playerTwoDash;
   }
 
   private ensurePixelTexture(): void {

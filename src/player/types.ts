@@ -35,6 +35,7 @@ export interface PlayerEffect {
   impact?: number;
   extended?: boolean;
   reverse?: boolean;
+  dashColor?: number;
 }
 
 export interface PlayerSnapshot {
@@ -54,6 +55,7 @@ export interface PlayerSnapshot {
   wallDir: number;
   wallDustDir: number;
   dashesLeft: number;
+  hairColor: number;
   isTired: boolean;
   stamina: number;
   hitboxW: number;

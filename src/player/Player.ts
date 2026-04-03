@@ -1,4 +1,4 @@
-import { PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
+import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
 import { CollisionWorld } from "../entities/CollisionWorld";
 import { Hitbox } from "../entities/core/Hitbox";
 import {
@@ -23,6 +23,8 @@ import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
 
 const EPSILON = 0.0001;
+const HAIR_FLASH_DURATION = 0.12;
+const USED_HAIR_LERP_RATE = 6;
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
@@ -94,6 +96,10 @@ export class Player extends Actor {
   stamina: number;
 
   private beforeDashVx = 0;
+  private wasDashB = false;
+  private hairColor: number = COLORS.playerOneDash;
+  private hairFlashTimer = 0;
+  private lastHairDashes: number;
 
   private isFastFalling = false;
 
@@ -113,8 +119,10 @@ export class Player extends Actor {
     this.hurtbox = this.normalHurtbox;
     this.dashesLeft = cfg.dash.maxDashes;
     this.stamina = toFloat(cfg.climb.max);
+    this.lastHairDashes = this.dashesLeft;
     this.wallSlideTimer = toFloat(cfg.gravity.wallSlideTime);
     this.maxFall = toFloat(cfg.gravity.maxFall);
+    this.resetHairState();
 
     this.stateMachine = new StateMachine<PlayerState>("normal");
     this.stateMachine.setCallbacks(
@@ -267,6 +275,7 @@ export class Player extends Actor {
     this.moveV(mulFloat(this.vy, dt));
 
     this.refreshEnvironment();
+    this.updateHairState(dt);
 
     if (this.getHitboxBounds().y > WORLD.rows * WORLD.tile + 32) {
       this.emit({ type: "fell_out" });
@@ -305,6 +314,9 @@ export class Player extends Actor {
     this.dashesLeft = Math.max(this.dashesLeft, target);
     this.stamina = toFloat(this.cfg.climb.max);
     this.dashRefillCooldownTimer = 0;
+    if (needsDashRefill) {
+      this.updateHairState(0);
+    }
     return true;
   }
 
@@ -334,6 +346,7 @@ export class Player extends Actor {
       wallDir: this.wallSlideDir,
       wallDustDir: this.wallDustDir,
       dashesLeft: this.dashesLeft,
+      hairColor: this.hairColor,
       isTired: this.isTired(),
       stamina: this.stamina,
       hitboxW,
@@ -403,8 +416,10 @@ export class Player extends Actor {
     this.dashDir = { x: 0, y: 0 };
     this.dashesLeft = this.cfg.dash.maxDashes;
     this.stamina = toFloat(this.cfg.climb.max);
+    this.wasDashB = false;
 
     this.beforeDashVx = 0;
+    this.resetHairState();
 
     this.isFastFalling = false;
 
@@ -724,7 +739,7 @@ export class Player extends Actor {
       this.setDucking(false);
     }
 
-    this.emit({ type: "dash_begin" });
+    this.emit({ type: "dash_begin", dashColor: this.resolveDashTrailColor() });
     this.requestFreeze(this.cfg.dash.freezeTime);
   }
 
@@ -920,6 +935,7 @@ export class Player extends Actor {
 
   private startDash(): PlayerState {
     this.consumeDashPress();
+    this.wasDashB = this.dashesLeft === 2;
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
     return "dash";
   }
@@ -951,7 +967,12 @@ export class Player extends Actor {
       this.applyDashSlide(false);
     }
 
-    this.emit({ type: "dash_start", dirX: this.dashDir.x, dirY: this.dashDir.y });
+    this.emit({
+      type: "dash_start",
+      dirX: this.dashDir.x,
+      dirY: this.dashDir.y,
+      dashColor: this.resolveDashTrailColor(),
+    });
   }
 
   private finishDash(): void {
@@ -1402,6 +1423,51 @@ export class Player extends Actor {
 
   private getHurtboxH(): number {
     return this.hurtbox.height;
+  }
+
+  private resetHairState(): void {
+    this.hairColor = this.resolveHairBaseColor();
+    this.hairFlashTimer = 0;
+    this.lastHairDashes = this.dashesLeft;
+  }
+
+  private updateHairState(dt: number): void {
+    if (this.dashesLeft === 0 && this.dashesLeft < this.cfg.dash.maxDashes) {
+      this.hairColor = this.lerpColor(this.hairColor, COLORS.playerNoDash, USED_HAIR_LERP_RATE * dt);
+      this.hairFlashTimer = 0;
+    } else if (this.lastHairDashes !== this.dashesLeft) {
+      this.hairColor = COLORS.playerHairFlash;
+      this.hairFlashTimer = HAIR_FLASH_DURATION;
+    } else if (this.hairFlashTimer > 0) {
+      this.hairColor = COLORS.playerHairFlash;
+      this.hairFlashTimer = maxFloat(0, subFloat(this.hairFlashTimer, dt));
+    } else {
+      this.hairColor = this.resolveHairBaseColor();
+    }
+
+    this.lastHairDashes = this.dashesLeft;
+  }
+
+  private resolveHairBaseColor(): number {
+    return this.dashesLeft === 2 ? COLORS.playerTwoDash : COLORS.playerOneDash;
+  }
+
+  private resolveDashTrailColor(): number {
+    return this.wasDashB ? COLORS.playerOneDash : COLORS.playerNoDash;
+  }
+
+  private lerpColor(from: number, to: number, t: number): number {
+    const clamped = clampFloat(t, 0, 1);
+    const fromR = (from >> 16) & 0xff;
+    const fromG = (from >> 8) & 0xff;
+    const fromB = from & 0xff;
+    const toR = (to >> 16) & 0xff;
+    const toG = (to >> 8) & 0xff;
+    const toB = to & 0xff;
+    const r = Math.round(fromR + (toR - fromR) * clamped);
+    const g = Math.round(fromG + (toG - fromG) * clamped);
+    const b = Math.round(fromB + (toB - fromB) * clamped);
+    return (r << 16) | (g << 8) | b;
   }
 
   private emit(effect: PlayerEffect): void {
