@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
+import { COLORS, PLAYER_CONFIG, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
@@ -351,8 +351,8 @@ export class GameScene extends Phaser.Scene {
     scrollX: number,
     maxX: number,
   ): number {
-    const minScrollX = snapshot.x + PLAYER_GEOMETRY.hitboxW - (VIEWPORT.width - CAMERA_PLAYER_MARGIN_X);
-    const maxScrollX = snapshot.x - CAMERA_PLAYER_MARGIN_X;
+    const minScrollX = snapshot.right - (VIEWPORT.width - CAMERA_PLAYER_MARGIN_X);
+    const maxScrollX = snapshot.left - CAMERA_PLAYER_MARGIN_X;
     return Phaser.Math.Clamp(Phaser.Math.Clamp(scrollX, minScrollX, maxScrollX), 0, maxX);
   }
 
@@ -362,10 +362,8 @@ export class GameScene extends Phaser.Scene {
     maxY: number,
     dt: number,
   ): number {
-    const playerTop = snapshot.y;
-    const playerBottom = snapshot.y + snapshot.hitboxH;
-    const minScrollY = playerBottom - (VIEWPORT.height - CAMERA_PLAYER_MARGIN_BOTTOM);
-    const maxScrollY = playerTop - CAMERA_PLAYER_MARGIN_TOP;
+    const minScrollY = snapshot.bottom - (VIEWPORT.height - CAMERA_PLAYER_MARGIN_BOTTOM);
+    const maxScrollY = snapshot.top - CAMERA_PLAYER_MARGIN_TOP;
     const maxDelta = CAMERA_VERTICAL_VISIBILITY_CATCHUP * dt;
 
     let nextY = scrollY;
@@ -383,10 +381,8 @@ export class GameScene extends Phaser.Scene {
     camera: Phaser.Cameras.Scene2D.Camera,
   ): Phaser.Math.Vector2 {
     const controller = this.world.cameraController;
-    const centerX = snapshot.x + PLAYER_GEOMETRY.hitboxW * 0.5;
-    const feetY = snapshot.y + snapshot.hitboxH;
-    let targetX = centerX - VIEWPORT.width * 0.5;
-    let targetY = feetY - CAMERA_FOOT_ANCHOR_Y;
+    let targetX = snapshot.centerX - VIEWPORT.width * 0.5;
+    let targetY = snapshot.bottom - CAMERA_FOOT_ANCHOR_Y;
 
     targetX += controller.offsetX;
     targetY += controller.offsetY;
@@ -438,17 +434,14 @@ export class GameScene extends Phaser.Scene {
     if (this.world.cameraKillboxes.length === 0) return targetY;
 
     let safeY = targetY;
-    const playerLeft = snapshot.x;
-    const playerRight = snapshot.x + PLAYER_GEOMETRY.hitboxW;
-    const playerTop = snapshot.y;
 
     for (const box of this.world.cameraKillboxes) {
       if (!box.active || !box.collidable) continue;
       const bounds = box.bounds;
 
-      const overlapsX = playerRight > bounds.x && playerLeft < bounds.x + bounds.w;
+      const overlapsX = snapshot.right > bounds.x && snapshot.left < bounds.x + bounds.w;
       if (!overlapsX) continue;
-      if (playerTop >= bounds.y + bounds.h) continue;
+      if (snapshot.top >= bounds.y + bounds.h) continue;
 
       safeY = Math.min(safeY, bounds.y - VIEWPORT.height);
     }

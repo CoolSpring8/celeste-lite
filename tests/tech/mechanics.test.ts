@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PLAYER_GEOMETRY, WORLD } from "../../src/constants.ts";
+import { WORLD } from "../../src/constants.ts";
 import type { LevelEntitySpec } from "../../src/entities/types.ts";
 import {
   buildWorld,
@@ -16,7 +16,7 @@ describe("Core mechanics", () => {
     withFloor(specs, 20, 0, 9);
     const world = buildWorld(specs);
 
-    const withinWindow = createPlayerOnFloor(world, 40, 20);
+    const withinWindow = createPlayerOnFloor(world, 44, 20);
     stepOnce(withinWindow, makeInput());
     withinWindow.x = 220;
     for (let frame = 0; frame < 5; frame++) {
@@ -25,7 +25,7 @@ describe("Core mechanics", () => {
     const coyoteJump = stepOnce(withinWindow, makeInput({ jump: true, jumpPressed: true }));
     expect(coyoteJump.snapshot.vy).toBeLessThan(0);
 
-    const afterWindow = createPlayerOnFloor(world, 40, 20);
+    const afterWindow = createPlayerOnFloor(world, 44, 20);
     stepOnce(afterWindow, makeInput());
     afterWindow.x = 220;
     for (let frame = 0; frame < 6; frame++) {
@@ -39,9 +39,9 @@ describe("Core mechanics", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const startY = 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 80;
+    const startY = 20 * WORLD.tile - 80;
 
-    const probe = createPlayer(world, 120, startY);
+    const probe = createPlayer(world, 124, startY);
     let landingFrame = -1;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(probe, makeInput());
@@ -52,7 +52,7 @@ describe("Core mechanics", () => {
     }
     expect(landingFrame).toBeGreaterThan(0);
 
-    const withinWindow = createPlayer(world, 120, startY);
+    const withinWindow = createPlayer(world, 124, startY);
     // The buffered jump resolves on the first update after the landing step, so the
     // "4 frames early" Celeste window appears as 3 frames before the first grounded snapshot.
     const pressFrame = Math.max(0, landingFrame - 3);
@@ -69,7 +69,7 @@ describe("Core mechanics", () => {
     }
     expect(bufferedJump).toBeTrue();
 
-    const afterWindow = createPlayer(world, 120, startY);
+    const afterWindow = createPlayer(world, 124, startY);
     const latePressFrame = Math.max(0, landingFrame - 4);
     let lateBufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
@@ -89,9 +89,9 @@ describe("Core mechanics", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const startY = 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 80;
+    const startY = 20 * WORLD.tile - 80;
 
-    const probe = createPlayer(world, 120, startY);
+    const probe = createPlayer(world, 124, startY);
     let landingFrame = -1;
     for (let frame = 0; frame < 120; frame++) {
       const result = stepOnce(probe, makeInput());
@@ -102,7 +102,7 @@ describe("Core mechanics", () => {
     }
     expect(landingFrame).toBeGreaterThan(0);
 
-    const player = createPlayer(world, 120, startY);
+    const player = createPlayer(world, 124, startY);
     const pressFrame = landingFrame - 5;
     let bufferedJump = false;
     for (let frame = 0; frame < 120; frame++) {
@@ -123,7 +123,7 @@ describe("Core mechanics", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
     (player as unknown as { dashCooldownTimer: number }).dashCooldownTimer = 0.02;
 
     stepOnce(player, makeInput({ dash: true, dashPressed: true }));
@@ -132,7 +132,7 @@ describe("Core mechanics", () => {
     const released = stepOnce(player, makeInput());
     expect(released.snapshot.state).not.toBe("dash");
 
-    const holding = createPlayerOnFloor(world, 100, 20);
+    const holding = createPlayerOnFloor(world, 104, 20);
     (holding as unknown as { dashCooldownTimer: number }).dashCooldownTimer = 0.02;
 
     stepOnce(holding, makeInput({ dash: true, dashPressed: true }));
@@ -144,7 +144,7 @@ describe("Core mechanics", () => {
   test("fastfall raises max fall speed from 160 to 240", () => {
     const world = buildWorld([]);
 
-    const normal = createPlayer(world, 120, 80);
+    const normal = createPlayer(world, 124, 91);
     let normalMaxVy = -Infinity;
     for (let frame = 0; frame < 400; frame++) {
       const result = stepOnce(normal, makeInput());
@@ -152,7 +152,7 @@ describe("Core mechanics", () => {
     }
     expect(normalMaxVy).toBeCloseTo(160, 5);
 
-    const fastfall = createPlayer(world, 120, 80);
+    const fastfall = createPlayer(world, 124, 91);
     let fastfallMaxVy = -Infinity;
     for (let frame = 0; frame < 400; frame++) {
       const result = stepOnce(fastfall, makeInput({ y: 1 }));

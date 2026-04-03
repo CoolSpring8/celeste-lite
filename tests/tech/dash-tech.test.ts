@@ -16,7 +16,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
 
     stepOnce(player, makeInput());
     const press = stepOnce(player, makeInput({ x: -1, dashPressed: true }));
@@ -43,7 +43,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
 
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, dashPressed: true }));
@@ -63,7 +63,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const probe = createPlayerOnFloor(world, 100, 20);
+    const probe = createPlayerOnFloor(world, 104, 20);
 
     stepOnce(probe, makeInput());
     stepOnce(probe, makeInput({ x: 1, y: 1, dashPressed: true }));
@@ -79,7 +79,7 @@ describe("Dash tech", () => {
 
     expect(commitFrame).toBeGreaterThanOrEqual(0);
 
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
     step(player, makeInput({ x: 1, y: 1 }), commitFrame);
@@ -96,7 +96,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
 
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, y: 1, dashPressed: true }));
@@ -116,8 +116,8 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const startX = 100;
-    const startY = 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH - 24;
+    const startX = 104;
+    const startY = 20 * WORLD.tile - 24;
     const probe = createPlayer(
       world,
       startX,
@@ -172,7 +172,7 @@ describe("Dash tech", () => {
     withFloor(specs, 20);
     const world = buildWorld(specs);
 
-    const reverseSuper = createPlayerOnFloor(world, 200, 20);
+    const reverseSuper = createPlayerOnFloor(world, 204, 20);
     stepOnce(reverseSuper, makeInput());
     stepOnce(reverseSuper, makeInput({ x: -1, dashPressed: true }));
     stepOnce(reverseSuper, makeInput({ x: -1 }));
@@ -186,7 +186,7 @@ describe("Dash tech", () => {
     expect(superFx?.reverse).toBeTrue();
     expect(superJump.snapshot.vx).toBeCloseTo(260, 5);
 
-    const reverseHyper = createPlayerOnFloor(world, 240, 20);
+    const reverseHyper = createPlayerOnFloor(world, 244, 20);
     stepOnce(reverseHyper, makeInput());
     stepOnce(reverseHyper, makeInput({ x: -1, y: 1, dashPressed: true }));
     stepOnce(reverseHyper, makeInput({ x: -1, y: 1 }));
@@ -205,7 +205,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 100, 20);
+    const player = createPlayerOnFloor(world, 104, 20);
 
     stepOnce(player, makeInput());
     stepOnce(player, makeInput({ x: 1, dashPressed: true }));
@@ -232,7 +232,7 @@ describe("Dash tech", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
-    const player = createPlayerOnFloor(world, 120, 20);
+    const player = createPlayerOnFloor(world, 124, 20);
     player.vx = 325;
     player.dashesLeft = 1;
 
@@ -251,7 +251,7 @@ describe("Dash tech", () => {
     withFloor(specs, 20);
     const world = buildWorld(specs);
     const startY = 20 * WORLD.tile - 60;
-    const player = createPlayer(world, 120, startY);
+    const player = createPlayer(world, 124, startY);
     player.vx = 325;
     player.vy = 0;
     player.dashesLeft = 1;
@@ -281,8 +281,8 @@ describe("Dash tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      15 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH,
+      15 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      20 * WORLD.tile,
     );
 
     stepOnce(player, makeInput());

@@ -309,15 +309,23 @@ export class Player extends Actor {
   }
 
   getSnapshot(): PlayerSnapshot {
-    const hitboxH = this.getHitboxH();
+    const bounds = this.getHitboxBounds();
+    const hitboxW = bounds.w;
+    const hitboxH = bounds.h;
     const drawW = PLAYER_GEOMETRY.drawW;
     const drawH = this.ducking
       ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
       : PLAYER_GEOMETRY.drawH;
 
     return {
-      x: this.getHitboxBounds().x,
-      y: this.getHitboxBounds().y,
+      x: this.x,
+      y: this.y,
+      left: bounds.x,
+      top: bounds.y,
+      right: bounds.x + hitboxW,
+      bottom: bounds.y + hitboxH,
+      centerX: this.x,
+      centerY: bounds.y + hitboxH * 0.5,
       vx: this.vx,
       vy: this.vy,
       state: this.state,
@@ -328,6 +336,7 @@ export class Player extends Actor {
       dashesLeft: this.dashesLeft,
       isTired: this.isTired(),
       stamina: this.stamina,
+      hitboxW,
       drawW,
       hitboxH,
       drawH,

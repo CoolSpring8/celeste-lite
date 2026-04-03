@@ -34,8 +34,8 @@ describe("Hazards", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      15 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      20 * WORLD.tile - PLAYER_GEOMETRY.hitboxH,
+      15 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      20 * WORLD.tile,
     );
 
     stepOnce(player, makeInput());

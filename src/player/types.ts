@@ -40,6 +40,12 @@ export interface PlayerEffect {
 export interface PlayerSnapshot {
   x: number;
   y: number;
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  centerX: number;
+  centerY: number;
   vx: number;
   vy: number;
   state: PlayerState;
@@ -50,6 +56,7 @@ export interface PlayerSnapshot {
   dashesLeft: number;
   isTired: boolean;
   stamina: number;
+  hitboxW: number;
   drawW: number;
   hitboxH: number;
   drawH: number;

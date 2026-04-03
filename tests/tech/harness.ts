@@ -1,4 +1,4 @@
-import { PLAYER_CONFIG, PLAYER_GEOMETRY, WORLD } from "../../src/constants.ts";
+import { PLAYER_CONFIG, WORLD } from "../../src/constants.ts";
 import { EntityWorld } from "../../src/entities/EntityWorld.ts";
 import type { LevelEntitySpec } from "../../src/entities/types.ts";
 import { Player } from "../../src/player/Player.ts";
@@ -49,12 +49,7 @@ export function createPlayer(
   x: number,
   y: number,
 ): Player {
-  return new Player(
-    x + PLAYER_GEOMETRY.hitboxW * 0.5,
-    y + PLAYER_GEOMETRY.hitboxH,
-    world,
-    PLAYER_CONFIG,
-  );
+  return new Player(x, y, world, PLAYER_CONFIG);
 }
 
 export function createPlayerOnFloor(
@@ -62,7 +57,7 @@ export function createPlayerOnFloor(
   x = 100,
   floorRow = 20,
 ): Player {
-  return createPlayer(world, x, floorRow * WORLD.tile - PLAYER_GEOMETRY.hitboxH);
+  return createPlayer(world, x, floorRow * WORLD.tile);
 }
 
 export function step(player: Player, input: InputState, frames = 1): StepResult[] {

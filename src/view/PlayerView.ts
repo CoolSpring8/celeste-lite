@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PLAYER_VISUALS } from "../constants";
+import { COLORS, PLAYER_CONFIG, PLAYER_VISUALS } from "../constants";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 
 type Sqrt11Pose = "idle" | "duck";
@@ -161,8 +161,8 @@ export class PlayerView {
     this.updateDashSlash(dt);
     this.updateTrail(snapshot, dt);
 
-    const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const drawY = snapshot.y + snapshot.hitboxH;
+    const drawX = snapshot.x;
+    const drawY = snapshot.y;
     const pose = this.resolveSqrt11Pose(snapshot);
 
     this.applyGlyphSprite(
@@ -296,8 +296,8 @@ export class PlayerView {
     if (this.dashParticleTimer <= 0) {
       this.dashParticleTimer = PLAYER_VISUALS.dashParticleInterval;
 
-      const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-      const cy = snapshot.y + snapshot.hitboxH / 2;
+      const cx = snapshot.centerX;
+      const cy = snapshot.centerY;
       const baseSpeed = 45;
       const spread = 35;
       const xBias = this.dashDirX * baseSpeed;
@@ -340,8 +340,8 @@ export class PlayerView {
   }
 
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
-    const drawX = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const drawY = snapshot.y + snapshot.hitboxH;
+    const drawX = snapshot.x;
+    const drawY = snapshot.y;
     const sprite = this.getAfterimageSprite();
     const pose = this.resolveSqrt11Pose(snapshot);
 
@@ -438,22 +438,22 @@ export class PlayerView {
   }
 
   private emitLandDust(snapshot: PlayerSnapshot, count: number): void {
-    const px = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const py = snapshot.y + snapshot.hitboxH;
+    const px = snapshot.centerX;
+    const py = snapshot.bottom;
     this.wallEmitter.emitParticleAt(px, py, count);
   }
 
   private emitWallJumpDust(snapshot: PlayerSnapshot, wallDir: number, count: number): void {
     const dir = wallDir === 0 ? snapshot.facing : wallDir;
-    const px = dir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
-    const py = snapshot.y + snapshot.hitboxH * 0.5;
+    const px = dir < 0 ? snapshot.left - 1 : snapshot.right + 1;
+    const py = snapshot.centerY;
     this.wallEmitter.emitParticleAt(px, py, count);
   }
 
   private emitWallSlideDust(snapshot: PlayerSnapshot, wallDir: number, count: number): void {
     const dir = wallDir === 0 ? snapshot.facing : wallDir;
-    const px = dir < 0 ? snapshot.x - 1 : snapshot.x + PLAYER_GEOMETRY.hitboxW + 1;
-    const py = snapshot.y + snapshot.hitboxH - 2;
+    const px = dir < 0 ? snapshot.left - 1 : snapshot.right + 1;
+    const py = snapshot.bottom - 2;
     this.wallEmitter.emitParticleAt(px, py, count);
   }
 
@@ -518,16 +518,16 @@ export class PlayerView {
   }
 
   private emitDashBeginBurst(snapshot: PlayerSnapshot): void {
-    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    const cx = snapshot.centerX;
+    const cy = snapshot.centerY;
     this.dashEmitter.speedX = { min: -90, max: 90 };
     this.dashEmitter.speedY = { min: -90, max: 90 };
     this.dashEmitter.emitParticleAt(cx, cy, 1);
   }
 
   private emitDashCommitBurst(snapshot: PlayerSnapshot): void {
-    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    const cx = snapshot.centerX;
+    const cy = snapshot.centerY;
     const baseSpeed = 120;
     const spread = 45;
     const xBias = this.dashDirX * baseSpeed;
@@ -538,8 +538,8 @@ export class PlayerView {
   }
 
   private emitDashSlash(snapshot: PlayerSnapshot): void {
-    const cx = snapshot.x + PLAYER_GEOMETRY.hitboxW / 2;
-    const cy = snapshot.y + snapshot.hitboxH * 0.5;
+    const cx = snapshot.centerX;
+    const cy = snapshot.centerY;
     this.dashSlashTimer = PLAYER_VISUALS.dashSlashLife;
     this.dashSlash
       .setPosition(cx, cy)

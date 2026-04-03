@@ -20,8 +20,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      18 * WORLD.tile,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     );
 
     let climbedOut = false;
@@ -47,8 +47,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      18 * WORLD.tile,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     );
 
     let snapshot = player.getSnapshot();
@@ -71,8 +71,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      18 * WORLD.tile,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     ) as unknown as {
       climbHopBlockedCheck: () => boolean;
     };
@@ -89,8 +89,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      20 * WORLD.tile,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      20 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     );
 
     stepOnce(player, makeInput({ grab: true }));
@@ -135,8 +135,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      12 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 20,
-      18 * WORLD.tile,
+      12 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 20,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     );
 
     stepOnce(player, makeInput());
@@ -170,8 +170,8 @@ describe("Climb and dashless tech", () => {
     const world = buildWorld(specs);
     const player = createPlayer(
       world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW - 1,
-      22 * WORLD.tile,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      22 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
     );
 
     stepOnce(player, makeInput({ grab: true }));
@@ -198,7 +198,11 @@ describe("Climb and dashless tech", () => {
     }
     const world = buildWorld(specs);
     const wallBottom = 17 * WORLD.tile;
-    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom);
+    const player = createPlayer(
+      world,
+      20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5,
+      wallBottom + PLAYER_GEOMETRY.hitboxH,
+    );
     const internals = player as unknown as {
       forceState: (state: PlayerSnapshot["state"]) => void;
       facing: 1 | -1;
@@ -224,7 +228,11 @@ describe("Climb and dashless tech", () => {
     }
     const world = buildWorld(specs);
     const wallBottom = 17 * WORLD.tile;
-    const player = createPlayer(world, 20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW, wallBottom - 1);
+    const player = createPlayer(
+      world,
+      20 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5,
+      wallBottom + PLAYER_GEOMETRY.hitboxH - 1,
+    );
     const internals = player as unknown as {
       climbNoMoveTimer: number;
       forceState: (state: PlayerSnapshot["state"]) => void;
@@ -244,6 +252,6 @@ describe("Climb and dashless tech", () => {
     const secondTap = stepOnce(player, makeInput({ x: 1, y: 1, grab: true }));
 
     expect(secondTap.snapshot.state).toBe("climb");
-    expect(secondTap.snapshot.y).toBe(wallBottom);
+    expect(secondTap.snapshot.y).toBe(wallBottom + PLAYER_GEOMETRY.hitboxH);
   });
 });
