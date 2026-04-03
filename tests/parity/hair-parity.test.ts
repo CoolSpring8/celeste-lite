@@ -9,7 +9,7 @@ import {
   step,
   stepOnce,
   withFloor,
-} from "./harness.ts";
+} from "../support/harness.ts";
 
 function lerpColor(from: number, to: number, t: number): number {
   const clamped = Math.max(0, Math.min(1, t));

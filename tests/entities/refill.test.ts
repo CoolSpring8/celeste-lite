@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { PLAYER_CONFIG } from "../../src/constants.ts";
-import { buildWorld, createPlayer, DT, makeInput } from "./harness.ts";
+import { buildWorld, createPlayer, DT, makeInput } from "../support/harness.ts";
 
-describe("Refill tech", () => {
+describe("Refill entity", () => {
   test("consuming a refill contributes a 0.05s scene freeze", () => {
     const world = buildWorld([
       { kind: "refill", x: 96, y: 89.5, type: "max" },

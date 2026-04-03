@@ -3,7 +3,7 @@ import { ButtonBank } from "../../src/input/ButtonBank.ts";
 import { PlayerControls } from "../../src/input/PlayerControls.ts";
 import { VirtualButton } from "../../src/input/VirtualButton.ts";
 import { ButtonBindingNode } from "../../src/input/nodes.ts";
-import { DT } from "./harness.ts";
+import { DT } from "../support/harness.ts";
 
 describe("Input model", () => {
   test("virtual buttons buffer held presses and clear once the button is released", () => {

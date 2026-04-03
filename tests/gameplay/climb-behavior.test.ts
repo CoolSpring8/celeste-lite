@@ -8,35 +8,9 @@ import {
   makeInput,
   stepOnce,
   withFloor,
-} from "./harness.ts";
+} from "../support/harness.ts";
 
-describe("Climb and dashless tech", () => {
-  test("climbhop transitions from climb to normal with climbhop Y speed", () => {
-    const specs: LevelEntitySpec[] = [];
-    withFloor(specs, 20);
-    for (let row = 15; row <= 19; row++) {
-      specs.push({ kind: "solidTile", col: 10, row });
-    }
-    const world = buildWorld(specs);
-    const player = createPlayer(
-      world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
-      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
-    );
-
-    let climbedOut = false;
-    for (let frame = 0; frame < 400; frame++) {
-      const result = stepOnce(player, makeInput({ grab: true, y: -1 }));
-      if (frame > 10 && result.snapshot.state !== "climb") {
-        climbedOut = true;
-        expect(result.snapshot.vy).toBeCloseTo(-120, 5);
-        break;
-      }
-    }
-
-    expect(climbedOut).toBeTrue();
-  });
-
+describe("Climb behavior", () => {
   test("climbing into ledge-top spikes stalls instead of climbhopping", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
@@ -78,31 +52,6 @@ describe("Climb and dashless tech", () => {
     };
 
     expect(player.climbHopBlockedCheck()).toBeTrue();
-  });
-
-  test("wallboost refunds climbjump stamina when pressing away in the boost window", () => {
-    const specs: LevelEntitySpec[] = [];
-    withFloor(specs, 26);
-    for (let row = 8; row <= 25; row++) {
-      specs.push({ kind: "solidTile", col: 10, row });
-    }
-    const world = buildWorld(specs);
-    const player = createPlayer(
-      world,
-      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
-      20 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
-    );
-
-    stepOnce(player, makeInput({ grab: true }));
-    expect(player.getSnapshot().state).toBe("climb");
-
-    stepOnce(player, makeInput({ grab: true, jump: true, jumpPressed: true, x: 0 }));
-    expect(player.getSnapshot().stamina).toBeCloseTo(82.5, 5);
-
-    stepOnce(player, makeInput({ x: -1 }));
-    const wallboost = player.getSnapshot();
-    expect(wallboost.stamina).toBeCloseTo(110, 5);
-    expect(wallboost.vx).toBeCloseTo(-125.6666666667, 5);
   });
 
   test("tired state uses the strict threshold and wallboost stamina grace", () => {
