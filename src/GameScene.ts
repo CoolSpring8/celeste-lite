@@ -191,6 +191,9 @@ export class GameScene extends Phaser.Scene {
     if (this.freezeTimer > 0) {
       this.freezeTimer = stepTimer(this.freezeTimer, rawFrameDt);
       const snapshot = this.player.getSnapshot();
+      if (this.forceCameraUpdate) {
+        this.updateCamera(snapshot, rawFrameDt);
+      }
       this.playerView.render(snapshot);
       this.updateHUD(snapshot, effects);
       return;
@@ -214,6 +217,7 @@ export class GameScene extends Phaser.Scene {
         stepSnapshot.vy,
       ) !== null;
       if (fellOut || spiked) {
+        this.cameras.main.shake(spiked ? 120 : 90, spiked ? 0.0026 : 0.0018);
         this.respawnPlayer();
         if (spiked) {
           this.cameras.main.flash(180, 0, 0, 0, false);
@@ -481,7 +485,7 @@ export class GameScene extends Phaser.Scene {
     let nextX = target.x;
     let nextY = target.y;
 
-    if (!this.forceCameraSnapNextFrame && !this.forceCameraUpdate) {
+    if (!this.forceCameraSnapNextFrame) {
       const smooth = 1 - Math.pow(CAMERA_SMOOTH_BASE, dt);
       nextX = camera.scrollX + (target.x - camera.scrollX) * smooth;
       nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
