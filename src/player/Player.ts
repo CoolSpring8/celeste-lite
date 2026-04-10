@@ -442,6 +442,21 @@ export class Player extends Actor {
     this.stateMachine.forceState(state);
   }
 
+  onTransition(): void {
+    this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
+    this.jumpGraceTimer = 0;
+    this.forceMoveXTimer = 0;
+
+    const dashRefilled = this.dashesLeft < this.cfg.dash.maxDashes;
+    this.dashesLeft = this.cfg.dash.maxDashes;
+    this.stamina = toFloat(this.cfg.climb.max);
+    this.dashRefillCooldownTimer = 0;
+
+    if (dashRefilled) {
+      this.updateHairState(0);
+    }
+  }
+
   private refreshEnvironment(): void {
     const body = this.getHitboxBounds();
     const ground = this.world.probeGround(body.x, body.y, body.w, body.h);

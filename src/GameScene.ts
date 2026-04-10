@@ -447,6 +447,7 @@ export class GameScene extends Phaser.Scene {
       this.currentRoom = transition.to;
       this.roomTransition = null;
       this.setCheckpoint(this.currentRoom);
+      this.player.onTransition();
       this.cameras.main.setScroll(transition.toScrollX, transition.toScrollY);
       this.forceCameraSnapNextFrame = false;
     }
