@@ -1,34 +1,28 @@
-import { PLAYER_GEOMETRY, VIEWPORT, WORLD } from "./constants";
+import { PLAYER_GEOMETRY, WORLD } from "./constants";
 import { EntityWorld } from "./entities/EntityWorld";
 import { type Aabb, LevelEntitySpec, SpikeDirection } from "./entities/types";
 
-export const LEVEL_ROOM_COLS = VIEWPORT.width / WORLD.tile;
-export const LEVEL_ROOM_ROWS = WORLD.rows;
-
 export type RoomDirection = "left" | "right" | "up" | "down";
 
-interface RoomBlueprint {
+export interface LevelRoomBlueprint {
   id: string;
-  gridX: number;
-  gridY: number;
+  bounds: Aabb;
   rows: readonly string[];
+  initialSpawn?: boolean;
 }
 
 export interface LevelRoom {
   id: string;
-  gridX: number;
-  gridY: number;
   cols: number;
   rows: number;
   bounds: Aabb;
   checkpoint: { x: number; y: number } | null;
 }
 
-const ROOM_BLUEPRINTS: readonly RoomBlueprint[] = [
+const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
   {
     id: "foothills",
-    gridX: 0,
-    gridY: 0,
+    bounds: { x: 5 * WORLD.tile, y: 0, w: 40 * WORLD.tile, h: 30 * WORLD.tile },
     rows: [
       "XXXXXXXXXXXXXXXX........................",
       "XXXXX...................................",
@@ -64,8 +58,7 @@ const ROOM_BLUEPRINTS: readonly RoomBlueprint[] = [
   },
   {
     id: "crossing",
-    gridX: 1,
-    gridY: 0,
+    bounds: { x: 45 * WORLD.tile, y: 0, w: 40 * WORLD.tile, h: 30 * WORLD.tile },
     rows: [
       "...................................XXXXX",
       "...................................XXXXX",
@@ -94,9 +87,82 @@ const ROOM_BLUEPRINTS: readonly RoomBlueprint[] = [
       "S..................................XXXXX",
       "...................................XXXXX",
       "......................XXXXXXX......XXXXX",
-      "XXXXXXXXXXXX......XXXXXXXXXXXXXXXXXXXXXX",
-      "XXXXXXXXXXXX......XXXXXXXXXXXXXXXXXXXXXX",
-      "XXXXXXXXXXXX......XXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
+    ],
+  },
+  {
+    id: "legacy-foothills",
+    bounds: { x: 0, y: 30 * WORLD.tile, w: 55 * WORLD.tile, h: 30 * WORLD.tile },
+    initialSpawn: true,
+    rows: [
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXX..............................................XXXX",
+      "XXXXX..............................................XXXX",
+      "XXXXX..............................................XXXX",
+      "XXXXX..............................................XXXX",
+      "XXXXX....................XXXXXXXX......................",
+      "XXXXX.2......^^..........XXXXXXXX......................",
+      "XXXXX........XX..........XXXXXXXX......................",
+      "XXXXX........XX...........XXXXXXX......................",
+      "XXXXX........XX...........XXXXXXX......XXXXXX===XXXXXXX",
+      "XXXXX........XX...........XXXXXXX......XXXXXX...XXXXXXX",
+      "XXXXXXXX..................XXXXXXX........XXXX...XXXXXXX",
+      "XXXXXXXX.........^^^^^....XXXXXXX.........XXX...XXXXXXX",
+      "XXXXXXXX.........XXXXX....XXXXXXX.........XXX...XXXXXXX",
+      "XXXXXXXX.........XXXXX...1XXXXXXX.........XXX...XXXXXXX",
+      "XXXXXXXX.........XXXXX....XXXXXXX.........XXX...XXXXXXX",
+      "XXXX......................XXXXXXX..................XXXX",
+      "XXXX......................XXXXXXX..................XXXX",
+      "XXXX...........XXXXXXXX...XXXXXXX..................XXXX",
+      "XXXX...........XXXXXXXX...XXXXXXX..................XXXX",
+      "XXXXX..........XXXXXXXX......XXXX.............=====XXXX",
+      "XXXXX..........XXXXXXXX.....XXXXX..................XXXX",
+      "XXXXXS.........XXXXXXXX............................XXXX",
+      "XXXXX..........XXXXXXXX...XXXXXXX..................XXXX",
+      "XXXXXXXXX^^^^^^XXXXXXXX^^^XXXXXXX.......XXXX.......XXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.......XXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX^^^^^^^XXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+    ],
+  },
+  {
+    id: "legacy-crossing",
+    bounds: { x: 55 * WORLD.tile, y: 30 * WORLD.tile, w: 45 * WORLD.tile, h: 30 * WORLD.tile },
+    rows: [
+      "XXXXXXXX...XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXX......XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXX........XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXX.....................................XXXXX",
+      "X.......................................XXXXX",
+      "X.......XXX.............................XXXXX",
+      "X.......................................XXXXX",
+      ".......^^^^^^^^^^^^^^^^^^...............XXXXX",
+      ".......XXXXXXXXXXXXXXXXXX...............XXXXX",
+      "S.......................................XXXXX",
+      "........................................XXXXX",
+      "XX....................................XXXXXXX",
+      "XX....................................XXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX.=======XXXXXXXSSS................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX.1......XXXXXXX...................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XX........XXXXXXX...................XXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
     ],
   },
 ] as const;
@@ -109,25 +175,31 @@ export interface LevelData {
 }
 
 export function parseLevel(): LevelData {
+  return buildLevelFromBlueprints(ROOM_BLUEPRINTS);
+}
+
+export function buildLevelFromBlueprints(
+  blueprints: readonly LevelRoomBlueprint[],
+): LevelData {
   const entities: LevelEntitySpec[] = [];
   const rooms: LevelRoom[] = [];
   const spawnInsetX = Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5);
   let worldCols = 0;
   let worldRows = 0;
   let startCheckpoint: { x: number; y: number } | null = null;
+  let hasExplicitInitialSpawn = false;
 
-  for (const blueprint of ROOM_BLUEPRINTS) {
-    const rows = normalizeRoomRows(blueprint.rows);
-    const offsetCol = blueprint.gridX * LEVEL_ROOM_COLS;
-    const offsetRow = blueprint.gridY * LEVEL_ROOM_ROWS;
+  for (const blueprint of blueprints) {
+    const metrics = roomMetrics(blueprint.bounds);
+    const rows = normalizeRoomRows(blueprint.rows, metrics.cols, metrics.rows);
     let checkpoint: { x: number; y: number } | null = null;
 
-    for (let r = 0; r < LEVEL_ROOM_ROWS; r++) {
+    for (let r = 0; r < metrics.rows; r++) {
       const line = rows[r];
-      for (let c = 0; c < LEVEL_ROOM_COLS; c++) {
+      for (let c = 0; c < metrics.cols; c++) {
         const ch = line[c] || ".";
-        const col = offsetCol + c;
-        const row = offsetRow + r;
+        const col = metrics.offsetCol + c;
+        const row = metrics.offsetRow + r;
 
         if (ch === "X") {
           entities.push({ kind: "solidTile", col, row });
@@ -140,11 +212,13 @@ export function parseLevel(): LevelData {
         }
 
         if (ch === "S") {
-          checkpoint = {
+          checkpoint ??= {
             x: col * WORLD.tile + spawnInsetX + PLAYER_GEOMETRY.hitboxW * 0.5,
             y: row * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
           };
-          startCheckpoint ??= checkpoint;
+          if (!hasExplicitInitialSpawn) {
+            startCheckpoint ??= checkpoint;
+          }
           continue;
         }
 
@@ -180,20 +254,21 @@ export function parseLevel(): LevelData {
       }
     }
 
-    worldCols = Math.max(worldCols, offsetCol + LEVEL_ROOM_COLS);
-    worldRows = Math.max(worldRows, offsetRow + LEVEL_ROOM_ROWS);
+    if (blueprint.initialSpawn) {
+      if (checkpoint === null) {
+        throw new Error(`Room "${blueprint.id}" is marked as the initial spawn room but has no checkpoint`);
+      }
+      startCheckpoint = checkpoint;
+      hasExplicitInitialSpawn = true;
+    }
+
+    worldCols = Math.max(worldCols, metrics.offsetCol + metrics.cols);
+    worldRows = Math.max(worldRows, metrics.offsetRow + metrics.rows);
     rooms.push({
       id: blueprint.id,
-      gridX: blueprint.gridX,
-      gridY: blueprint.gridY,
-      cols: LEVEL_ROOM_COLS,
-      rows: LEVEL_ROOM_ROWS,
-      bounds: {
-        x: offsetCol * WORLD.tile,
-        y: offsetRow * WORLD.tile,
-        w: LEVEL_ROOM_COLS * WORLD.tile,
-        h: LEVEL_ROOM_ROWS * WORLD.tile,
-      },
+      cols: metrics.cols,
+      rows: metrics.rows,
+      bounds: { ...blueprint.bounds },
       checkpoint,
     });
   }
@@ -229,8 +304,10 @@ export function findAdjacentRoom(
   rooms: readonly LevelRoom[],
   room: LevelRoom,
   direction: RoomDirection,
+  probe?: number,
 ): LevelRoom | null {
   const bounds = room.bounds;
+  const candidates: LevelRoom[] = [];
 
   for (const candidate of rooms) {
     if (candidate.id === room.id) {
@@ -241,35 +318,78 @@ export function findAdjacentRoom(
     if (direction === "left" &&
       other.x + other.w === bounds.x &&
       rangesOverlap(other.y, other.y + other.h, bounds.y, bounds.y + bounds.h)) {
-      return candidate;
+      candidates.push(candidate);
     }
     if (direction === "right" &&
       other.x === bounds.x + bounds.w &&
       rangesOverlap(other.y, other.y + other.h, bounds.y, bounds.y + bounds.h)) {
-      return candidate;
+      candidates.push(candidate);
     }
     if (direction === "up" &&
       other.y + other.h === bounds.y &&
       rangesOverlap(other.x, other.x + other.w, bounds.x, bounds.x + bounds.w)) {
-      return candidate;
+      candidates.push(candidate);
     }
     if (direction === "down" &&
       other.y === bounds.y + bounds.h &&
       rangesOverlap(other.x, other.x + other.w, bounds.x, bounds.x + bounds.w)) {
-      return candidate;
+      candidates.push(candidate);
     }
   }
 
-  return null;
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  const sorted = candidates.sort((a, b) => {
+    if (direction === "left" || direction === "right") {
+      return a.bounds.y - b.bounds.y;
+    }
+    return a.bounds.x - b.bounds.x;
+  });
+
+  if (probe !== undefined) {
+    for (const candidate of sorted) {
+      if (direction === "left" || direction === "right") {
+        if (probe >= candidate.bounds.y && probe < candidate.bounds.y + candidate.bounds.h) {
+          return candidate;
+        }
+      } else if (probe >= candidate.bounds.x && probe < candidate.bounds.x + candidate.bounds.w) {
+        return candidate;
+      }
+    }
+  }
+
+  return sorted[0] ?? null;
 }
 
-function normalizeRoomRows(rows: readonly string[]): string[] {
+function roomMetrics(bounds: Aabb): { offsetCol: number; offsetRow: number; cols: number; rows: number } {
+  assertAligned(bounds.x, "room x");
+  assertAligned(bounds.y, "room y");
+  assertAligned(bounds.w, "room width");
+  assertAligned(bounds.h, "room height");
+
+  return {
+    offsetCol: bounds.x / WORLD.tile,
+    offsetRow: bounds.y / WORLD.tile,
+    cols: bounds.w / WORLD.tile,
+    rows: bounds.h / WORLD.tile,
+  };
+}
+
+function normalizeRoomRows(rows: readonly string[], cols: number, rowCount: number): string[] {
   const out: string[] = [];
-  for (let r = 0; r < LEVEL_ROOM_ROWS; r++) {
+  for (let r = 0; r < rowCount; r++) {
     const line = rows[r] ?? "";
-    out.push(line.padEnd(LEVEL_ROOM_COLS, ".").slice(0, LEVEL_ROOM_COLS));
+    out.push(line.padEnd(cols, ".").slice(0, cols));
   }
   return out;
+}
+
+function assertAligned(value: number, label: string): void {
+  if (value % WORLD.tile !== 0) {
+    throw new Error(`${label} must align to the ${WORLD.tile}px tile size`);
+  }
 }
 
 function rangesOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {

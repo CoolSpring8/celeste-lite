@@ -376,7 +376,12 @@ export class GameScene extends Phaser.Scene {
       return false;
     }
 
-    const nextRoom = findAdjacentRoom(this.rooms, this.currentRoom, direction);
+    const nextRoom = findAdjacentRoom(
+      this.rooms,
+      this.currentRoom,
+      direction,
+      this.roomTransitionProbe(snapshot, direction),
+    );
     if (nextRoom === null) {
       return false;
     }
@@ -409,6 +414,17 @@ export class GameScene extends Phaser.Scene {
     if (snapshot.centerY < bounds.y) return "up";
     if (snapshot.centerY >= bounds.y + bounds.h) return "down";
     return null;
+  }
+
+  private roomTransitionProbe(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    direction: RoomDirection,
+  ): number {
+    if (direction === "left" || direction === "right") {
+      return snapshot.centerY;
+    }
+
+    return snapshot.centerX;
   }
 
   private updateRoomTransition(dt: number): void {
