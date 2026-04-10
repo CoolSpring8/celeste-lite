@@ -4,6 +4,8 @@ export interface GroundProbe {
 }
 
 export interface CollisionWorld {
+  readonly cols: number;
+  readonly rows: number;
   collideSolidAt(x: number, y: number, w: number, h: number): boolean;
   collideAt(
     x: number,

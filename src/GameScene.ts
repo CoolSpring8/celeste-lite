@@ -4,7 +4,13 @@ import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
-import { parseLevel } from "./level";
+import {
+  findAdjacentRoom,
+  findRoomAtPoint,
+  type LevelRoom,
+  parseLevel,
+  type RoomDirection,
+} from "./level";
 import { PlayerControls } from "./input/PlayerControls";
 import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
 import { Player } from "./player/Player";
@@ -17,6 +23,24 @@ interface RefillView {
   body: Phaser.GameObjects.Rectangle;
 }
 
+interface CameraScrollBounds {
+  minX: number;
+  maxX: number;
+  minY: number;
+  maxY: number;
+}
+
+interface RoomTransitionState {
+  from: LevelRoom;
+  to: LevelRoom;
+  elapsed: number;
+  duration: number;
+  fromScrollX: number;
+  fromScrollY: number;
+  toScrollX: number;
+  toScrollY: number;
+}
+
 const CAMERA_SMOOTH_BASE = 0.01;
 const CAMERA_SETTLE_EPSILON = 0.75;
 const CAMERA_BOOST_UPWARD_MAX_Y_OFFSET = 48;
@@ -25,6 +49,7 @@ const CAMERA_PLAYER_MARGIN_X = 12;
 const CAMERA_PLAYER_MARGIN_TOP = 18;
 const CAMERA_PLAYER_MARGIN_BOTTOM = 20;
 const CAMERA_VERTICAL_VISIBILITY_CATCHUP = 60;
+const ROOM_TRANSITION_DURATION = 0.65;
 const TILE_EDGE_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.125));
 const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
 const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
@@ -36,6 +61,9 @@ export class GameScene extends Phaser.Scene {
   private player!: Player;
   private playerView!: PlayerView;
   private world!: EntityWorld;
+  private rooms: LevelRoom[] = [];
+  private currentRoom!: LevelRoom;
+  private roomTransition: RoomTransitionState | null = null;
   private spawnX!: number;
   private spawnY!: number;
   private tileDepths!: Int32Array;
@@ -63,8 +91,10 @@ export class GameScene extends Phaser.Scene {
   create(): void {
     const level = parseLevel();
     this.world = level.world;
+    this.rooms = level.rooms;
     this.spawnX = level.spawnX;
     this.spawnY = level.spawnY;
+    this.currentRoom = findRoomAtPoint(this.rooms, this.spawnX, this.spawnY) ?? this.rooms[0];
 
     this.computeTileDepths();
     this.tileGfx = this.add.graphics();
@@ -144,17 +174,19 @@ export class GameScene extends Phaser.Scene {
     const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
 
     if (this.keys.restart.isDown) {
-      this.player.hardRespawn(this.spawnX, this.spawnY);
-      this.world.resetTransientState();
-      this.syncRefillViews();
-      this.controls.clearTransientState();
-      this.forceCameraSnap();
+      this.respawnPlayer();
       this.cameras.main.fadeIn(80, 10, 10, 20);
-      this.accumulator = 0;
-      this.freezeTimer = 0;
     }
 
     const effects: PlayerEffect[] = [];
+
+    if (this.roomTransition) {
+      this.updateRoomTransition(rawFrameDt);
+      const snapshot = this.player.getSnapshot();
+      this.playerView.render(snapshot);
+      this.updateHUD(snapshot, effects);
+      return;
+    }
 
     if (this.freezeTimer > 0) {
       this.freezeTimer = stepTimer(this.freezeTimer, rawFrameDt);
@@ -182,24 +214,24 @@ export class GameScene extends Phaser.Scene {
         stepSnapshot.vy,
       ) !== null;
       if (fellOut || spiked) {
-        this.player.hardRespawn(this.spawnX, this.spawnY);
-        this.world.resetTransientState();
-        this.syncRefillViews();
-        this.controls.clearTransientState();
-        this.forceCameraSnap();
+        this.respawnPlayer();
         if (spiked) {
           this.cameras.main.flash(180, 0, 0, 0, false);
         } else {
           this.cameras.main.fadeIn(120, 10, 10, 20);
         }
         stepEffects = stepEffects.concat(this.player.consumeEffects());
-        this.accumulator = 0;
       }
 
       const snapshot = this.player.getSnapshot();
       this.playerView.tick(snapshot, stepEffects, this.fixedDt);
-      this.updateCamera(snapshot, this.fixedDt);
       effects.push(...stepEffects);
+
+      if (this.tryStartRoomTransition(snapshot)) {
+        break;
+      }
+
+      this.updateCamera(snapshot, this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
 
@@ -322,16 +354,117 @@ export class GameScene extends Phaser.Scene {
     this.controls.queuePress("dash");
   }
 
-  private updateCamera(snapshot: ReturnType<Player["getSnapshot"]>, dt: number): void {
+  private respawnPlayer(): void {
+    this.player.hardRespawn(this.spawnX, this.spawnY);
+    this.world.resetTransientState();
+    this.syncRefillViews();
+    this.controls.clearTransientState();
+    this.roomTransition = null;
+    this.accumulator = 0;
+    this.freezeTimer = 0;
+    this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
+    this.forceCameraSnap();
+  }
+
+  private tryStartRoomTransition(snapshot: ReturnType<Player["getSnapshot"]>): boolean {
+    if (this.roomTransition !== null) {
+      return true;
+    }
+
+    const direction = this.roomExitDirection(snapshot);
+    if (direction === null) {
+      return false;
+    }
+
+    const nextRoom = findAdjacentRoom(this.rooms, this.currentRoom, direction);
+    if (nextRoom === null) {
+      return false;
+    }
+
     const camera = this.cameras.main;
-    const target = this.computeCameraTarget(snapshot, camera);
-    const maxX = Math.max(0, this.world.cols * WORLD.tile - VIEWPORT.width);
-    const maxY = Math.max(0, this.world.rows * WORLD.tile - VIEWPORT.height);
+    const target = this.computeCameraTarget(snapshot, camera, nextRoom);
+    this.roomTransition = {
+      from: this.currentRoom,
+      to: nextRoom,
+      elapsed: 0,
+      duration: ROOM_TRANSITION_DURATION,
+      fromScrollX: camera.scrollX,
+      fromScrollY: camera.scrollY,
+      toScrollX: target.x,
+      toScrollY: target.y,
+    };
+    this.controls.clearTransientState();
+    this.accumulator = 0;
+    this.freezeTimer = 0;
+    return true;
+  }
+
+  private roomExitDirection(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+  ): RoomDirection | null {
+    const bounds = this.currentRoom.bounds;
+
+    if (snapshot.centerX < bounds.x) return "left";
+    if (snapshot.centerX >= bounds.x + bounds.w) return "right";
+    if (snapshot.centerY < bounds.y) return "up";
+    if (snapshot.centerY >= bounds.y + bounds.h) return "down";
+    return null;
+  }
+
+  private updateRoomTransition(dt: number): void {
+    const transition = this.roomTransition;
+    if (transition === null) {
+      return;
+    }
+
+    this.world.update(dt, this.time.now / 1000);
+    this.syncRefillViews();
+
+    transition.elapsed = Math.min(transition.duration, transition.elapsed + dt);
+    const t = transition.duration <= 0 ? 1 : transition.elapsed / transition.duration;
+    const eased = Phaser.Math.Easing.Cubic.Out(t);
+    const scrollX = Phaser.Math.Linear(transition.fromScrollX, transition.toScrollX, eased);
+    const scrollY = Phaser.Math.Linear(transition.fromScrollY, transition.toScrollY, eased);
+    this.cameras.main.setScroll(scrollX, scrollY);
+
+    if (t >= 1) {
+      this.currentRoom = transition.to;
+      this.roomTransition = null;
+      this.setCheckpoint(this.currentRoom);
+      this.cameras.main.setScroll(transition.toScrollX, transition.toScrollY);
+      this.forceCameraSnapNextFrame = false;
+    }
+  }
+
+  private setCheckpoint(room: LevelRoom): void {
+    if (room.checkpoint === null) {
+      return;
+    }
+
+    this.spawnX = room.checkpoint.x;
+    this.spawnY = room.checkpoint.y;
+  }
+
+  private syncCurrentRoomToPoint(x: number, y: number): void {
+    const room = findRoomAtPoint(this.rooms, x, y);
+    if (room !== null) {
+      this.currentRoom = room;
+    }
+  }
+
+  private updateCamera(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    dt: number,
+    room: LevelRoom = this.currentRoom,
+  ): void {
+    const camera = this.cameras.main;
+    const roomBounds = this.cameraScrollBounds(room);
+    const target = this.computeCameraTarget(snapshot, camera, room);
 
     let nextX = target.x;
     let nextY = target.y;
 
-    if (!this.forceCameraSnapNextFrame) {
+    if (!this.forceCameraSnapNextFrame && !this.forceCameraUpdate) {
       const smooth = 1 - Math.pow(CAMERA_SMOOTH_BASE, dt);
       nextX = camera.scrollX + (target.x - camera.scrollX) * smooth;
       nextY = camera.scrollY + (target.y - camera.scrollY) * smooth;
@@ -342,27 +475,41 @@ export class GameScene extends Phaser.Scene {
         nextY = target.y;
       }
     }
-    nextX = this.keepPlayerHorizontallyVisible(snapshot, nextX, maxX);
-    nextY = this.keepPlayerVerticallyVisible(snapshot, nextY, maxY, dt);
+
+    nextX = this.keepPlayerHorizontallyVisible(snapshot, nextX, roomBounds);
+    nextY = this.keepPlayerVerticallyVisible(snapshot, nextY, roomBounds, dt);
 
     camera.setScroll(nextX, nextY);
     this.forceCameraSnapNextFrame = false;
   }
 
+  private cameraScrollBounds(room: LevelRoom): CameraScrollBounds {
+    return {
+      minX: room.bounds.x,
+      maxX: Math.max(room.bounds.x, room.bounds.x + room.bounds.w - VIEWPORT.width),
+      minY: room.bounds.y,
+      maxY: Math.max(room.bounds.y, room.bounds.y + room.bounds.h - VIEWPORT.height),
+    };
+  }
+
   private keepPlayerHorizontallyVisible(
     snapshot: ReturnType<Player["getSnapshot"]>,
     scrollX: number,
-    maxX: number,
+    bounds: CameraScrollBounds,
   ): number {
     const minScrollX = snapshot.right - (VIEWPORT.width - CAMERA_PLAYER_MARGIN_X);
     const maxScrollX = snapshot.left - CAMERA_PLAYER_MARGIN_X;
-    return Phaser.Math.Clamp(Phaser.Math.Clamp(scrollX, minScrollX, maxScrollX), 0, maxX);
+    return Phaser.Math.Clamp(
+      Phaser.Math.Clamp(scrollX, minScrollX, maxScrollX),
+      bounds.minX,
+      bounds.maxX,
+    );
   }
 
   private keepPlayerVerticallyVisible(
     snapshot: ReturnType<Player["getSnapshot"]>,
     scrollY: number,
-    maxY: number,
+    bounds: CameraScrollBounds,
     dt: number,
   ): number {
     const minScrollY = snapshot.bottom - (VIEWPORT.height - CAMERA_PLAYER_MARGIN_BOTTOM);
@@ -376,14 +523,16 @@ export class GameScene extends Phaser.Scene {
       nextY = approach(nextY, maxScrollY, maxDelta);
     }
 
-    return Phaser.Math.Clamp(nextY, 0, maxY);
+    return Phaser.Math.Clamp(nextY, bounds.minY, bounds.maxY);
   }
 
   private computeCameraTarget(
     snapshot: ReturnType<Player["getSnapshot"]>,
     camera: Phaser.Cameras.Scene2D.Camera,
+    room: LevelRoom,
   ): Phaser.Math.Vector2 {
     const controller = this.world.cameraController;
+    const roomBounds = this.cameraScrollBounds(room);
     let targetX = snapshot.centerX - VIEWPORT.width * 0.5;
     let targetY = snapshot.bottom - CAMERA_FOOT_ANCHOR_Y;
 
@@ -395,19 +544,14 @@ export class GameScene extends Phaser.Scene {
         targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
       } else if (!controller.anchorIgnoreX && controller.anchorIgnoreY) {
         targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
-      } else if (controller.anchorLerpX === controller.anchorLerpY) {
-        targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
-        targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
       } else {
         targetX = Phaser.Math.Linear(targetX, controller.anchorX, controller.anchorLerpX);
         targetY = Phaser.Math.Linear(targetY, controller.anchorY, controller.anchorLerpY);
       }
     }
 
-    const maxX = Math.max(0, this.world.cols * WORLD.tile - VIEWPORT.width);
-    const maxY = Math.max(0, this.world.rows * WORLD.tile - VIEWPORT.height);
-    let clampedX = Phaser.Math.Clamp(targetX, 0, maxX);
-    let clampedY = Phaser.Math.Clamp(targetY, 0, maxY);
+    let clampedX = Phaser.Math.Clamp(targetX, roomBounds.minX, roomBounds.maxX);
+    let clampedY = Phaser.Math.Clamp(targetY, roomBounds.minY, roomBounds.maxY);
 
     if (controller.lockMode !== "none") {
       if (controller.lockMode !== "boostSequence") {
@@ -425,13 +569,15 @@ export class GameScene extends Phaser.Scene {
       }
     }
 
-    clampedY = this.applyKillboxSafety(snapshot, clampedY, maxY);
+    clampedX = Phaser.Math.Clamp(clampedX, roomBounds.minX, roomBounds.maxX);
+    clampedY = this.applyKillboxSafety(snapshot, clampedY, roomBounds.minY, roomBounds.maxY);
     return new Phaser.Math.Vector2(clampedX, clampedY);
   }
 
   private applyKillboxSafety(
     snapshot: ReturnType<Player["getSnapshot"]>,
     targetY: number,
+    minY: number,
     maxY: number,
   ): number {
     if (this.world.cameraKillboxes.length === 0) return targetY;
@@ -449,19 +595,22 @@ export class GameScene extends Phaser.Scene {
       safeY = Math.min(safeY, bounds.y - VIEWPORT.height);
     }
 
-    return Phaser.Math.Clamp(safeY, 0, maxY);
+    return Phaser.Math.Clamp(safeY, minY, maxY);
   }
 
   private computeTileDepths(): void {
-    this.tileDepths = new Int32Array(WORLD.cols * WORLD.rows);
+    const cols = this.world.cols;
+    const rows = this.world.rows;
+
+    this.tileDepths = new Int32Array(cols * rows);
     this.tileDepths.fill(9999);
     const queue: number[] = [];
 
-    for (let r = 0; r < WORLD.rows; r++) {
-      for (let c = 0; c < WORLD.cols; c++) {
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
         const t = tileAt(this.world, c, r);
         if (t === 0 || t === TILE_JUMP_THROUGH) {
-          const idx = r * WORLD.cols + c;
+          const idx = r * cols + c;
           this.tileDepths[idx] = 0;
           queue.push(idx);
         }
@@ -472,15 +621,15 @@ export class GameScene extends Phaser.Scene {
     const dirs = [-1, 0, 1, 0, 0, -1, 0, 1];
     while (head < queue.length) {
       const idx = queue[head++];
-      const r = Math.floor(idx / WORLD.cols);
-      const c = idx % WORLD.cols;
+      const r = Math.floor(idx / cols);
+      const c = idx % cols;
       const d = this.tileDepths[idx];
 
       for (let i = 0; i < 4; i++) {
         const nr = r + dirs[i * 2 + 1];
         const nc = c + dirs[i * 2];
-        if (nr >= 0 && nr < WORLD.rows && nc >= 0 && nc < WORLD.cols) {
-          const nIdx = nr * WORLD.cols + nc;
+        if (nr >= 0 && nr < rows && nc >= 0 && nc < cols) {
+          const nIdx = nr * cols + nc;
           if (this.tileDepths[nIdx] > d + 1) {
             this.tileDepths[nIdx] = d + 1;
             queue.push(nIdx);
@@ -492,8 +641,11 @@ export class GameScene extends Phaser.Scene {
 
   private drawTiles(): void {
     const g = this.tileGfx;
-    for (let r = 0; r < WORLD.rows; r++) {
-      for (let c = 0; c < WORLD.cols; c++) {
+    const cols = this.world.cols;
+    const rows = this.world.rows;
+
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
         const x = c * WORLD.tile;
         const y = r * WORLD.tile;
         const tile = tileAt(this.world, c, r);
@@ -505,27 +657,27 @@ export class GameScene extends Phaser.Scene {
           g.fillStyle(COLORS.earthHighlight, 1);
           g.fillRect(x, y, WORLD.tile, JUMP_THRU_EDGE_HEIGHT);
         } else {
-          const depth = this.tileDepths[r * WORLD.cols + c];
-          
+          const depth = this.tileDepths[r * cols + c];
+
           if (depth === 1) {
             g.fillStyle(COLORS.earth0, 1);
             g.fillRect(x, y, WORLD.tile, WORLD.tile);
-            
+
             g.fillStyle(COLORS.earth1, 1);
             g.fillRect(x, y + 3, WORLD.tile, 2);
             g.fillRect(x + 3, y, 2, WORLD.tile);
-            
+
             g.fillStyle(COLORS.earthHighlight, 1);
-            if (r > 0 && this.tileDepths[(r - 1) * WORLD.cols + c] === 0) {
+            if (r > 0 && this.tileDepths[(r - 1) * cols + c] === 0) {
               g.fillRect(x, y, WORLD.tile, 1);
             }
-            if (r < WORLD.rows - 1 && this.tileDepths[(r + 1) * WORLD.cols + c] === 0) {
+            if (r < rows - 1 && this.tileDepths[(r + 1) * cols + c] === 0) {
               g.fillRect(x, y + WORLD.tile - 1, WORLD.tile, 1);
             }
-            if (c > 0 && this.tileDepths[r * WORLD.cols + c - 1] === 0) {
+            if (c > 0 && this.tileDepths[r * cols + c - 1] === 0) {
               g.fillRect(x, y, 1, WORLD.tile);
             }
-            if (c < WORLD.cols - 1 && this.tileDepths[r * WORLD.cols + c + 1] === 0) {
+            if (c < cols - 1 && this.tileDepths[r * cols + c + 1] === 0) {
               g.fillRect(x + WORLD.tile - 1, y, 1, WORLD.tile);
             }
           } else {
@@ -624,8 +776,12 @@ export class GameScene extends Phaser.Scene {
         return `${e.type}${suffix}`;
       })
       .join(", ");
+    const roomLine = this.roomTransition
+      ? `ROOM ${this.roomTransition.from.id} -> ${this.roomTransition.to.id}`
+      : `ROOM ${this.currentRoom.id}`;
 
     const lines = [
+      roomLine,
       `${state}${wallSliding}  ${snapshot.onGround ? "GROUND" : "AIR"}  D:${snapshot.dashesLeft}  ST:${snapshot.stamina.toFixed(0)}`,
       `VEL ${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)}  CAM ${this.cameras.main.scrollX.toFixed(0)}, ${this.cameras.main.scrollY.toFixed(0)}`,
     ];

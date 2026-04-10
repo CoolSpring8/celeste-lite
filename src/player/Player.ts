@@ -279,7 +279,7 @@ export class Player extends Actor {
     this.refreshEnvironment();
     this.updateHairState(dt);
 
-    if (this.getHitboxBounds().y > WORLD.rows * WORLD.tile + 32) {
+    if (this.getHitboxBounds().y > this.world.rows * WORLD.tile + 32) {
       this.emit({ type: "fell_out" });
     }
 
@@ -1292,7 +1292,7 @@ export class Player extends Actor {
     const bounds = this.getHitboxBounds();
     const left = bounds.x + dir * this.cfg.climb.checkDist;
     const right = bounds.x + bounds.w - 1 + dir * this.cfg.climb.checkDist;
-    const worldRight = WORLD.cols * WORLD.tile;
+    const worldRight = this.world.cols * WORLD.tile;
     return left >= 0 && right < worldRight;
   }
 
