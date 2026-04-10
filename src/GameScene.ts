@@ -16,6 +16,7 @@ import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./pl
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
 import { PlayerView } from "./view/PlayerView";
+import { LightingSource, LightingSystem } from "./lighting/LightingSystem";
 
 interface RefillView {
   entity: RefillPickupEntity;
@@ -83,6 +84,7 @@ export class GameScene extends Phaser.Scene {
   private helpText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
+  private lighting!: LightingSystem;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
 
@@ -91,6 +93,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   create(): void {
+    this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
     const level = parseLevel();
     this.world = level.world;
     this.rooms = level.rooms;
@@ -101,6 +105,7 @@ export class GameScene extends Phaser.Scene {
     this.computeTileDepths();
     this.tileGfx = this.add.graphics();
     this.drawTiles();
+    this.lighting = new LightingSystem(this, this.world);
 
     this.player = new Player(this.spawnX, this.spawnY, this.world, PLAYER_CONFIG);
     this.playerView = new PlayerView(this);
@@ -170,6 +175,8 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 1)
       .setDepth(10)
       .setScrollFactor(0);
+
+    this.renderLighting(this.player.getSnapshot());
   }
 
   update(_time: number, delta: number): void {
@@ -186,6 +193,7 @@ export class GameScene extends Phaser.Scene {
       this.updateRoomTransition(rawFrameDt);
       const snapshot = this.player.getSnapshot();
       this.playerView.render(snapshot);
+      this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
       return;
     }
@@ -197,6 +205,7 @@ export class GameScene extends Phaser.Scene {
         this.updateCamera(snapshot, rawFrameDt);
       }
       this.playerView.render(snapshot);
+      this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
       return;
     }
@@ -251,6 +260,7 @@ export class GameScene extends Phaser.Scene {
 
     const snapshot = this.player.getSnapshot();
     this.playerView.render(snapshot);
+    this.renderLighting(snapshot);
 
     this.updateHUD(snapshot, effects);
   }
@@ -323,6 +333,7 @@ export class GameScene extends Phaser.Scene {
     this.controls?.reset();
     this.playerView?.destroy();
     this.refillEmitter?.destroy();
+    this.lighting?.destroy();
     for (const refill of this.refills) {
       refill.glow.destroy();
       refill.body.destroy();
@@ -793,6 +804,20 @@ export class GameScene extends Phaser.Scene {
     g.fillRect(0, 0, 2, 2);
     g.generateTexture("pixel", 2, 2);
     g.destroy();
+  }
+
+  private renderLighting(snapshot: ReturnType<Player["getSnapshot"]>): void {
+    const lights: LightingSource[] = [
+      {
+        x: snapshot.centerX,
+        y: snapshot.centerY - 2,
+        radius: 48,
+        color: COLORS.dust,
+        intensity: 0.12,
+      },
+    ];
+
+    this.lighting.render(this.cameras.main, lights);
   }
 
   private updateHUD(snapshot: ReturnType<Player["getSnapshot"]>, effects: PlayerEffect[]): void {
