@@ -198,6 +198,9 @@ export class PlayerView {
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
     for (const effect of effects) {
       switch (effect.type) {
+        case "bounce":
+          this.squash(PLAYER_VISUALS.jumpSquashX, PLAYER_VISUALS.jumpSquashY);
+          break;
         case "dash_begin":
           this.captureDashVisuals(snapshot, effect);
           this.squash(0.72, 1.28);
@@ -252,9 +255,6 @@ export class PlayerView {
         }
         case "respawn":
           this.scene.cameras.main.flash(120, 255, 255, 255, false);
-          break;
-        case "fell_out":
-          this.scene.cameras.main.fadeOut(90, 10, 10, 20);
           break;
       }
     }

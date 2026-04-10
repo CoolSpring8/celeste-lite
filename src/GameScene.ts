@@ -33,6 +33,7 @@ interface CameraScrollBounds {
 interface RoomTransitionState {
   from: LevelRoom;
   to: LevelRoom;
+  direction: RoomDirection;
   elapsed: number;
   duration: number;
   fromScrollX: number;
@@ -50,6 +51,7 @@ const CAMERA_PLAYER_MARGIN_TOP = 18;
 const CAMERA_PLAYER_MARGIN_BOTTOM = 20;
 const CAMERA_VERTICAL_VISIBILITY_CATCHUP = 60;
 const ROOM_TRANSITION_DURATION = 0.65;
+const ROOM_TOP_CLIMB_MARGIN = 8;
 const TILE_EDGE_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.125));
 const JUMP_THRU_EDGE_HEIGHT = TILE_EDGE_HEIGHT;
 const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
@@ -205,25 +207,21 @@ export class GameScene extends Phaser.Scene {
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
       this.world.update(this.fixedDt, this.time.now / 1000);
       this.player.update(this.fixedDt, this.gatherStepInput());
+      this.enforceCurrentRoomTopLimit();
       const freeze = this.player.consumeFreezeRequest();
       const refillFreeze = this.updateRefills();
 
       let stepEffects = this.player.consumeEffects();
-      const fellOut = stepEffects.some((e) => e.type === "fell_out");
       const stepSnapshot = this.player.getSnapshot();
       const spiked = this.world.collidesWithSpike(
         this.player.getHurtboxBounds(),
         stepSnapshot.vx,
         stepSnapshot.vy,
       ) !== null;
-      if (fellOut || spiked) {
-        this.cameras.main.shake(spiked ? 120 : 90, spiked ? 0.0026 : 0.0018);
+      if (spiked) {
+        this.cameras.main.shake(120, 0.0026);
         this.respawnPlayer();
-        if (spiked) {
-          this.cameras.main.flash(180, 0, 0, 0, false);
-        } else {
-          this.cameras.main.fadeIn(120, 10, 10, 20);
-        }
+        this.cameras.main.flash(180, 0, 0, 0, false);
         stepEffects = stepEffects.concat(this.player.consumeEffects());
       }
 
@@ -395,6 +393,7 @@ export class GameScene extends Phaser.Scene {
     this.roomTransition = {
       from: this.currentRoom,
       to: nextRoom,
+      direction,
       elapsed: 0,
       duration: ROOM_TRANSITION_DURATION,
       fromScrollX: camera.scrollX,
@@ -406,6 +405,16 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = 0;
     this.freezeTimer = 0;
     return true;
+  }
+
+  private enforceCurrentRoomTopLimit(): void {
+    const snapshot = this.player.getSnapshot();
+    const roomAbove = findAdjacentRoom(this.rooms, this.currentRoom, "up", snapshot.centerX);
+    if (roomAbove !== null) {
+      return;
+    }
+
+    this.player.enforceTopLimit(this.currentRoom.bounds.y - ROOM_TOP_CLIMB_MARGIN);
   }
 
   private roomExitDirection(
@@ -452,6 +461,9 @@ export class GameScene extends Phaser.Scene {
       this.roomTransition = null;
       this.setCheckpoint(this.currentRoom);
       this.player.onTransition();
+      if (transition.direction === "up") {
+        this.player.bounce();
+      }
       this.cameras.main.setScroll(transition.toScrollX, transition.toScrollY);
       this.forceCameraSnapNextFrame = false;
     }

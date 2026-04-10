@@ -26,6 +26,9 @@ const EPSILON = 0.0001;
 const DASH_TRAIL_INTERVAL = 0.08;
 const HAIR_FLASH_DURATION = 0.12;
 const USED_HAIR_LERP_RATE = 6;
+const BOUNCE_AUTO_JUMP_TIME = 0.1;
+const BOUNCE_VAR_JUMP_TIME = 0.2;
+const BOUNCE_SPEED = -140;
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
@@ -279,10 +282,6 @@ export class Player extends Actor {
     this.refreshEnvironment();
     this.updateHairState(dt);
 
-    if (this.getHitboxBounds().y > this.world.rows * WORLD.tile + 32) {
-      this.emit({ type: "fell_out" });
-    }
-
     this.wasOnGround = this.onGround;
   }
 
@@ -455,6 +454,31 @@ export class Player extends Actor {
     if (dashRefilled) {
       this.updateHairState(0);
     }
+  }
+
+  bounce(): void {
+    this.stateMachine.forceState("normal");
+    this.jumpGraceTimer = 0;
+    this.varJumpTimer = BOUNCE_VAR_JUMP_TIME;
+    this.autoJump = true;
+    this.autoJumpTimer = BOUNCE_AUTO_JUMP_TIME;
+    this.dashAttackTimer = 0;
+    this.wallSlideTimer = toFloat(this.cfg.gravity.wallSlideTime);
+    this.wallBoostTimer = 0;
+    this.varJumpSpeed = this.vy = BOUNCE_SPEED;
+    this.clearVerticalRemainder();
+    this.emit({ type: "bounce", dirY: -1 });
+  }
+
+  enforceTopLimit(minTop: number): void {
+    const bounds = this.getHitboxBounds();
+    if (bounds.y >= minTop) {
+      return;
+    }
+
+    this.y = minTop + bounds.h;
+    this.afterBlockedV(-1);
+    this.refreshEnvironment();
   }
 
   private refreshEnvironment(): void {

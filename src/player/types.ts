@@ -14,6 +14,7 @@ export interface InputState {
 }
 
 export type PlayerEffectType =
+  | "bounce"
   | "dash_begin"
   | "dash_trail"
   | "super"
@@ -25,7 +26,6 @@ export type PlayerEffectType =
   | "dash_start"
   | "wall_bounce"
   | "land"
-  | "fell_out"
   | "respawn";
 
 export interface PlayerEffect {

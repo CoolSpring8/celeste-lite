@@ -44,4 +44,31 @@ describe("Transition behavior", () => {
     const result = stepOnce(player, makeInput({ x: -1, aimX: -1 }));
     expect(result.snapshot.vx).toBeLessThan(0);
   });
+
+  test("top limit clamps the player like a ceiling", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 100, 30);
+
+    (player as unknown as { vy: number }).vy = -90;
+    player.enforceTopLimit(24);
+
+    const snapshot = player.getSnapshot();
+    expect(snapshot.top).toBe(24);
+    expect(snapshot.vy).toBe(0);
+  });
+
+  test("bounce resets to normal state and sustains upward speed briefly", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 100, 100);
+
+    player.forceState("climb");
+    player.bounce();
+
+    const bounced = player.getSnapshot();
+    expect(bounced.state).toBe("normal");
+    expect(bounced.vy).toBe(-140);
+
+    const result = stepOnce(player, makeInput());
+    expect(result.snapshot.vy).toBe(-140);
+  });
 });
