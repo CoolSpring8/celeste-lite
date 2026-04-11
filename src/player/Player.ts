@@ -429,8 +429,8 @@ export class Player extends Actor {
     this.liftVy = 0;
     this.liftTimer = 0;
 
+    this.effects = [];
     this.stateMachine.forceState("normal");
-    this.emit({ type: "respawn" });
   }
 
   get state(): PlayerState {

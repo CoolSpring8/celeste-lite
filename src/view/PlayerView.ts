@@ -1,6 +1,13 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_VISUALS } from "../constants";
+import { type Aabb } from "../entities/types";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
+import {
+  DEATH_RESPAWN_TIMING,
+  computeRespawnIntroOffset,
+  type RespawnPoint,
+  sampleRespawnIntro,
+} from "./deathRespawn";
 
 type Sqrt11Pose = "idle" | "duck";
 
@@ -78,10 +85,37 @@ interface GlyphSprite {
   hair: Phaser.GameObjects.Image;
 }
 
+interface DeathFlashState {
+  x: number;
+  y: number;
+  color: number;
+  life: number;
+  maxLife: number;
+}
+
+interface RespawnIntroState {
+  elapsed: number;
+  duration: number;
+  sparkTimer: number;
+  spawnX: number;
+  spawnY: number;
+  offset: RespawnPoint;
+  pose: Sqrt11Pose;
+  drawW: number;
+  drawH: number;
+  bodyColor: number;
+  hairColor: number;
+  facing: PlayerSnapshot["facing"];
+}
+
 export class PlayerView {
   private scene: Phaser.Scene;
   private playerSprite: GlyphSprite;
+  private respawnSprite: GlyphSprite;
   private dashSlash: Phaser.GameObjects.Rectangle;
+  private deathFlash: Phaser.GameObjects.Ellipse;
+  private respawnAura: Phaser.GameObjects.Ellipse;
+  private respawnCore: Phaser.GameObjects.Ellipse;
   private afterimages: Afterimage[] = [];
   private afterimagePool: GlyphSprite[] = [];
   private dashParticleTimer = 0;
@@ -90,12 +124,17 @@ export class PlayerView {
   private dashTrailColor: number = COLORS.playerOneDash;
   private dashDirX = 1;
   private dashDirY = 0;
+  private hideLiveSprite = false;
+  private deathFlashState: DeathFlashState | null = null;
+  private respawnIntro: RespawnIntroState | null = null;
   private prevCrouched: boolean | null = null;
   private prevOnGround = false;
   private facing: PlayerSnapshot["facing"] = 1;
 
   private dashEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
   private wallEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
+  private deathEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
+  private respawnEmitter: Phaser.GameObjects.Particles.ParticleEmitter;
 
   constructor(scene: Phaser.Scene) {
     this.scene = scene;
@@ -103,6 +142,8 @@ export class PlayerView {
     this.ensureGlyphTextures();
 
     this.playerSprite = this.createGlyphSprite(5);
+    this.respawnSprite = this.createGlyphSprite(6);
+    this.respawnSprite.container.setVisible(false);
 
     this.dashSlash = this.scene.add
       .rectangle(
@@ -113,6 +154,21 @@ export class PlayerView {
         0xffffff,
       )
       .setOrigin(0.5)
+      .setDepth(6)
+      .setVisible(false);
+
+    this.deathFlash = this.scene.add
+      .ellipse(0, 0, PLAYER_VISUALS.deathFlashSize, PLAYER_VISUALS.deathFlashSize, 0xffffff, 1)
+      .setDepth(6)
+      .setVisible(false);
+
+    this.respawnAura = this.scene.add
+      .ellipse(0, 0, 16, 16, COLORS.dust, 1)
+      .setDepth(5)
+      .setVisible(false);
+
+    this.respawnCore = this.scene.add
+      .ellipse(0, 0, 10, 10, COLORS.dust, 1)
       .setDepth(6)
       .setVisible(false);
 
@@ -143,6 +199,32 @@ export class PlayerView {
       emitting: false,
     });
     this.wallEmitter.setDepth(2);
+
+    this.deathEmitter = this.scene.add.particles(0, 0, "pixel", {
+      speed: { min: 24, max: 110 },
+      angle: { min: 0, max: 360 },
+      lifespan: { min: 180, max: 420 },
+      quantity: 0,
+      scale: { start: 1.1, end: 0.05 },
+      alpha: { start: 0.9, end: 0 },
+      gravityY: 8,
+      emitting: false,
+      blendMode: "NORMAL",
+    });
+    this.deathEmitter.setDepth(6);
+
+    this.respawnEmitter = this.scene.add.particles(0, 0, "pixel", {
+      speed: { min: 8, max: 42 },
+      angle: { min: 0, max: 360 },
+      lifespan: { min: 180, max: 420 },
+      quantity: 0,
+      scale: { start: 0.85, end: 0.05 },
+      alpha: { start: 0.95, end: 0 },
+      gravityY: -6,
+      emitting: false,
+      blendMode: "NORMAL",
+    });
+    this.respawnEmitter.setDepth(6);
   }
 
   tick(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
@@ -166,6 +248,12 @@ export class PlayerView {
     const drawY = snapshot.y;
     const pose = this.resolveSqrt11Pose(snapshot);
 
+    if (this.hideLiveSprite) {
+      this.playerSprite.container.setVisible(false);
+      return;
+    }
+
+    this.playerSprite.container.setVisible(true);
     this.applyGlyphSprite(
       this.playerSprite,
       pose,
@@ -180,9 +268,15 @@ export class PlayerView {
 
   destroy(): void {
     this.destroyGlyphSprite(this.playerSprite);
+    this.destroyGlyphSprite(this.respawnSprite);
     this.dashSlash.destroy();
+    this.deathFlash.destroy();
+    this.respawnAura.destroy();
+    this.respawnCore.destroy();
     this.dashEmitter.destroy();
     this.wallEmitter.destroy();
+    this.deathEmitter.destroy();
+    this.respawnEmitter.destroy();
 
     for (const a of this.afterimages) {
       this.destroyGlyphSprite(a.sprite);
@@ -193,6 +287,82 @@ export class PlayerView {
 
     this.afterimages = [];
     this.afterimagePool = [];
+  }
+
+  advanceDeathRespawn(dt: number): void {
+    this.updateDeathFlash(dt);
+    this.updateRespawnIntro(dt);
+  }
+
+  resetDeathRespawn(): void {
+    this.hideLiveSprite = false;
+    this.deathFlashState = null;
+    this.respawnIntro = null;
+    this.deathFlash.setVisible(false);
+    this.respawnAura.setVisible(false);
+    this.respawnCore.setVisible(false);
+    this.respawnSprite.container.setVisible(false);
+  }
+
+  startDeath(snapshot: PlayerSnapshot): void {
+    this.hideLiveSprite = true;
+    this.clearAfterimages();
+    this.deathFlashState = {
+      x: snapshot.centerX,
+      y: snapshot.centerY,
+      color: snapshot.hairColor,
+      life: PLAYER_VISUALS.deathFlashLife,
+      maxLife: PLAYER_VISUALS.deathFlashLife,
+    };
+    this.deathFlash
+      .setPosition(snapshot.centerX, snapshot.centerY)
+      .setFillStyle(snapshot.hairColor, PLAYER_VISUALS.deathFlashStartAlpha)
+      .setScale(PLAYER_VISUALS.deathFlashStartScale)
+      .setVisible(true);
+
+    this.emitDeathBurst(snapshot);
+  }
+
+  startRespawnIntro(
+    snapshot: PlayerSnapshot,
+    deathPoint: RespawnPoint,
+    roomBounds: Aabb,
+  ): void {
+    this.hideLiveSprite = true;
+    this.clearAfterimages();
+
+    const pose = this.resolveSqrt11Pose(snapshot);
+    const bodyColor = this.resolveBodyColor(snapshot);
+    const hairColor = this.resolveHairColor(snapshot);
+    this.respawnIntro = {
+      elapsed: 0,
+      duration: DEATH_RESPAWN_TIMING.introDuration,
+      sparkTimer: 0,
+      spawnX: snapshot.x,
+      spawnY: snapshot.y,
+      offset: computeRespawnIntroOffset(
+        { x: snapshot.x, y: snapshot.y },
+        deathPoint,
+        roomBounds,
+      ),
+      pose,
+      drawW: snapshot.drawW,
+      drawH: snapshot.drawH,
+      bodyColor,
+      hairColor,
+      facing: snapshot.facing,
+    };
+
+    this.respawnAura.setVisible(true);
+    this.respawnCore.setVisible(true);
+    this.respawnSprite.container.setVisible(true);
+    this.respawnEmitter.setParticleTint(hairColor);
+    this.applyRespawnIntroFrame(this.respawnIntro);
+    this.respawnEmitter.emitParticleAt(
+      snapshot.x + this.respawnIntro.offset.x,
+      snapshot.y + this.respawnIntro.offset.y,
+      Math.max(3, Math.round(PLAYER_VISUALS.respawnSparkCount * 0.4)),
+    );
   }
 
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
@@ -253,9 +423,6 @@ export class PlayerView {
           }
           break;
         }
-        case "respawn":
-          this.scene.cameras.main.flash(120, 255, 255, 255, false);
-          break;
       }
     }
   }
@@ -325,6 +492,116 @@ export class PlayerView {
       .setVisible(true)
       .setAlpha(0.85 * t)
       .setScale(1 + (1 - t) * 0.35, Phaser.Math.Linear(1.1, 0.75, 1 - t));
+  }
+
+  private updateDeathFlash(dt: number): void {
+    const state = this.deathFlashState;
+    if (state === null) {
+      this.deathFlash.setVisible(false);
+      return;
+    }
+
+    state.life = Math.max(0, state.life - dt);
+    const life = state.maxLife > 0 ? state.life / state.maxLife : 0;
+    const progress = 1 - life;
+
+    this.deathFlash
+      .setVisible(state.life > 0)
+      .setPosition(state.x, state.y)
+      .setFillStyle(
+        state.color,
+        Phaser.Math.Linear(
+          PLAYER_VISUALS.deathFlashStartAlpha,
+          PLAYER_VISUALS.deathFlashEndAlpha,
+          progress,
+        ),
+      )
+      .setScale(
+        Phaser.Math.Linear(
+          PLAYER_VISUALS.deathFlashStartScale,
+          PLAYER_VISUALS.deathFlashEndScale,
+          progress,
+        ),
+      );
+
+    if (state.life <= 0) {
+      this.deathFlashState = null;
+      this.deathFlash.setVisible(false);
+    }
+  }
+
+  private updateRespawnIntro(dt: number): void {
+    const intro = this.respawnIntro;
+    if (intro === null) {
+      this.respawnAura.setVisible(false);
+      this.respawnCore.setVisible(false);
+      this.respawnSprite.container.setVisible(false);
+      return;
+    }
+
+    intro.elapsed = Math.min(intro.duration, intro.elapsed + dt);
+    intro.sparkTimer -= dt;
+    if (intro.sparkTimer <= 0) {
+      intro.sparkTimer = PLAYER_VISUALS.respawnSparkInterval;
+      const sample = sampleRespawnIntro(intro.offset, intro.elapsed / intro.duration);
+      this.respawnEmitter.emitParticleAt(
+        intro.spawnX + sample.offsetX,
+        intro.spawnY + sample.offsetY,
+        1,
+      );
+    }
+
+    this.applyRespawnIntroFrame(intro);
+    if (intro.elapsed >= intro.duration) {
+      this.completeRespawnIntro(intro);
+    }
+  }
+
+  private applyRespawnIntroFrame(intro: RespawnIntroState): void {
+    const sample = sampleRespawnIntro(intro.offset, intro.elapsed / intro.duration);
+    const x = intro.spawnX + sample.offsetX;
+    const y = intro.spawnY + sample.offsetY;
+
+    this.applyGlyphSprite(
+      this.respawnSprite,
+      intro.pose,
+      x,
+      y,
+      intro.drawW,
+      intro.drawH,
+      intro.bodyColor,
+      intro.hairColor,
+    );
+    this.respawnSprite.container
+      .setVisible(true)
+      .setAlpha(sample.ghostAlpha)
+      .setScale(sample.ghostScale * intro.facing, sample.ghostScale);
+
+    this.respawnAura
+      .setVisible(sample.auraAlpha > 0.001)
+      .setPosition(x, y)
+      .setFillStyle(intro.hairColor, sample.auraAlpha)
+      .setScale(sample.auraScale);
+
+    this.respawnCore
+      .setVisible(sample.coreAlpha > 0.001)
+      .setPosition(x, y)
+      .setFillStyle(COLORS.dust, sample.coreAlpha)
+      .setScale(sample.coreScale);
+  }
+
+  private completeRespawnIntro(intro: RespawnIntroState): void {
+    this.respawnEmitter.emitParticleAt(
+      intro.spawnX,
+      intro.spawnY,
+      PLAYER_VISUALS.respawnSparkCount,
+    );
+    this.hideLiveSprite = false;
+    this.respawnIntro = null;
+    this.respawnAura.setVisible(false);
+    this.respawnCore.setVisible(false);
+    this.respawnSprite.container.setVisible(false);
+    this.squash(1.35, 0.72);
   }
 
   private spawnAfterimage(snapshot: PlayerSnapshot, color: number): void {
@@ -523,6 +800,30 @@ export class PlayerView {
     this.dashEmitter.speedX = { min: xBias - spread, max: xBias + spread };
     this.dashEmitter.speedY = { min: yBias - spread, max: yBias + spread };
     this.dashEmitter.emitParticleAt(cx, cy, 2);
+  }
+
+  private emitDeathBurst(snapshot: PlayerSnapshot): void {
+    const cx = snapshot.centerX;
+    const cy = snapshot.centerY;
+    const count = PLAYER_VISUALS.deathParticleCount;
+
+    this.deathEmitter.setParticleTint(snapshot.hairColor);
+    this.deathEmitter.emitParticleAt(cx, cy, Math.ceil(count * 0.5));
+    this.deathEmitter.setParticleTint(COLORS.playerBody);
+    this.deathEmitter.emitParticleAt(cx, cy, Math.ceil(count * 0.3));
+    this.deathEmitter.setParticleTint(COLORS.dust);
+    this.deathEmitter.emitParticleAt(cx, cy, Math.floor(count * 0.2));
+  }
+
+  private clearAfterimages(): void {
+    this.dashParticleTimer = 0;
+    this.dashSlashTimer = 0;
+    this.dashSlash.setVisible(false);
+    for (const afterimage of this.afterimages) {
+      afterimage.sprite.container.setVisible(false);
+      this.afterimagePool.push(afterimage.sprite);
+    }
+    this.afterimages = [];
   }
 
   private emitDashSlash(snapshot: PlayerSnapshot): void {

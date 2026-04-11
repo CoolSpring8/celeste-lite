@@ -16,6 +16,7 @@ import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./pl
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
 import { PlayerView } from "./view/PlayerView";
+import { DEATH_RESPAWN_TIMING } from "./view/deathRespawn";
 import { LightingSource, LightingSystem } from "./lighting/LightingSystem";
 
 interface RefillView {
@@ -41,6 +42,12 @@ interface RoomTransitionState {
   fromScrollY: number;
   toScrollX: number;
   toScrollY: number;
+}
+
+interface DeathSequenceState {
+  phase: "pause" | "respawn_intro";
+  timer: number;
+  deathPoint: { x: number; y: number };
 }
 
 const CAMERA_SMOOTH_BASE = 0.01;
@@ -85,6 +92,7 @@ export class GameScene extends Phaser.Scene {
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
+  private deathSequence: DeathSequenceState | null = null;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
 
@@ -182,7 +190,7 @@ export class GameScene extends Phaser.Scene {
   update(_time: number, delta: number): void {
     const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
 
-    if (this.keys.restart.isDown) {
+    if (this.keys.restart.isDown && this.deathSequence === null) {
       this.respawnPlayer();
       this.cameras.main.fadeIn(80, 10, 10, 20);
     }
@@ -196,6 +204,22 @@ export class GameScene extends Phaser.Scene {
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
       return;
+    }
+
+    this.playerView.advanceDeathRespawn(rawFrameDt);
+
+    if (this.deathSequence !== null) {
+      this.updateDeathSequence(rawFrameDt);
+      if (this.deathSequence !== null) {
+        const snapshot = this.player.getSnapshot();
+        if (this.forceCameraUpdate || this.deathSequence.phase === "respawn_intro") {
+          this.updateCamera(snapshot, rawFrameDt);
+        }
+        this.playerView.render(snapshot);
+        this.renderLighting(snapshot);
+        this.updateHUD(snapshot, effects);
+        return;
+      }
     }
 
     if (this.freezeTimer > 0) {
@@ -228,10 +252,12 @@ export class GameScene extends Phaser.Scene {
         stepSnapshot.vy,
       ) !== null;
       if (spiked) {
-        this.cameras.main.shake(120, 0.0026);
-        this.respawnPlayer();
-        this.cameras.main.flash(180, 0, 0, 0, false);
-        stepEffects = stepEffects.concat(this.player.consumeEffects());
+        this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
+        effects.push(...stepEffects);
+        this.beginDeathSequence(stepSnapshot);
+        this.accumulator = 0;
+        steps++;
+        break;
       }
 
       const snapshot = this.player.getSnapshot();
@@ -372,11 +398,69 @@ export class GameScene extends Phaser.Scene {
     this.world.resetTransientState();
     this.syncRefillViews();
     this.controls.clearTransientState();
+    this.playerView.resetDeathRespawn();
+    this.roomTransition = null;
+    this.deathSequence = null;
+    this.accumulator = 0;
+    this.freezeTimer = 0;
+    this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
+    this.forceCameraSnap();
+  }
+
+  private beginDeathSequence(snapshot: ReturnType<Player["getSnapshot"]>): void {
+    this.deathSequence = {
+      phase: "pause",
+      timer: DEATH_RESPAWN_TIMING.deathPause,
+      deathPoint: {
+        x: snapshot.x,
+        y: snapshot.y,
+      },
+    };
+    this.freezeTimer = 0;
+    this.controls.clearTransientState();
+    this.playerView.startDeath(snapshot);
+    this.cameras.main.shake(120, 0.0026);
+    this.cameras.main.flash(180, 0, 0, 0, false);
+  }
+
+  private updateDeathSequence(dt: number): void {
+    const sequence = this.deathSequence;
+    if (sequence === null) {
+      return;
+    }
+
+    sequence.timer = Math.max(0, sequence.timer - dt);
+    if (sequence.timer > 0) {
+      return;
+    }
+
+    if (sequence.phase === "pause") {
+      this.startRespawnIntro(sequence.deathPoint);
+      return;
+    }
+
+    this.deathSequence = null;
+  }
+
+  private startRespawnIntro(deathPoint: { x: number; y: number }): void {
+    this.player.hardRespawn(this.spawnX, this.spawnY);
+    this.world.resetTransientState();
+    this.syncRefillViews();
+    this.controls.clearTransientState();
     this.roomTransition = null;
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
     this.forceCameraSnap();
+
+    const snapshot = this.player.getSnapshot();
+    this.updateCamera(snapshot, 0);
+    this.playerView.startRespawnIntro(snapshot, deathPoint, this.currentRoom.bounds);
+    this.deathSequence = {
+      phase: "respawn_intro",
+      timer: DEATH_RESPAWN_TIMING.introDuration,
+      deathPoint,
+    };
   }
 
   private tryStartRoomTransition(snapshot: ReturnType<Player["getSnapshot"]>): boolean {

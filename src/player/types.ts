@@ -25,8 +25,7 @@ export type PlayerEffectType =
   | "wall_jump"
   | "dash_start"
   | "wall_bounce"
-  | "land"
-  | "respawn";
+  | "land";
 
 export interface PlayerEffect {
   type: PlayerEffectType;

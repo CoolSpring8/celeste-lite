@@ -56,6 +56,15 @@ export const PLAYER_VISUALS = {
   dashSlashLength: 12,
   dashSlashThickness: 1,
   tiredFlashInterval: 0.05,
+  deathFlashLife: 0.18,
+  deathFlashSize: 24,
+  deathFlashStartAlpha: 0.7,
+  deathFlashEndAlpha: 0,
+  deathFlashStartScale: 0.4,
+  deathFlashEndScale: 1.9,
+  deathParticleCount: 14,
+  respawnSparkCount: 10,
+  respawnSparkInterval: 0.03,
 } as const;
 
 export interface PlayerConfig {
