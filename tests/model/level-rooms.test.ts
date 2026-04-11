@@ -49,14 +49,34 @@ describe("Level room mechanics", () => {
     expect(initialRoom?.bounds).toEqual(blueprints[1]!.bounds);
     expect(nonInitialRoom?.checkpoint).toEqual({
       x: 0 * WORLD.tile + Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5) + PLAYER_GEOMETRY.hitboxW * 0.5,
-      y: 0 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
+      y: 0 * WORLD.tile + WORLD.tile,
     });
     expect(initialRoom?.checkpoint).toEqual({
       x: 5 * WORLD.tile + Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5) + PLAYER_GEOMETRY.hitboxW * 0.5,
-      y: 0 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
+      y: 0 * WORLD.tile + WORLD.tile,
     });
     expect(level.spawnX).toBe(initialRoom?.checkpoint?.x);
     expect(level.spawnY).toBe(initialRoom?.checkpoint?.y);
+  });
+
+  test("snaps checkpoint spawns down to the nearest grounded slot inside the room", () => {
+    const level = buildLevelFromBlueprints([
+      {
+        id: "grounded",
+        bounds: { x: 0, y: 0, w: 5 * WORLD.tile, h: 5 * WORLD.tile },
+        initialSpawn: true,
+        rows: [
+          "..S..",
+          ".....",
+          ".....",
+          "XXXXX",
+          "XXXXX",
+        ],
+      },
+    ]);
+
+    expect(level.spawnX).toBe(2 * WORLD.tile + PLAYER_GEOMETRY.hitboxW * 0.5);
+    expect(level.spawnY).toBe(3 * WORLD.tile);
   });
 
   test("finds rooms by point and resolves multiple shared-edge neighbors using the probe", () => {

@@ -1,121 +1,132 @@
-import { type Aabb } from "../entities/types";
+export type SpawnTransitionKind = "initial" | "normal" | "spike";
 
-export interface RespawnPoint {
-  x: number;
-  y: number;
-}
-
-export interface RespawnIntroSample {
-  offsetX: number;
-  offsetY: number;
+export interface SpawnIntroSample {
   ghostAlpha: number;
-  ghostScale: number;
+  ghostScaleX: number;
+  ghostScaleY: number;
   auraAlpha: number;
   auraScale: number;
   coreAlpha: number;
   coreScale: number;
 }
 
-export const DEATH_RESPAWN_TIMING = {
-  deathPause: 0.34,
-  introDuration: 0.6,
+export const SPAWN_SEQUENCE_TIMING = {
+  fastSkipTotalDuration: 0.5,
+  spikeRecoilDuration: 0.5,
+  burstHoldDuration: 0.25,
+  wipeCoverDuration: 0.3,
+  wipeRevealDuration: 0.45,
+  spawnIntroDuration: 0.46,
 } as const;
 
-export const DEATH_RESPAWN_VISUALS = {
-  roomClampPad: 40,
-  ghostStartAlpha: 0.18,
-  ghostEndAlpha: 0.96,
-  ghostStartScale: 0.55,
-  ghostEndScale: 1.08,
-  auraStartAlpha: 0.55,
+export const SPAWN_WIPE_VISUALS = {
+  edgeOverscan: 24,
+  color: 0x000000,
+  headWidth: 156,
+  headDepth: 26,
+  shoulderInset: 42,
+  shoulderLift: 5,
+  tailDepth: 18,
+} as const;
+
+export const SPAWN_INTRO_VISUALS = {
+  ghostStartAlpha: 0.06,
+  ghostEndAlpha: 1,
+  ghostStartScaleX: 1.55,
+  ghostEndScaleX: 1.03,
+  ghostStartScaleY: 0.12,
+  ghostEndScaleY: 1.04,
+  auraStartAlpha: 0.6,
   auraEndAlpha: 0,
-  auraStartScale: 1.85,
-  auraEndScale: 0.55,
+  auraStartScale: 1.7,
+  auraEndScale: 0.7,
   coreStartAlpha: 0.95,
   coreEndAlpha: 0,
-  coreStartScale: 0.9,
-  coreEndScale: 0.25,
+  coreStartScale: 1,
+  coreEndScale: 0.28,
 } as const;
 
-export function computeRespawnIntroOffset(
-  spawn: RespawnPoint,
-  death: RespawnPoint,
-  room: Aabb,
-  pad = DEATH_RESPAWN_VISUALS.roomClampPad,
-): RespawnPoint {
-  const source = clampRespawnSource(death, room, pad);
+export interface SpawnTransitionTimings {
+  totalDuration: number;
+  explodeAt: number;
+  wipeCoverAt: number;
+  wipeRevealAt: number;
+}
+
+export function baseTransitionDuration(kind: SpawnTransitionKind): number {
+  switch (kind) {
+    case "initial":
+      return SPAWN_SEQUENCE_TIMING.spawnIntroDuration;
+    case "normal":
+      return postExplosionDuration();
+    case "spike":
+      return SPAWN_SEQUENCE_TIMING.spikeRecoilDuration + postExplosionDuration();
+  }
+}
+
+export function retimedTransitionDuration(
+  kind: Exclude<SpawnTransitionKind, "initial">,
+  elapsed: number,
+): number {
+  return Math.min(
+    baseTransitionDuration(kind),
+    elapsed + SPAWN_SEQUENCE_TIMING.fastSkipTotalDuration,
+  );
+}
+
+export function transitionTimings(
+  kind: SpawnTransitionKind,
+  totalDuration = baseTransitionDuration(kind),
+): SpawnTransitionTimings {
+  if (kind === "initial") {
+    return {
+      totalDuration,
+      explodeAt: Number.POSITIVE_INFINITY,
+      wipeCoverAt: Number.POSITIVE_INFINITY,
+      wipeRevealAt: Number.POSITIVE_INFINITY,
+    };
+  }
+
+  const scale = totalDuration / baseTransitionDuration(kind);
+  const recoil = kind === "spike" ? SPAWN_SEQUENCE_TIMING.spikeRecoilDuration * scale : 0;
+  const burstHold = SPAWN_SEQUENCE_TIMING.burstHoldDuration * scale;
+  const wipeCover = SPAWN_SEQUENCE_TIMING.wipeCoverDuration * scale;
+
   return {
-    x: source.x - spawn.x,
-    y: source.y - spawn.y,
+    totalDuration,
+    explodeAt: recoil,
+    wipeCoverAt: recoil + burstHold,
+    wipeRevealAt: recoil + burstHold + wipeCover,
   };
 }
 
-export function sampleRespawnIntro(
-  offset: RespawnPoint,
-  progress: number,
-): RespawnIntroSample {
+function postExplosionDuration(): number {
+  return SPAWN_SEQUENCE_TIMING.burstHoldDuration +
+    SPAWN_SEQUENCE_TIMING.wipeCoverDuration +
+    SPAWN_SEQUENCE_TIMING.wipeRevealDuration;
+}
+
+export function sampleSpawnIntro(progress: number): SpawnIntroSample {
   const t = clamp01(progress);
   const eased = cubicOut(t);
 
   return {
-    offsetX: lerp(offset.x, 0, eased),
-    offsetY: lerp(offset.y, 0, eased),
-    ghostAlpha: lerp(
-      DEATH_RESPAWN_VISUALS.ghostStartAlpha,
-      DEATH_RESPAWN_VISUALS.ghostEndAlpha,
-      t,
-    ),
-    ghostScale: lerp(
-      DEATH_RESPAWN_VISUALS.ghostStartScale,
-      DEATH_RESPAWN_VISUALS.ghostEndScale,
+    ghostAlpha: lerp(SPAWN_INTRO_VISUALS.ghostStartAlpha, SPAWN_INTRO_VISUALS.ghostEndAlpha, t),
+    ghostScaleX: lerp(
+      SPAWN_INTRO_VISUALS.ghostStartScaleX,
+      SPAWN_INTRO_VISUALS.ghostEndScaleX,
       eased,
     ),
-    auraAlpha: lerp(
-      DEATH_RESPAWN_VISUALS.auraStartAlpha,
-      DEATH_RESPAWN_VISUALS.auraEndAlpha,
+    ghostScaleY: lerp(
+      SPAWN_INTRO_VISUALS.ghostStartScaleY,
+      SPAWN_INTRO_VISUALS.ghostEndScaleY,
       eased,
     ),
-    auraScale: lerp(
-      DEATH_RESPAWN_VISUALS.auraStartScale,
-      DEATH_RESPAWN_VISUALS.auraEndScale,
-      eased,
-    ),
-    coreAlpha: lerp(
-      DEATH_RESPAWN_VISUALS.coreStartAlpha,
-      DEATH_RESPAWN_VISUALS.coreEndAlpha,
-      eased,
-    ),
-    coreScale: lerp(
-      DEATH_RESPAWN_VISUALS.coreStartScale,
-      DEATH_RESPAWN_VISUALS.coreEndScale,
-      eased,
-    ),
+    auraAlpha: lerp(SPAWN_INTRO_VISUALS.auraStartAlpha, SPAWN_INTRO_VISUALS.auraEndAlpha, eased),
+    auraScale: lerp(SPAWN_INTRO_VISUALS.auraStartScale, SPAWN_INTRO_VISUALS.auraEndScale, eased),
+    coreAlpha: lerp(SPAWN_INTRO_VISUALS.coreStartAlpha, SPAWN_INTRO_VISUALS.coreEndAlpha, eased),
+    coreScale: lerp(SPAWN_INTRO_VISUALS.coreStartScale, SPAWN_INTRO_VISUALS.coreEndScale, eased),
   };
-}
-
-function clampRespawnSource(point: RespawnPoint, room: Aabb, pad: number): RespawnPoint {
-  const minX = room.x;
-  const maxX = room.x + room.w;
-  const minY = room.y;
-  const maxY = room.y + room.h;
-
-  const paddedMinX = minX + Math.min(pad, Math.max(0, room.w * 0.5 - 1));
-  const paddedMaxX = maxX - Math.min(pad, Math.max(0, room.w * 0.5 - 1));
-  const paddedMinY = minY + Math.min(pad, Math.max(0, room.h * 0.5 - 1));
-  const paddedMaxY = maxY - Math.min(pad, Math.max(0, room.h * 0.5 - 1));
-
-  return {
-    x: clampWithCollapsedRange(point.x, paddedMinX, paddedMaxX),
-    y: clampWithCollapsedRange(point.y, paddedMinY, paddedMaxY),
-  };
-}
-
-function clampWithCollapsedRange(value: number, min: number, max: number): number {
-  if (min > max) {
-    return (min + max) * 0.5;
-  }
-
-  return Math.min(Math.max(value, min), max);
 }
 
 function clamp01(value: number): number {

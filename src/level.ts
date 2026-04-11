@@ -1,6 +1,7 @@
 import { PLAYER_GEOMETRY, WORLD } from "./constants";
 import { EntityWorld } from "./entities/EntityWorld";
 import { type Aabb, LevelEntitySpec, SpikeDirection } from "./entities/types";
+import { resolveGroundedSpawnPoint } from "./spawn";
 
 export type RoomDirection = "left" | "right" | "up" | "down";
 
@@ -48,8 +49,8 @@ const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
       "XXXXX...................................",
       "XXXXX...................................",
       "XXXXX.....................XXXX..........",
-      "XXS.....................................",
       "XX......................................",
+      "XXS.....................................",
       "XXXXXXXX................................",
       "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
       "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX",
@@ -84,9 +85,9 @@ const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
       "...................................XXXXX",
       "...................................XXXXX",
       "...................................XXXXX",
-      "S..................................XXXXX",
       "...................................XXXXX",
-      "......................XXXXXXX......XXXXX",
+      "...................................XXXXX",
+      "S.....................XXXXXXX......XXXXX",
       "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
       "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
       "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
@@ -121,8 +122,8 @@ const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
       "XXXX...........XXXXXXXX...XXXXXXX..................XXXX",
       "XXXXX..........XXXXXXXX......XXXX.............=====XXXX",
       "XXXXX..........XXXXXXXX.....XXXXX..................XXXX",
-      "XXXXXS.........XXXXXXXX............................XXXX",
-      "XXXXX..........XXXXXXXX...XXXXXXX..................XXXX",
+      "XXXXX..........XXXXXXXX............................XXXX",
+      "XXXXXS.........XXXXXXXX...XXXXXXX..................XXXX",
       "XXXXXXXXX^^^^^^XXXXXXXX^^^XXXXXXX.......XXXX.......XXXX",
       "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX.......XXXX",
       "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX^^^^^^^XXXX",
@@ -142,8 +143,8 @@ const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
       "X.......................................XXXXX",
       ".......^^^^^^^^^^^^^^^^^^...............XXXXX",
       ".......XXXXXXXXXXXXXXXXXX...............XXXXX",
-      "S.......................................XXXXX",
       "........................................XXXXX",
+      "S.......................................XXXXX",
       "XX....................................XXXXXXX",
       "XX....................................XXXXXXX",
       "XX........XXXXXXX...................XXXXXXXXX",
@@ -186,7 +187,7 @@ export function buildLevelFromBlueprints(
   const spawnInsetX = Math.floor((WORLD.tile - PLAYER_GEOMETRY.hitboxW) * 0.5);
   let worldCols = 0;
   let worldRows = 0;
-  let startCheckpoint: { x: number; y: number } | null = null;
+  let startRoomId: string | null = null;
   let hasExplicitInitialSpawn = false;
 
   for (const blueprint of blueprints) {
@@ -214,10 +215,10 @@ export function buildLevelFromBlueprints(
         if (ch === "S") {
           checkpoint ??= {
             x: col * WORLD.tile + spawnInsetX + PLAYER_GEOMETRY.hitboxW * 0.5,
-            y: row * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
+            y: row * WORLD.tile + WORLD.tile,
           };
-          if (!hasExplicitInitialSpawn) {
-            startCheckpoint ??= checkpoint;
+          if (!hasExplicitInitialSpawn && startRoomId === null) {
+            startRoomId = blueprint.id;
           }
           continue;
         }
@@ -258,7 +259,7 @@ export function buildLevelFromBlueprints(
       if (checkpoint === null) {
         throw new Error(`Room "${blueprint.id}" is marked as the initial spawn room but has no checkpoint`);
       }
-      startCheckpoint = checkpoint;
+      startRoomId = blueprint.id;
       hasExplicitInitialSpawn = true;
     }
 
@@ -273,15 +274,27 @@ export function buildLevelFromBlueprints(
     });
   }
 
-  if (startCheckpoint === null) {
+  if (startRoomId === null) {
     throw new Error("Level requires at least one room checkpoint marked with 'S'");
   }
 
+  const world = EntityWorld.fromSpecs(worldCols, worldRows, entities);
+  const resolvedRooms = rooms.map((room) => ({
+    ...room,
+    checkpoint: room.checkpoint === null
+      ? null
+      : resolveGroundedSpawnPoint(world, room.bounds, room.checkpoint),
+  }));
+  const startRoom = resolvedRooms.find((room) => room.id === startRoomId);
+  if (startRoom?.checkpoint === null || startRoom === undefined) {
+    throw new Error(`Resolved initial spawn room "${startRoomId}" has no checkpoint`);
+  }
+
   return {
-    world: EntityWorld.fromSpecs(worldCols, worldRows, entities),
-    rooms,
-    spawnX: startCheckpoint.x,
-    spawnY: startCheckpoint.y,
+    world,
+    rooms: resolvedRooms,
+    spawnX: startRoom.checkpoint.x,
+    spawnY: startRoom.checkpoint.y,
   };
 }
 

@@ -16,7 +16,14 @@ import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./pl
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
 import { PlayerView } from "./view/PlayerView";
-import { DEATH_RESPAWN_TIMING } from "./view/deathRespawn";
+import {
+  baseTransitionDuration,
+  retimedTransitionDuration,
+  SPAWN_SEQUENCE_TIMING,
+  type SpawnTransitionKind,
+  transitionTimings,
+  SPAWN_WIPE_VISUALS,
+} from "./view/deathRespawn";
 import { LightingSource, LightingSystem } from "./lighting/LightingSystem";
 
 interface RefillView {
@@ -44,10 +51,20 @@ interface RoomTransitionState {
   toScrollY: number;
 }
 
-interface DeathSequenceState {
-  phase: "pause" | "respawn_intro";
-  timer: number;
-  deathPoint: { x: number; y: number };
+interface SpawnTransitionState {
+  kind: SpawnTransitionKind;
+  elapsed: number;
+  totalDuration: number;
+  exploded: boolean;
+  revealStarted: boolean;
+  knockback:
+    | {
+      startX: number;
+      startY: number;
+      endX: number;
+      endY: number;
+    }
+    | null;
 }
 
 const CAMERA_SMOOTH_BASE = 0.01;
@@ -66,6 +83,7 @@ const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
 const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 const REFILL_CONSUME_FREEZE_TIME = 0.05;
+const SPAWN_WIPE_HEIGHT = VIEWPORT.height + SPAWN_WIPE_VISUALS.edgeOverscan * 2;
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -80,6 +98,7 @@ export class GameScene extends Phaser.Scene {
 
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private controls!: PlayerControls;
+  private confirmBufferedFrames = 0;
 
   private accumulator = 0;
   private readonly fixedDt = toFloat(1 / 60);
@@ -87,12 +106,13 @@ export class GameScene extends Phaser.Scene {
   private freezeTimer = 0;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
+  private spawnWipe!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
   private helpText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
-  private deathSequence: DeathSequenceState | null = null;
+  private spawnTransition: SpawnTransitionState | null = null;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
 
@@ -112,6 +132,7 @@ export class GameScene extends Phaser.Scene {
 
     this.computeTileDepths();
     this.tileGfx = this.add.graphics();
+    this.spawnWipe = this.add.graphics().setDepth(20).setScrollFactor(0);
     this.drawTiles();
     this.lighting = new LightingSystem(this, this.world);
 
@@ -184,15 +205,21 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10)
       .setScrollFactor(0);
 
-    this.renderLighting(this.player.getSnapshot());
+    this.beginInitialSpawnSequence();
+    const snapshot = this.player.getSnapshot();
+    this.playerView.render(snapshot);
+    this.renderLighting(snapshot);
+    this.renderSpawnWipe();
   }
 
   update(_time: number, delta: number): void {
     const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
+    if (this.confirmBufferedFrames > 0) {
+      this.confirmBufferedFrames--;
+    }
 
-    if (this.keys.restart.isDown && this.deathSequence === null) {
-      this.respawnPlayer();
-      this.cameras.main.fadeIn(80, 10, 10, 20);
+    if (this.keys.restart.isDown && this.spawnTransition === null) {
+      this.beginNormalRespawn();
     }
 
     const effects: PlayerEffect[] = [];
@@ -203,21 +230,23 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
+      this.clearSpawnWipe();
       return;
     }
 
     this.playerView.advanceDeathRespawn(rawFrameDt);
 
-    if (this.deathSequence !== null) {
-      this.updateDeathSequence(rawFrameDt);
-      if (this.deathSequence !== null) {
+    if (this.spawnTransition !== null) {
+      this.updateSpawnTransition(rawFrameDt);
+      if (this.spawnTransition !== null) {
         const snapshot = this.player.getSnapshot();
-        if (this.forceCameraUpdate || this.deathSequence.phase === "respawn_intro") {
+        if (this.forceCameraUpdate || this.spawnTransition.revealStarted) {
           this.updateCamera(snapshot, rawFrameDt);
         }
         this.playerView.render(snapshot);
         this.renderLighting(snapshot);
         this.updateHUD(snapshot, effects);
+        this.renderSpawnWipe();
         return;
       }
     }
@@ -231,6 +260,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
+      this.clearSpawnWipe();
       return;
     }
 
@@ -246,15 +276,15 @@ export class GameScene extends Phaser.Scene {
 
       let stepEffects = this.player.consumeEffects();
       const stepSnapshot = this.player.getSnapshot();
-      const spiked = this.world.collidesWithSpike(
+      const spike = this.world.collidesWithSpike(
         this.player.getHurtboxBounds(),
         stepSnapshot.vx,
         stepSnapshot.vy,
-      ) !== null;
-      if (spiked) {
+      );
+      if (spike) {
         this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
         effects.push(...stepEffects);
-        this.beginDeathSequence(stepSnapshot);
+        this.beginSpikeDeathRespawn(stepSnapshot, spike.dir);
         this.accumulator = 0;
         steps++;
         break;
@@ -289,6 +319,7 @@ export class GameScene extends Phaser.Scene {
     this.renderLighting(snapshot);
 
     this.updateHUD(snapshot, effects);
+    this.clearSpawnWipe();
   }
 
   setCameraOffset(x: number, y: number): void {
@@ -358,6 +389,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.controls?.reset();
     this.playerView?.destroy();
+    this.spawnWipe?.destroy();
     this.refillEmitter?.destroy();
     this.lighting?.destroy();
     for (const refill of this.refills) {
@@ -381,6 +413,11 @@ export class GameScene extends Phaser.Scene {
 
   private onJumpDown(event: KeyboardEvent): void {
     if (event.repeat) return;
+    this.confirmBufferedFrames = 2;
+    if (this.spawnTransition !== null) {
+      this.requestSpawnSkip();
+      return;
+    }
     this.controls.queuePress("jump");
   }
 
@@ -393,74 +430,217 @@ export class GameScene extends Phaser.Scene {
     this.controls.queuePress("dash");
   }
 
-  private respawnPlayer(): void {
+  private beginInitialSpawnSequence(): void {
+    this.snapPlayerToCheckpoint();
+    this.beginSpawnIntroOnly();
+  }
+
+  private beginNormalRespawn(): void {
+    this.controls.clearTransientState();
+    this.accumulator = 0;
+    this.freezeTimer = 0;
+    this.roomTransition = null;
+    this.startSpawnTransition({
+      kind: "normal",
+      exploded: false,
+      revealStarted: false,
+      knockback: null,
+    });
+    this.startTransitionExplosion();
+  }
+
+  private beginSpikeDeathRespawn(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    spikeDir: "up" | "down" | "left" | "right",
+  ): void {
+    const knockback = this.spikeKnockback(snapshot, spikeDir);
+    this.freezeTimer = 0;
+    this.controls.clearTransientState();
+    this.accumulator = 0;
+    this.startSpawnTransition({
+      kind: "spike",
+      exploded: false,
+      revealStarted: false,
+      knockback,
+    });
+    this.playerView.startDeathRecoil(snapshot);
+  }
+
+  private updateSpawnTransition(dt: number): void {
+    const transition = this.spawnTransition;
+    if (transition === null) {
+      return;
+    }
+
+    transition.elapsed = Math.min(transition.totalDuration, transition.elapsed + dt);
+
+    if (transition.kind === "initial") {
+      if (transition.elapsed >= transition.totalDuration) {
+        this.finishSpawnTransition();
+      }
+      return;
+    }
+
+    const timings = transitionTimings(transition.kind, transition.totalDuration);
+
+    if (transition.kind === "spike" && !transition.exploded) {
+      this.updateSpikeDeathKnockback(transition, timings.explodeAt);
+    }
+
+    if (!transition.exploded && transition.elapsed >= timings.explodeAt) {
+      this.startTransitionExplosion();
+    }
+
+    if (!transition.revealStarted && transition.elapsed >= timings.wipeRevealAt) {
+      this.snapPlayerToCheckpoint();
+      this.beginWipeReveal();
+    }
+
+    if (transition.elapsed >= transition.totalDuration) {
+      this.finishSpawnTransition();
+    }
+  }
+
+  private beginSpawnIntroOnly(): void {
+    const snapshot = this.player.getSnapshot();
+    this.updateCamera(snapshot, 0);
+    this.playerView.startRespawnIntro(snapshot);
+    this.spawnTransition = {
+      kind: "initial",
+      elapsed: 0,
+      totalDuration: SPAWN_SEQUENCE_TIMING.spawnIntroDuration,
+      exploded: true,
+      revealStarted: false,
+      knockback: null,
+    };
+  }
+
+  private beginWipeReveal(): void {
+    const snapshot = this.player.getSnapshot();
+    this.updateCamera(snapshot, 0);
+    this.playerView.startRespawnIntro(snapshot);
+    if (this.spawnTransition !== null) {
+      this.spawnTransition.revealStarted = true;
+    }
+  }
+
+  private snapPlayerToCheckpoint(): void {
     this.player.hardRespawn(this.spawnX, this.spawnY);
+    this.player.finalizeRespawnState();
     this.world.resetTransientState();
     this.syncRefillViews();
     this.controls.clearTransientState();
     this.playerView.resetDeathRespawn();
     this.roomTransition = null;
-    this.deathSequence = null;
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
     this.forceCameraSnap();
   }
 
-  private beginDeathSequence(snapshot: ReturnType<Player["getSnapshot"]>): void {
-    this.deathSequence = {
-      phase: "pause",
-      timer: DEATH_RESPAWN_TIMING.deathPause,
-      deathPoint: {
-        x: snapshot.x,
-        y: snapshot.y,
-      },
+  private startSpawnTransition(
+    state: Omit<SpawnTransitionState, "elapsed" | "totalDuration">,
+  ): void {
+    const totalDuration = baseTransitionDuration(state.kind);
+    this.spawnTransition = {
+      ...state,
+      elapsed: 0,
+      totalDuration,
     };
-    this.freezeTimer = 0;
-    this.controls.clearTransientState();
-    this.playerView.startDeath(snapshot);
-    this.cameras.main.shake(120, 0.0026);
-    this.cameras.main.flash(180, 0, 0, 0, false);
+    this.tryApplyBufferedSkip();
   }
 
-  private updateDeathSequence(dt: number): void {
-    const sequence = this.deathSequence;
-    if (sequence === null) {
-      return;
-    }
-
-    sequence.timer = Math.max(0, sequence.timer - dt);
-    if (sequence.timer > 0) {
-      return;
-    }
-
-    if (sequence.phase === "pause") {
-      this.startRespawnIntro(sequence.deathPoint);
-      return;
-    }
-
-    this.deathSequence = null;
+  private finishSpawnTransition(): void {
+    this.spawnTransition = null;
+    this.controls.clearTransientState();
+    this.clearSpawnWipe();
   }
 
-  private startRespawnIntro(deathPoint: { x: number; y: number }): void {
-    this.player.hardRespawn(this.spawnX, this.spawnY);
-    this.world.resetTransientState();
-    this.syncRefillViews();
-    this.controls.clearTransientState();
-    this.roomTransition = null;
-    this.accumulator = 0;
-    this.freezeTimer = 0;
-    this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
-    this.forceCameraSnap();
+  private startTransitionExplosion(): void {
+    const transition = this.spawnTransition;
+    if (transition === null || transition.exploded) {
+      return;
+    }
 
     const snapshot = this.player.getSnapshot();
-    this.updateCamera(snapshot, 0);
-    this.playerView.startRespawnIntro(snapshot, deathPoint, this.currentRoom.bounds);
-    this.deathSequence = {
-      phase: "respawn_intro",
-      timer: DEATH_RESPAWN_TIMING.introDuration,
-      deathPoint,
-    };
+    if (transition.kind === "spike" && transition.knockback !== null) {
+      this.playerView.startDeathAt(
+        snapshot,
+        transition.knockback.endX,
+        transition.knockback.endY,
+      );
+    } else {
+      this.playerView.startDeath(snapshot);
+    }
+    if (transition.kind === "spike") {
+      this.cameras.main.shake(120, 0.0026);
+      this.cameras.main.flash(180, 0, 0, 0, false);
+    }
+    transition.exploded = true;
+  }
+
+  private updateSpikeDeathKnockback(transition: SpawnTransitionState, explodeAt: number): void {
+    if (transition.knockback === null || explodeAt <= 0) {
+      return;
+    }
+
+    const t = Phaser.Math.Clamp(transition.elapsed / explodeAt, 0, 1);
+    const eased = Phaser.Math.Easing.Cubic.Out(t);
+    const x = Phaser.Math.Linear(transition.knockback.startX, transition.knockback.endX, eased);
+    const y = Phaser.Math.Linear(transition.knockback.startY, transition.knockback.endY, eased);
+    this.playerView.setDeathRecoilPosition(x, y, t);
+  }
+
+  private spikeKnockback(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    spikeDir: "up" | "down" | "left" | "right",
+  ): NonNullable<SpawnTransitionState["knockback"]> {
+    const distance = WORLD.tile * 1.75;
+    switch (spikeDir) {
+      case "up":
+        return {
+          startX: snapshot.centerX,
+          startY: snapshot.centerY,
+          endX: snapshot.centerX,
+          endY: snapshot.centerY - distance,
+        };
+      case "down":
+        return {
+          startX: snapshot.centerX,
+          startY: snapshot.centerY,
+          endX: snapshot.centerX,
+          endY: snapshot.centerY + distance,
+        };
+      case "left":
+        return {
+          startX: snapshot.centerX,
+          startY: snapshot.centerY,
+          endX: snapshot.centerX - distance,
+          endY: snapshot.centerY,
+        };
+      case "right":
+        return {
+          startX: snapshot.centerX,
+          startY: snapshot.centerY,
+          endX: snapshot.centerX + distance,
+          endY: snapshot.centerY,
+        };
+    }
+  }
+
+  private requestSpawnSkip(): void {
+    const transition = this.spawnTransition;
+    if (transition === null || transition.kind === "initial") {
+      return;
+    }
+
+    transition.totalDuration = retimedTransitionDuration(transition.kind, transition.elapsed);
+  }
+
+  private tryApplyBufferedSkip(): void {
+    if (this.confirmBufferedFrames > 0) {
+      this.requestSpawnSkip();
+    }
   }
 
   private tryStartRoomTransition(snapshot: ReturnType<Player["getSnapshot"]>): boolean {
@@ -826,6 +1006,76 @@ export class GameScene extends Phaser.Scene {
         g.strokeTriangle(a.x, a.y, b.x, b.y, c.x, c.y);
       }
     }
+  }
+
+  private renderSpawnWipe(): void {
+    const transition = this.spawnTransition;
+    if (transition === null || transition.kind === "initial") {
+      this.clearSpawnWipe();
+      return;
+    }
+
+    const timings = transitionTimings(transition.kind, transition.totalDuration);
+    if (transition.elapsed < timings.wipeCoverAt) {
+      this.clearSpawnWipe();
+      return;
+    }
+
+    const overscan = SPAWN_WIPE_VISUALS.edgeOverscan;
+    let topY = 0;
+
+    if (transition.elapsed < timings.wipeRevealAt) {
+      const duration = Math.max(0.0001, timings.wipeRevealAt - timings.wipeCoverAt);
+      const progress = Phaser.Math.Clamp((transition.elapsed - timings.wipeCoverAt) / duration, 0, 1);
+      topY = Phaser.Math.Linear(VIEWPORT.height + overscan, -overscan, progress);
+    } else {
+      const duration = Math.max(0.0001, timings.totalDuration - timings.wipeRevealAt);
+      const progress = Phaser.Math.Clamp((transition.elapsed - timings.wipeRevealAt) / duration, 0, 1);
+      topY = Phaser.Math.Linear(-overscan, -SPAWN_WIPE_HEIGHT - overscan, progress);
+    }
+
+    const bottomY = topY + SPAWN_WIPE_HEIGHT;
+    this.spawnWipe.clear();
+    this.spawnWipe.fillStyle(SPAWN_WIPE_VISUALS.color, 1);
+    this.spawnWipe.beginPath();
+    this.traceWipeEdge(topY, "top");
+    this.traceWipeEdge(bottomY, "bottom");
+    this.spawnWipe.closePath();
+    this.spawnWipe.fillPath();
+    this.spawnWipe.setVisible(true);
+  }
+
+  private clearSpawnWipe(): void {
+    this.spawnWipe.clear();
+    this.spawnWipe.setVisible(false);
+  }
+
+  private traceWipeEdge(baseY: number, edge: "top" | "bottom"): void {
+    const overscan = SPAWN_WIPE_VISUALS.edgeOverscan;
+    const minX = -overscan;
+    const maxX = VIEWPORT.width + overscan;
+    const centerX = VIEWPORT.width * 0.5;
+    const shoulderInset = SPAWN_WIPE_VISUALS.shoulderInset;
+    const halfHead = SPAWN_WIPE_VISUALS.headWidth * 0.5;
+
+    if (edge === "top") {
+      this.spawnWipe.moveTo(minX, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.lineTo(centerX - shoulderInset, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.lineTo(centerX - halfHead, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.headDepth);
+      this.spawnWipe.lineTo(centerX + halfHead, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.lineTo(centerX + shoulderInset, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.lineTo(maxX, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      return;
+    }
+
+    this.spawnWipe.lineTo(maxX, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(centerX + shoulderInset, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(centerX + halfHead, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.tailDepth);
+    this.spawnWipe.lineTo(centerX - halfHead, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(centerX - shoulderInset, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(minX, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
   }
 
   private createRefills(spawns: ReadonlyArray<RefillPickupEntity>): void {

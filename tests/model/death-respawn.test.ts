@@ -1,57 +1,53 @@
 import { describe, expect, test } from "bun:test";
 import {
-  DEATH_RESPAWN_VISUALS,
-  computeRespawnIntroOffset,
-  sampleRespawnIntro,
+  baseTransitionDuration,
+  retimedTransitionDuration,
+  sampleSpawnIntro,
+  transitionTimings,
 } from "../../src/view/deathRespawn.ts";
 
-describe("Death respawn presentation math", () => {
-  test("clamps the death origin into the current room before offsetting from spawn", () => {
-    const offset = computeRespawnIntroOffset(
-      { x: 96, y: 120 },
-      { x: 10, y: 260 },
-      { x: 64, y: 80, w: 160, h: 120 },
-    );
+describe("Spawn intro presentation math", () => {
+  test("starts as a low, wide ground-form silhouette and settles into the live pose", () => {
+    const start = sampleSpawnIntro(0);
+    const middle = sampleSpawnIntro(0.5);
+    const end = sampleSpawnIntro(1);
 
-    expect(offset).toEqual({
-      x: 8,
-      y: 40,
-    });
-  });
+    expect(start.ghostAlpha).toBeCloseTo(0.06, 5);
+    expect(start.ghostScaleX).toBeGreaterThan(1);
+    expect(start.ghostScaleY).toBeLessThan(0.2);
+    expect(start.auraAlpha).toBeCloseTo(0.6, 5);
 
-  test("collapses to the room center when padding would invert the clamp range", () => {
-    const offset = computeRespawnIntroOffset(
-      { x: 100, y: 100 },
-      { x: 40, y: 40 },
-      { x: 80, y: 92, w: 12, h: 10 },
-      DEATH_RESPAWN_VISUALS.roomClampPad,
-    );
-
-    expect(offset).toEqual({
-      x: -15,
-      y: -4,
-    });
-  });
-
-  test("samples the intro from the full offset back to the spawn point", () => {
-    const start = sampleRespawnIntro({ x: -48, y: 24 }, 0);
-    const middle = sampleRespawnIntro({ x: -48, y: 24 }, 0.5);
-    const end = sampleRespawnIntro({ x: -48, y: 24 }, 1);
-
-    expect(start.offsetX).toBe(-48);
-    expect(start.offsetY).toBe(24);
-    expect(start.ghostAlpha).toBeCloseTo(0.18, 5);
-    expect(start.auraAlpha).toBeCloseTo(0.55, 5);
-
-    expect(Math.abs(middle.offsetX)).toBeLessThan(Math.abs(start.offsetX));
-    expect(Math.abs(middle.offsetY)).toBeLessThan(Math.abs(start.offsetY));
     expect(middle.ghostAlpha).toBeGreaterThan(start.ghostAlpha);
+    expect(middle.ghostScaleX).toBeLessThan(start.ghostScaleX);
+    expect(middle.ghostScaleY).toBeGreaterThan(start.ghostScaleY);
     expect(middle.auraAlpha).toBeLessThan(start.auraAlpha);
 
-    expect(end.offsetX).toBeCloseTo(0, 5);
-    expect(end.offsetY).toBeCloseTo(0, 5);
-    expect(end.ghostScale).toBeCloseTo(1.08, 5);
+    expect(end.ghostAlpha).toBeCloseTo(1, 5);
+    expect(end.ghostScaleX).toBeCloseTo(1.03, 5);
+    expect(end.ghostScaleY).toBeCloseTo(1.04, 5);
     expect(end.auraAlpha).toBeCloseTo(0, 5);
     expect(end.coreAlpha).toBeCloseTo(0, 5);
+  });
+
+  test("uses the requested 1.5s spike path, 1s normal path, and 0.5s fast-skip floor", () => {
+    expect(baseTransitionDuration("spike")).toBeCloseTo(1.5, 5);
+    expect(baseTransitionDuration("normal")).toBeCloseTo(1, 5);
+
+    expect(retimedTransitionDuration("spike", 0)).toBeCloseTo(0.5, 5);
+    expect(retimedTransitionDuration("normal", 0.1)).toBeCloseTo(0.6, 5);
+    expect(retimedTransitionDuration("spike", 1.2)).toBeCloseTo(1.5, 5);
+  });
+
+  test("starts the wipe later than the explosion and keeps spike recoil ahead of it", () => {
+    const normal = transitionTimings("normal");
+    const spike = transitionTimings("spike");
+
+    expect(normal.explodeAt).toBeCloseTo(0, 5);
+    expect(normal.wipeCoverAt).toBeGreaterThan(normal.explodeAt);
+    expect(normal.wipeRevealAt).toBeGreaterThan(normal.wipeCoverAt);
+
+    expect(spike.explodeAt).toBeCloseTo(0.5, 5);
+    expect(spike.wipeCoverAt).toBeGreaterThan(spike.explodeAt);
+    expect(spike.wipeRevealAt).toBeGreaterThan(spike.wipeCoverAt);
   });
 });
