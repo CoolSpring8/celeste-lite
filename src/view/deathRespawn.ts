@@ -1,3 +1,5 @@
+import { VIEWPORT } from "../constants";
+
 export type SpawnTransitionKind = "initial" | "normal" | "spike";
 
 export interface SpawnIntroSample {
@@ -22,11 +24,8 @@ export const SPAWN_SEQUENCE_TIMING = {
 export const SPAWN_WIPE_VISUALS = {
   edgeOverscan: 24,
   color: 0x000000,
-  headWidth: 156,
-  headDepth: 26,
-  shoulderInset: 42,
-  shoulderLift: 5,
-  tailDepth: 18,
+  pointWidth: VIEWPORT.width + 24 * 2,
+  pointDepth: 64,
 } as const;
 
 export const SPAWN_INTRO_VISUALS = {

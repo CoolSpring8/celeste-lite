@@ -1055,27 +1055,22 @@ export class GameScene extends Phaser.Scene {
     const minX = -overscan;
     const maxX = VIEWPORT.width + overscan;
     const centerX = VIEWPORT.width * 0.5;
-    const shoulderInset = SPAWN_WIPE_VISUALS.shoulderInset;
-    const halfHead = SPAWN_WIPE_VISUALS.headWidth * 0.5;
+    const halfPoint = SPAWN_WIPE_VISUALS.pointWidth * 0.5;
 
     if (edge === "top") {
-      this.spawnWipe.moveTo(minX, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
-      this.spawnWipe.lineTo(centerX - shoulderInset, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
-      this.spawnWipe.lineTo(centerX - halfHead, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
-      this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.headDepth);
-      this.spawnWipe.lineTo(centerX + halfHead, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
-      this.spawnWipe.lineTo(centerX + shoulderInset, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
-      this.spawnWipe.lineTo(maxX, baseY + SPAWN_WIPE_VISUALS.shoulderLift);
+      this.spawnWipe.moveTo(minX, baseY);
+      this.spawnWipe.lineTo(centerX - halfPoint, baseY);
+      this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.pointDepth);
+      this.spawnWipe.lineTo(centerX + halfPoint, baseY);
+      this.spawnWipe.lineTo(maxX, baseY);
       return;
     }
 
-    this.spawnWipe.lineTo(maxX, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
-    this.spawnWipe.lineTo(centerX + shoulderInset, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
-    this.spawnWipe.lineTo(centerX + halfHead, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
-    this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.tailDepth);
-    this.spawnWipe.lineTo(centerX - halfHead, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
-    this.spawnWipe.lineTo(centerX - shoulderInset, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
-    this.spawnWipe.lineTo(minX, baseY - SPAWN_WIPE_VISUALS.shoulderLift);
+    this.spawnWipe.lineTo(maxX, baseY);
+    this.spawnWipe.lineTo(centerX + halfPoint, baseY);
+    this.spawnWipe.lineTo(centerX, baseY - SPAWN_WIPE_VISUALS.pointDepth);
+    this.spawnWipe.lineTo(centerX - halfPoint, baseY);
+    this.spawnWipe.lineTo(minX, baseY);
   }
 
   private createRefills(spawns: ReadonlyArray<RefillPickupEntity>): void {
