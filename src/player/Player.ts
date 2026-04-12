@@ -113,7 +113,6 @@ export class Player extends Actor {
   private liftTimer = 0;
 
   private wasOnGround = false;
-  private suppressGroundedLandingEffects = false;
   private effects: PlayerEffect[] = [];
 
   private cfg: PlayerConfig;
@@ -164,9 +163,6 @@ export class Player extends Actor {
     this.frameDt = dt;
     this.input = input;
     this.refreshEnvironment();
-    if (this.suppressGroundedLandingEffects && !this.onGround) {
-      this.suppressGroundedLandingEffects = false;
-    }
     this.wallDustDir = 0;
 
     if (this.forceMoveXTimer > 0) {
@@ -284,9 +280,6 @@ export class Player extends Actor {
     this.moveV(mulFloat(this.vy, dt));
 
     this.refreshEnvironment();
-    if (this.suppressGroundedLandingEffects && !this.onGround) {
-      this.suppressGroundedLandingEffects = false;
-    }
     this.updateHairState(dt);
 
     this.wasOnGround = this.onGround;
@@ -372,7 +365,7 @@ export class Player extends Actor {
     this.liftTimer = toFloat(this.cfg.lift.momentumStoreTime);
   }
 
-  hardRespawn(x: number, y: number): void {
+  resetStateAt(x: number, y: number): void {
     this.x = x;
     this.y = y;
     this.vx = 0;
@@ -388,7 +381,6 @@ export class Player extends Actor {
     this.wallDir = 0;
     this.wallDustDir = 0;
     this.wasOnGround = false;
-    this.suppressGroundedLandingEffects = false;
 
     this.moveXInput = 0;
     this.jumpGraceTimer = 0;
@@ -441,10 +433,11 @@ export class Player extends Actor {
     this.stateMachine.forceState("normal");
   }
 
-  finalizeRespawnState(): void {
+  // Scene-managed teleports bypass the normal update loop, so collision-derived
+  // state needs an explicit refresh before normal simulation resumes.
+  syncStateAfterExternalMove(): void {
     this.refreshEnvironment();
     this.wasOnGround = this.onGround;
-    this.suppressGroundedLandingEffects = this.onGround;
     if (this.onGround) {
       this.jumpGraceTimer = toFloat(this.cfg.jump.graceTime);
     }
@@ -1610,12 +1603,7 @@ export class Player extends Actor {
       this.applyDashSlide(!this.dashStartedOnGround);
     }
 
-    if (
-      step > 0 &&
-      this.vy > 0 &&
-      this.stateMachine.state !== "climb" &&
-      !this.suppressGroundedLandingEffects
-    ) {
+    if (step > 0 && this.vy > 0 && this.stateMachine.state !== "climb") {
       const impact = clamp01Float(this.vy / this.cfg.gravity.fastMaxFall);
       this.emit({ type: "land", impact });
     }

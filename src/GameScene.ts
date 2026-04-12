@@ -24,6 +24,12 @@ import {
   transitionTimings,
   SPAWN_WIPE_VISUALS,
 } from "./view/deathRespawn";
+import {
+  armRespawnEffectGate,
+  createRespawnEffectGate,
+  filterRespawnEffects,
+  resetRespawnEffectGate,
+} from "./view/respawnEffectGate";
 import { LightingSource, LightingSystem } from "./lighting/LightingSystem";
 
 interface RefillView {
@@ -113,6 +119,7 @@ export class GameScene extends Phaser.Scene {
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
   private spawnTransition: SpawnTransitionState | null = null;
+  private readonly respawnEffectGate = createRespawnEffectGate();
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
 
@@ -276,6 +283,7 @@ export class GameScene extends Phaser.Scene {
 
       let stepEffects = this.player.consumeEffects();
       const stepSnapshot = this.player.getSnapshot();
+      stepEffects = filterRespawnEffects(this.respawnEffectGate, stepSnapshot, stepEffects);
       const spike = this.world.collidesWithSpike(
         this.player.getHurtboxBounds(),
         stepSnapshot.vx,
@@ -525,8 +533,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private snapPlayerToCheckpoint(): void {
-    this.player.hardRespawn(this.spawnX, this.spawnY);
-    this.player.finalizeRespawnState();
+    this.player.resetStateAt(this.spawnX, this.spawnY);
+    this.player.syncStateAfterExternalMove();
+    armRespawnEffectGate(this.respawnEffectGate, this.player.getSnapshot());
     this.world.resetTransientState();
     this.syncRefillViews();
     this.controls.clearTransientState();
@@ -541,6 +550,7 @@ export class GameScene extends Phaser.Scene {
   private startSpawnTransition(
     state: Omit<SpawnTransitionState, "elapsed" | "totalDuration">,
   ): void {
+    resetRespawnEffectGate(this.respawnEffectGate);
     const totalDuration = baseTransitionDuration(state.kind);
     this.spawnTransition = {
       ...state,
