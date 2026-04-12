@@ -21,6 +21,7 @@ import {
   type PauseMenuOption,
   type PauseOptionsMenu,
 } from "./pause/menu";
+import { UnpauseRecovery } from "./pause/unpauseRecovery";
 import { clampRespawnSource, type PlayerIntroType } from "./player/intro";
 import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
 import { Player } from "./player/Player";
@@ -129,6 +130,7 @@ export class GameScene extends Phaser.Scene {
   private controls!: PlayerControls;
   private confirmBufferedFrames = 0;
   private readonly pauseMenu = new PauseMenuController();
+  private readonly unpauseRecovery = new UnpauseRecovery();
   private pauseOverlay!: PauseOverlay;
   private gameOptions: GameOptions = loadGameOptions();
 
@@ -271,6 +273,15 @@ export class GameScene extends Phaser.Scene {
 
     this.pauseOverlay.hide();
 
+    let accumulatorPrimed = false;
+    if (this.unpauseRecovery.active) {
+      accumulatorPrimed = true;
+      if (this.advanceUnpauseRecovery(rawFrameDt)) {
+        this.renderPassiveFrame();
+        return;
+      }
+    }
+
     if (this.keys.restart.isDown && this.deathRespawnSequence === null && this.player.canRetry) {
       this.beginNormalRespawn();
     }
@@ -331,7 +342,9 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.accumulator = addFloat(this.accumulator, rawFrameDt);
+    if (!accumulatorPrimed) {
+      this.accumulator = addFloat(this.accumulator, rawFrameDt);
+    }
     let steps = 0;
 
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
@@ -464,6 +477,7 @@ export class GameScene extends Phaser.Scene {
       this.keys.pause?.off("down", this.onPauseDown, this);
     }
     this.controls?.reset();
+    this.unpauseRecovery.clear();
     this.playerView?.destroy();
     this.pauseOverlay?.destroy();
     this.spawnWipe?.destroy();
@@ -477,7 +491,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gatherStepInput(): InputState {
-    if (!this.player.inControl) {
+    if (!this.player.inControl || this.unpauseRecovery.blocksControl) {
       this.controls.clearTransientState();
       return EMPTY_INPUT;
     }
@@ -498,6 +512,9 @@ export class GameScene extends Phaser.Scene {
     if (this.pauseMenu.isOpen) {
       this.pauseMenu.confirm();
       this.afterPauseMenuInteraction();
+      return;
+    }
+    if (this.unpauseRecovery.blocksControl) {
       return;
     }
     this.confirmBufferedFrames = 2;
@@ -522,6 +539,9 @@ export class GameScene extends Phaser.Scene {
       this.afterPauseMenuInteraction();
       return;
     }
+    if (this.unpauseRecovery.blocksControl) {
+      return;
+    }
     if (!this.player.inControl) {
       return;
     }
@@ -533,6 +553,9 @@ export class GameScene extends Phaser.Scene {
     if (this.pauseMenu.isOpen) {
       this.pauseMenu.cancel();
       this.afterPauseMenuInteraction();
+      return;
+    }
+    if (this.unpauseRecovery.active) {
       return;
     }
 
@@ -1313,6 +1336,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private openPauseMenu(): void {
+    this.unpauseRecovery.clear();
     this.controls.clearTransientState();
     this.stopScreenShake();
     this.refillEmitter.pause();
@@ -1325,20 +1349,20 @@ export class GameScene extends Phaser.Scene {
       kind: "action",
       title: "PAUSED",
       selectedIndex: 0,
-      onCancel: (controller) => {
-        controller.close();
+      onCancel: () => {
+        this.resumeFromPauseMenu();
       },
       items: [
         {
           label: "Resume",
-          activate: (controller) => {
-            controller.close();
+          activate: () => {
+            this.resumeFromPauseMenu();
           },
         },
         {
           label: "Retry",
-          activate: (controller) => {
-            controller.close();
+          activate: () => {
+            this.closePauseMenuImmediately();
             this.retryFromPause();
           },
         },
@@ -1397,8 +1421,9 @@ export class GameScene extends Phaser.Scene {
   private afterPauseMenuInteraction(): void {
     this.controls.clearTransientState();
     if (!this.pauseMenu.isOpen) {
-      this.refillEmitter.resume();
-      this.playerView.resumeEffects();
+      if (!this.unpauseRecovery.active) {
+        this.resumePauseManagedEffects();
+      }
       this.pauseOverlay.hide();
     }
   }
@@ -1413,5 +1438,70 @@ export class GameScene extends Phaser.Scene {
 
   private stopScreenShake(): void {
     this.cameras.main.resetFX();
+  }
+
+  private renderPassiveFrame(): void {
+    const snapshot = this.player.getSnapshot();
+    this.playerView.render(snapshot);
+    this.renderLighting(snapshot);
+    this.updateHUD(snapshot, []);
+    if (this.deathRespawnSequence !== null) {
+      this.renderSpawnWipe();
+    } else {
+      this.clearSpawnWipe();
+    }
+  }
+
+  private advanceUnpauseRecovery(rawFrameDt: number): boolean {
+    this.accumulator = addFloat(this.accumulator, rawFrameDt);
+
+    while (this.unpauseRecovery.active && this.accumulator >= this.fixedDt) {
+      const result = this.unpauseRecovery.step(this.currentUnpauseRecoveryHeldState());
+
+      if (result.openPause) {
+        this.accumulator = 0;
+        this.openPauseMenu();
+        return true;
+      }
+
+      if (result.blockGameplay) {
+        this.accumulator = subFloat(this.accumulator, this.fixedDt);
+        continue;
+      }
+
+      if (result.queueJump) {
+        this.controls.queuePress("jump");
+      }
+      if (result.queueDash) {
+        this.controls.queuePress("dash");
+      }
+      this.resumePauseManagedEffects();
+      return false;
+    }
+
+    return this.unpauseRecovery.active;
+  }
+
+  private currentUnpauseRecoveryHeldState(): { pause: boolean; jump: boolean; dash: boolean } {
+    return {
+      pause: this.keys.pause.isDown,
+      jump: this.keys.jump.isDown,
+      dash: this.keys.dash.isDown,
+    };
+  }
+
+  private resumeFromPauseMenu(): void {
+    this.pauseMenu.close();
+    this.unpauseRecovery.start(this.currentUnpauseRecoveryHeldState());
+  }
+
+  private closePauseMenuImmediately(): void {
+    this.pauseMenu.close();
+    this.unpauseRecovery.clear();
+  }
+
+  private resumePauseManagedEffects(): void {
+    this.refillEmitter.resume();
+    this.playerView.resumeEffects();
   }
 }

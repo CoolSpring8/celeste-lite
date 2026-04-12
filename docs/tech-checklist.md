@@ -135,7 +135,7 @@ All items in this section are currently `EXCLUDED` because required entities/sys
 | Cutscene Warps | EXCLUDED | No cutscene state machine |
 | Half Stamina Climbing | EXCLUDED | Requires a tighter audit of wallboost/climbjump timing than the local reference snapshot currently supports |
 | Kermit Dash | EXCLUDED | Requires transition cancellation behavior |
-| Pause Buffering | EXCLUDED | No pause system exists in this project yet |
+| Pause Buffering | WORKS | Pause/unpause includes a Celeste-style 10-frame recovery, 6-frame late hold window, and frame-11 repause path |
 | Roboboost | EXCLUDED | Requires moving blocks and advanced interactions |
 | Screen Transition Cassette Offset | EXCLUDED | No cassette/screen transition system |
 | Spinner Stunning | EXCLUDED | No spinner entity |
