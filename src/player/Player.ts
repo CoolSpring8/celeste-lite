@@ -17,6 +17,14 @@ import {
   toFloat,
 } from "./math";
 import { Actor, type MoveCollisionResult } from "./Actor";
+import {
+  introDuration,
+  isActivePlayerIntroSpec,
+  type ActivePlayerIntroSpec,
+  type PlayerIntroSpec,
+  samplePlayerIntroState,
+  type PlayerIntroType,
+} from "./intro";
 import { StateMachine } from "./StateMachine";
 import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
 
@@ -29,6 +37,7 @@ const USED_HAIR_LERP_RATE = 6;
 const BOUNCE_AUTO_JUMP_TIME = 0.1;
 const BOUNCE_VAR_JUMP_TIME = 0.2;
 const BOUNCE_SPEED = -140;
+const ZERO_DIRECTION = { x: 0, y: 0 };
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
@@ -112,6 +121,14 @@ export class Player extends Actor {
   private liftVy = 0;
   private liftTimer = 0;
 
+  private dead = false;
+  private justRespawned = false;
+  private lastDeathDirection: Readonly<{ x: number; y: number }> = ZERO_DIRECTION;
+  private introType: PlayerIntroType = "none";
+  private introElapsed = 0;
+  private introDuration = 0;
+  private introSourceX: number | null = null;
+  private introSourceY: number | null = null;
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
 
@@ -151,6 +168,20 @@ export class Player extends Actor {
       () => this.dashBegin(),
       () => this.dashEnd(),
     );
+    this.stateMachine.setCallbacks(
+      "intro_start",
+      () => this.introStartUpdate(),
+      undefined,
+      () => this.introStartBegin(),
+      () => this.introEnd(),
+    );
+    this.stateMachine.setCallbacks(
+      "intro_respawn",
+      () => this.introRespawnUpdate(),
+      undefined,
+      () => this.introRespawnBegin(),
+      () => this.introEnd(),
+    );
     this.stateMachine.forceState("normal");
   }
 
@@ -162,6 +193,11 @@ export class Player extends Actor {
     dt = toFloat(dt);
     this.frameDt = dt;
     this.input = input;
+    if (this.dead) {
+      this.refreshEnvironment();
+      return;
+    }
+
     this.refreshEnvironment();
     this.wallDustDir = 0;
 
@@ -282,6 +318,10 @@ export class Player extends Actor {
     this.refreshEnvironment();
     this.updateHairState(dt);
 
+    if (this.justRespawned && (this.vx !== 0 || this.vy !== 0)) {
+      this.justRespawned = false;
+    }
+
     this.wasOnGround = this.onGround;
   }
 
@@ -329,6 +369,8 @@ export class Player extends Actor {
     const drawH = this.ducking
       ? (PLAYER_GEOMETRY.drawH * PLAYER_GEOMETRY.crouchHitboxH) / PLAYER_GEOMETRY.hitboxH
       : PLAYER_GEOMETRY.drawH;
+    const centerX = this.x;
+    const centerY = bounds.y + hitboxH * 0.5;
 
     return {
       x: this.x,
@@ -337,8 +379,8 @@ export class Player extends Actor {
       top: bounds.y,
       right: bounds.x + hitboxW,
       bottom: bounds.y + hitboxH,
-      centerX: this.x,
-      centerY: bounds.y + hitboxH * 0.5,
+      centerX,
+      centerY,
       vx: this.vx,
       vy: this.vy,
       state: this.state,
@@ -356,6 +398,10 @@ export class Player extends Actor {
       drawH,
       isCrouched: this.ducking,
       isFastFalling: this.isFastFalling,
+      dead: this.dead,
+      justRespawned: this.justRespawned,
+      inControl: this.inControl,
+      intro: this.currentIntroSnapshot(centerX, centerY),
     };
   }
 
@@ -365,12 +411,13 @@ export class Player extends Actor {
     this.liftTimer = toFloat(this.cfg.lift.momentumStoreTime);
   }
 
-  resetStateAt(x: number, y: number): void {
+  private resetStateAt(x: number, y: number): void {
     this.x = x;
     this.y = y;
     this.vx = 0;
     this.vy = 0;
     this.clearMovementRemainders();
+    this.stateMachine.locked = false;
 
     this.facing = 1;
     this.collider = this.normalHitbox;
@@ -429,13 +476,17 @@ export class Player extends Actor {
     this.liftVy = 0;
     this.liftTimer = 0;
 
+    this.dead = false;
+    this.lastDeathDirection = ZERO_DIRECTION;
+    this.justRespawned = false;
+    this.clearIntroState();
     this.effects = [];
     this.stateMachine.forceState("normal");
   }
 
   // Scene-managed teleports bypass the normal update loop, so collision-derived
   // state needs an explicit refresh before normal simulation resumes.
-  syncStateAfterExternalMove(): void {
+  private syncStateAfterExternalMove(): void {
     this.refreshEnvironment();
     this.wasOnGround = this.onGround;
     if (this.onGround) {
@@ -443,8 +494,79 @@ export class Player extends Actor {
     }
   }
 
+  die(direction: Readonly<{ x: number; y: number }>): boolean {
+    if (this.dead) {
+      return false;
+    }
+
+    this.dead = true;
+    this.justRespawned = false;
+    this.lastDeathDirection = {
+      x: Math.sign(direction.x),
+      y: Math.sign(direction.y),
+    };
+    this.vx = 0;
+    this.vy = 0;
+    this.clearMovementRemainders();
+    this.clearIntroState();
+    this.effects = [];
+    this.stateMachine.locked = true;
+    return true;
+  }
+
+  reviveAt(
+    x: number,
+    y: number,
+    intro:
+      | PlayerIntroType
+      | PlayerIntroSpec = "none",
+  ): void {
+    const introSpec: PlayerIntroSpec = typeof intro === "string" ? { type: intro } : intro;
+    this.resetStateAt(x, y);
+    this.syncStateAfterExternalMove();
+    this.alignFacingForIntro(x, introSpec.type);
+
+    if (!isActivePlayerIntroSpec(introSpec)) {
+      return;
+    }
+
+    this.beginIntro(introSpec);
+  }
+
   get state(): PlayerState {
     return this.stateMachine.state;
+  }
+
+  get canRetry(): boolean {
+    return !this.dead && !this.timePaused;
+  }
+
+  get timePaused(): boolean {
+    if (this.dead) {
+      return true;
+    }
+
+    switch (this.stateMachine.state) {
+      case "intro_start":
+      case "intro_respawn":
+        return true;
+      default:
+        return false;
+    }
+  }
+
+  get inControl(): boolean {
+    if (this.dead) {
+      return false;
+    }
+
+    switch (this.stateMachine.state) {
+      case "intro_start":
+      case "intro_respawn":
+        return false;
+      default:
+        return true;
+    }
   }
 
   forceState(state: PlayerState): void {
@@ -497,6 +619,87 @@ export class Player extends Actor {
     this.onGround = ground.onGround;
     this.onJumpThrough = ground.onJumpThrough;
     this.wallDir = this.world.wallDirAt(body.x, body.y, body.w, body.h);
+  }
+
+  private currentIntroSnapshot(centerX: number, centerY: number) {
+    if (this.introType === "none") {
+      return null;
+    }
+
+    const duration = Math.max(this.introDuration, Number.EPSILON);
+    return samplePlayerIntroState(
+      this.introType,
+      this.introElapsed / duration,
+      centerX,
+      centerY,
+      this.introSourceX ?? centerX,
+      this.introSourceY ?? centerY,
+    );
+  }
+
+  private beginIntro(spec: ActivePlayerIntroSpec): void {
+    this.introType = spec.type;
+    this.introElapsed = 0;
+    this.introDuration = spec.duration ?? introDuration(spec.type);
+    this.introSourceX = spec.sourceX ?? null;
+    this.introSourceY = spec.sourceY ?? null;
+    this.justRespawned = spec.type === "respawn";
+    this.stateMachine.forceState(spec.type === "respawn" ? "intro_respawn" : "intro_start");
+  }
+
+  private clearIntroState(): void {
+    this.introType = "none";
+    this.introElapsed = 0;
+    this.introDuration = 0;
+    this.introSourceX = null;
+    this.introSourceY = null;
+  }
+
+  private alignFacingForIntro(x: number, introType: PlayerIntroType): void {
+    if (introType === "none") {
+      return;
+    }
+
+    const worldCenterX = (this.world.cols * WORLD.tile) * 0.5;
+    this.facing = x > worldCenterX ? -1 : 1;
+    this.lastAim = { x: this.facing, y: 0 };
+  }
+
+  private introStartBegin(): void {
+    this.vx = 0;
+    this.vy = 0;
+  }
+
+  private introRespawnBegin(): void {
+    this.vx = 0;
+    this.vy = 0;
+  }
+
+  private introStartUpdate(): PlayerState {
+    return this.advanceIntroState("intro_start");
+  }
+
+  private introRespawnUpdate(): PlayerState {
+    return this.advanceIntroState("intro_respawn");
+  }
+
+  private advanceIntroState(state: "intro_start" | "intro_respawn"): PlayerState {
+    this.vx = 0;
+    this.vy = 0;
+    this.introElapsed = Math.min(this.introDuration, this.introElapsed + this.frameDt);
+    if (this.introElapsed < this.introDuration) {
+      return state;
+    }
+
+    if (state === "intro_respawn") {
+      this.emit({ type: "respawn_pop" });
+    }
+
+    return "normal";
+  }
+
+  private introEnd(): void {
+    this.clearIntroState();
   }
 
   private normalBegin(): void {

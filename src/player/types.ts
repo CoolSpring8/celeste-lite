@@ -1,4 +1,6 @@
-export type PlayerState = "normal" | "climb" | "dash";
+import type { PlayerIntroStateSnapshot } from "./intro";
+
+export type PlayerState = "normal" | "climb" | "dash" | "intro_start" | "intro_respawn";
 
 export interface InputState {
   x: number;
@@ -25,7 +27,8 @@ export type PlayerEffectType =
   | "wall_jump"
   | "dash_start"
   | "wall_bounce"
-  | "land";
+  | "land"
+  | "respawn_pop";
 
 export interface PlayerEffect {
   type: PlayerEffectType;
@@ -69,4 +72,8 @@ export interface PlayerSnapshot {
   drawH: number;
   isCrouched: boolean;
   isFastFalling: boolean;
+  dead: boolean;
+  justRespawned: boolean;
+  inControl: boolean;
+  intro: PlayerIntroStateSnapshot | null;
 }

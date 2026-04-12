@@ -1,10 +1,9 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_VISUALS } from "../constants";
+import type { PlayerIntroStateSnapshot } from "../player/intro";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
-import {
-  sampleSpawnIntro,
-  SPAWN_SEQUENCE_TIMING,
-} from "./deathRespawn";
+import { sampleDeathEffect } from "./deathEffect";
+import { sampleStartIntro } from "./startIntro";
 
 type Sqrt11Pose = "idle" | "duck";
 
@@ -90,20 +89,6 @@ interface DeathFlashState {
   maxLife: number;
 }
 
-interface RespawnIntroState {
-  elapsed: number;
-  duration: number;
-  sparkTimer: number;
-  spawnX: number;
-  spawnY: number;
-  pose: Sqrt11Pose;
-  drawW: number;
-  drawH: number;
-  bodyColor: number;
-  hairColor: number;
-  facing: PlayerSnapshot["facing"];
-}
-
 interface DeathRecoilState {
   x: number;
   y: number;
@@ -127,10 +112,11 @@ export class PlayerView {
   private dashTrailColor: number = COLORS.playerOneDash;
   private dashDirX = 1;
   private dashDirY = 0;
+  private introSparkTimer = 0;
   private hideLiveSprite = false;
   private deathFlashState: DeathFlashState | null = null;
   private deathRecoil: DeathRecoilState | null = null;
-  private respawnIntro: RespawnIntroState | null = null;
+  private activeIntroType: PlayerIntroStateSnapshot["type"] | null = null;
   private prevCrouched: boolean | null = null;
   private prevOnGround = false;
   private facing: PlayerSnapshot["facing"] = 1;
@@ -239,6 +225,7 @@ export class PlayerView {
   tick(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);
+    this.updateIntroEffects(snapshot, dt);
     this.processEffects(snapshot, effects);
     this.processDuckStateTransition(snapshot);
     this.relaxScale(dt);
@@ -252,12 +239,13 @@ export class PlayerView {
 
   render(snapshot: PlayerSnapshot): void {
     this.syncFacing(snapshot.facing);
+    this.renderIntro(snapshot);
 
     const drawX = snapshot.x;
     const drawY = snapshot.y;
     const pose = this.resolveSqrt11Pose(snapshot);
 
-    if (this.hideLiveSprite) {
+    if (this.hideLiveSprite || snapshot.dead || snapshot.intro !== null) {
       this.playerSprite.container.setVisible(false);
       return;
     }
@@ -302,14 +290,14 @@ export class PlayerView {
   advanceDeathRespawn(dt: number): void {
     this.updateDeathRecoilVisual();
     this.updateDeathFlash(dt);
-    this.updateRespawnIntro(dt);
   }
 
   resetDeathRespawn(): void {
     this.hideLiveSprite = false;
     this.deathFlashState = null;
     this.deathRecoil = null;
-    this.respawnIntro = null;
+    this.activeIntroType = null;
+    this.introSparkTimer = 0;
     this.deathFlash.setVisible(false);
     this.deathRecoilOrb.setVisible(false);
     this.respawnAura.setVisible(false);
@@ -366,41 +354,6 @@ export class PlayerView {
     this.updateDeathRecoilVisual();
   }
 
-  startRespawnIntro(
-    snapshot: PlayerSnapshot,
-  ): void {
-    this.hideLiveSprite = true;
-    this.clearAfterimages();
-
-    const pose = this.resolveSqrt11Pose(snapshot);
-    const bodyColor = this.resolveBodyColor(snapshot);
-    const hairColor = this.resolveHairColor(snapshot);
-    this.respawnIntro = {
-      elapsed: 0,
-      duration: SPAWN_SEQUENCE_TIMING.spawnIntroDuration,
-      sparkTimer: 0,
-      spawnX: snapshot.x,
-      spawnY: snapshot.y,
-      pose,
-      drawW: snapshot.drawW,
-      drawH: snapshot.drawH,
-      bodyColor,
-      hairColor,
-      facing: snapshot.facing,
-    };
-
-    this.respawnAura.setVisible(true);
-    this.respawnCore.setVisible(true);
-    this.respawnSprite.container.setVisible(true);
-    this.respawnEmitter.setParticleTint(hairColor);
-    this.applyRespawnIntroFrame(this.respawnIntro);
-    this.respawnEmitter.emitParticleAt(
-      snapshot.x,
-      snapshot.y,
-      Math.max(3, Math.round(PLAYER_VISUALS.respawnSparkCount * 0.4)),
-    );
-  }
-
   private processEffects(snapshot: PlayerSnapshot, effects: PlayerEffect[]): void {
     for (const effect of effects) {
       switch (effect.type) {
@@ -446,6 +399,9 @@ export class PlayerView {
         case "wall_bounce":
           this.squash(0.55, 1.5);
           this.scene.cameras.main.shake(70, 0.003);
+          break;
+        case "respawn_pop":
+          this.squash(1.5, 0.5);
           break;
         case "land": {
           const impact = Phaser.Math.Clamp(effect.impact ?? 0, 0, 1);
@@ -580,57 +536,120 @@ export class PlayerView {
       .setScale(recoil.scale);
   }
 
-  private updateRespawnIntro(dt: number): void {
-    const intro = this.respawnIntro;
-    if (intro === null) {
-      this.respawnAura.setVisible(false);
-      this.respawnCore.setVisible(false);
-      this.respawnSprite.container.setVisible(false);
+  private updateIntroEffects(snapshot: PlayerSnapshot, dt: number): void {
+    const introType = snapshot.intro?.type ?? null;
+    if (introType !== this.activeIntroType) {
+      if (this.activeIntroType !== null) {
+        this.respawnEmitter.setParticleTint(snapshot.hairColor);
+        this.respawnEmitter.emitParticleAt(
+          snapshot.x,
+          snapshot.y,
+          PLAYER_VISUALS.respawnSparkCount,
+        );
+      }
+      this.activeIntroType = introType;
+      this.introSparkTimer = 0;
+      if (introType === "start") {
+        this.respawnEmitter.setParticleTint(snapshot.hairColor);
+        this.respawnEmitter.emitParticleAt(
+          snapshot.x,
+          snapshot.y,
+          Math.max(3, Math.round(PLAYER_VISUALS.respawnSparkCount * 0.4)),
+        );
+      } else if (introType === "respawn" && snapshot.intro !== null) {
+        this.respawnEmitter.setParticleTint(snapshot.hairColor);
+        this.respawnEmitter.emitParticleAt(
+          snapshot.centerX + snapshot.intro.offsetX,
+          snapshot.centerY + snapshot.intro.offsetY,
+          2,
+        );
+      }
+    }
+
+    if (snapshot.intro === null) {
       return;
     }
 
-    intro.elapsed = Math.min(intro.duration, intro.elapsed + dt);
-    intro.sparkTimer -= dt;
-    if (intro.sparkTimer <= 0) {
-      intro.sparkTimer = PLAYER_VISUALS.respawnSparkInterval;
-      const sample = sampleSpawnIntro(intro.elapsed / intro.duration);
+    this.introSparkTimer -= dt;
+    if (this.introSparkTimer > 0) {
+      return;
+    }
+
+    this.introSparkTimer = PLAYER_VISUALS.respawnSparkInterval;
+    if (snapshot.intro.type === "start") {
+      const sample = sampleStartIntro(snapshot.intro.progress);
+      this.respawnEmitter.setParticleTint(snapshot.hairColor);
       this.respawnEmitter.emitParticleAt(
-        intro.spawnX,
-        intro.spawnY - intro.drawH * (1 - sample.ghostScaleY) * 0.18,
+        snapshot.x,
+        snapshot.y - snapshot.drawH * (1 - sample.ghostScaleY) * 0.18,
         1,
       );
+      return;
     }
 
-    this.applyRespawnIntroFrame(intro);
-    if (intro.elapsed >= intro.duration) {
-      this.completeRespawnIntro(intro);
-    }
+    this.respawnEmitter.setParticleTint(snapshot.hairColor);
+    this.respawnEmitter.emitParticleAt(
+      snapshot.centerX + snapshot.intro.offsetX,
+      snapshot.centerY + snapshot.intro.offsetY,
+      1,
+    );
   }
 
-  private applyRespawnIntroFrame(intro: RespawnIntroState): void {
-    const sample = sampleSpawnIntro(intro.elapsed / intro.duration);
-    const x = intro.spawnX;
-    const y = intro.spawnY;
+  private renderIntro(snapshot: PlayerSnapshot): void {
+    if (snapshot.intro === null) {
+      this.hideIntroVisuals();
+      return;
+    }
+
+    if (snapshot.intro.type === "respawn") {
+      this.renderDeathEffect(snapshot, snapshot.intro);
+      return;
+    }
+
+    this.renderStartIntro(snapshot, snapshot.intro);
+  }
+
+  private renderDeathEffect(snapshot: PlayerSnapshot, intro: PlayerIntroStateSnapshot): void {
+    const effect = sampleDeathEffect(intro, snapshot.centerX, snapshot.centerY);
+
+    this.respawnSprite.container.setVisible(false);
+    this.respawnAura
+      .setVisible(effect.auraAlpha > 0.001)
+      .setPosition(effect.x, effect.y)
+      .setFillStyle(snapshot.hairColor, effect.auraAlpha)
+      .setScale(effect.auraScale);
+
+    this.respawnCore
+      .setVisible(effect.coreAlpha > 0.001)
+      .setPosition(effect.x, effect.y)
+      .setFillStyle(COLORS.dust, effect.coreAlpha)
+      .setScale(effect.coreScale);
+  }
+
+  private renderStartIntro(snapshot: PlayerSnapshot, intro: PlayerIntroStateSnapshot): void {
+    const sample = sampleStartIntro(intro.progress);
+    const x = snapshot.x;
+    const y = snapshot.y;
 
     this.applyGlyphSprite(
       this.respawnSprite,
-      intro.pose,
+      this.resolveSqrt11Pose(snapshot),
       x,
       y,
-      intro.drawW,
-      intro.drawH,
-      intro.bodyColor,
-      intro.hairColor,
+      snapshot.drawW,
+      snapshot.drawH,
+      this.resolveBodyColor(snapshot),
+      this.resolveHairColor(snapshot),
     );
     this.respawnSprite.container
       .setVisible(true)
       .setAlpha(sample.ghostAlpha)
-      .setScale(sample.ghostScaleX * intro.facing, sample.ghostScaleY);
+      .setScale(sample.ghostScaleX * snapshot.facing, sample.ghostScaleY);
 
     this.respawnAura
       .setVisible(sample.auraAlpha > 0.001)
       .setPosition(x, y)
-      .setFillStyle(intro.hairColor, sample.auraAlpha)
+      .setFillStyle(snapshot.hairColor, sample.auraAlpha)
       .setScale(sample.auraScale);
 
     this.respawnCore
@@ -640,14 +659,7 @@ export class PlayerView {
       .setScale(sample.coreScale);
   }
 
-  private completeRespawnIntro(intro: RespawnIntroState): void {
-    this.respawnEmitter.emitParticleAt(
-      intro.spawnX,
-      intro.spawnY,
-      PLAYER_VISUALS.respawnSparkCount,
-    );
-    this.hideLiveSprite = false;
-    this.respawnIntro = null;
+  private hideIntroVisuals(): void {
     this.respawnAura.setVisible(false);
     this.respawnCore.setVisible(false);
     this.respawnSprite.container.setVisible(false);
