@@ -58,6 +58,24 @@ describe("Player intro lifecycle", () => {
     expect(snapshot.facing).toBe(1);
   });
 
+  test("intro facing uses the spawn room center instead of the global world center", () => {
+    const specs: Parameters<typeof buildWorld>[0] = [];
+    withFloor(specs);
+    const world = buildWorld(specs);
+    const player = createPlayer(world, 300, 20 * WORLD.tile);
+
+    player.reviveAt(300, 20 * WORLD.tile, {
+      type: "respawn",
+      sourceX: 260,
+      sourceY: 120,
+      facingCenterX: 340,
+    });
+
+    const snapshot = player.getSnapshot();
+    expect(snapshot.state).toBe("intro_respawn");
+    expect(snapshot.facing).toBe(1);
+  });
+
   test("intro type none revives directly into normal control without intro state", () => {
     const specs: Parameters<typeof buildWorld>[0] = [];
     withFloor(specs);

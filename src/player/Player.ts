@@ -524,7 +524,7 @@ export class Player extends Actor {
     const introSpec: PlayerIntroSpec = typeof intro === "string" ? { type: intro } : intro;
     this.resetStateAt(x, y);
     this.syncStateAfterExternalMove();
-    this.alignFacingForIntro(x, introSpec.type);
+    this.alignFacingForIntro(x, introSpec);
 
     if (!isActivePlayerIntroSpec(introSpec)) {
       return;
@@ -655,13 +655,14 @@ export class Player extends Actor {
     this.introSourceY = null;
   }
 
-  private alignFacingForIntro(x: number, introType: PlayerIntroType): void {
-    if (introType === "none") {
+  private alignFacingForIntro(x: number, introSpec: PlayerIntroSpec): void {
+    if (introSpec.type === "none") {
       return;
     }
 
-    const worldCenterX = (this.world.cols * WORLD.tile) * 0.5;
-    this.facing = x > worldCenterX ? -1 : 1;
+    const defaultCenterX = (this.world.cols * WORLD.tile) * 0.5;
+    const compareCenterX = introSpec.facingCenterX ?? defaultCenterX;
+    this.facing = x > compareCenterX ? -1 : 1;
     this.lastAim = { x: this.facing, y: 0 };
   }
 

@@ -648,18 +648,25 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
+    const spawnRoom = findRoomAtPoint(this.rooms, this.spawnX, this.spawnY) ?? this.currentRoom;
+    const facingCenterX = spawnRoom.bounds.x + spawnRoom.bounds.w * 0.5;
     if (introType === "respawn") {
-      const respawnRoom = findRoomAtPoint(this.rooms, this.spawnX, this.spawnY) ?? this.currentRoom;
       const clampedSource = clampRespawnSource(sourceX, sourceY, {
-        left: respawnRoom.bounds.x,
-        right: respawnRoom.bounds.x + respawnRoom.bounds.w,
-        top: respawnRoom.bounds.y,
-        bottom: respawnRoom.bounds.y + respawnRoom.bounds.h,
+        left: spawnRoom.bounds.x,
+        right: spawnRoom.bounds.x + spawnRoom.bounds.w,
+        top: spawnRoom.bounds.y,
+        bottom: spawnRoom.bounds.y + spawnRoom.bounds.h,
       });
       this.player.reviveAt(this.spawnX, this.spawnY, {
         type: "respawn",
         sourceX: clampedSource.x,
         sourceY: clampedSource.y,
+        facingCenterX,
+      });
+    } else if (introType === "start") {
+      this.player.reviveAt(this.spawnX, this.spawnY, {
+        type: "start",
+        facingCenterX,
       });
     } else {
       this.player.reviveAt(this.spawnX, this.spawnY, introType);

@@ -12,6 +12,7 @@ export interface PlayerIntroSpec {
   type: PlayerIntroType;
   sourceX?: number;
   sourceY?: number;
+  facingCenterX?: number;
   duration?: number;
 }
 
