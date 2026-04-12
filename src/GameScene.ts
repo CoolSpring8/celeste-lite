@@ -610,7 +610,6 @@ export class GameScene extends Phaser.Scene {
     }
     if (transition.kind === "spike") {
       this.cameras.main.shake(120, 0.0026);
-      this.cameras.main.flash(180, 0, 0, 0, false);
     }
     transition.exploded = true;
   }

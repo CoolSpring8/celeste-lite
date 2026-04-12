@@ -32,6 +32,10 @@ export const PLAYER_INTRO_TIMING = {
   respawnClampPad: 40,
 } as const;
 
+export const PLAYER_RESPAWN_VISUALS = {
+  useSourceLerp: false,
+} as const;
+
 export function introDuration(type: Exclude<PlayerIntroType, "none">): number {
   switch (type) {
     case "start":
@@ -86,8 +90,12 @@ export function samplePlayerIntroState(
     };
   }
 
-  const fromOffsetX = (sourceX ?? currentCenterX) - currentCenterX;
-  const fromOffsetY = (sourceY ?? currentCenterY) - currentCenterY;
+  const fromOffsetX = PLAYER_RESPAWN_VISUALS.useSourceLerp
+    ? (sourceX ?? currentCenterX) - currentCenterX
+    : 0;
+  const fromOffsetY = PLAYER_RESPAWN_VISUALS.useSourceLerp
+    ? (sourceY ?? currentCenterY) - currentCenterY
+    : 0;
   return {
     type,
     progress: t,

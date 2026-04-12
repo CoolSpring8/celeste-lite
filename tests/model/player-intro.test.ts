@@ -21,7 +21,8 @@ describe("Player intro lifecycle", () => {
     expect(start.justRespawned).toBe(true);
     expect(start.facing).toBe(-1);
     expect(start.intro?.type).toBe("respawn");
-    expect(start.intro?.offsetX).not.toBe(0);
+    expect(start.intro?.offsetX).toBe(0);
+    expect(start.intro?.offsetY).toBe(0);
 
     const frames = step(player, {
       x: 0,

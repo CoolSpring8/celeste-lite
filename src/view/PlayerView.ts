@@ -95,6 +95,21 @@ interface DeathRecoilState {
   scale: number;
 }
 
+const RESPAWN_RECONSTRUCTION_VISUALS = {
+  burstSpeed: 22,
+  burstSpread: 14,
+  startRadiusXScale: 0.9,
+  startRadiusYScale: 0.8,
+  endRadiusXScale: 0.24,
+  endRadiusYScale: 0.2,
+  minRadiusX: 10,
+  minRadiusY: 8,
+  minEndRadius: 2,
+  startVelocityMult: 3.2,
+  endVelocityMult: 2.2,
+  velocityJitter: 0.14,
+} as const;
+
 export class PlayerView {
   private scene: Phaser.Scene;
   private playerSprite: GlyphSprite;
@@ -540,29 +555,24 @@ export class PlayerView {
     const introType = snapshot.intro?.type ?? null;
     if (introType !== this.activeIntroType) {
       if (this.activeIntroType !== null) {
-        this.respawnEmitter.setParticleTint(snapshot.hairColor);
-        this.respawnEmitter.emitParticleAt(
-          snapshot.x,
-          snapshot.y,
+        this.emitRespawnBurst(
+          snapshot.centerX,
+          snapshot.centerY,
           PLAYER_VISUALS.respawnSparkCount,
+          snapshot.hairColor,
         );
       }
       this.activeIntroType = introType;
       this.introSparkTimer = 0;
       if (introType === "start") {
-        this.respawnEmitter.setParticleTint(snapshot.hairColor);
-        this.respawnEmitter.emitParticleAt(
-          snapshot.x,
-          snapshot.y,
+        this.emitRespawnBurst(
+          snapshot.centerX,
+          snapshot.centerY,
           Math.max(3, Math.round(PLAYER_VISUALS.respawnSparkCount * 0.4)),
+          snapshot.hairColor,
         );
       } else if (introType === "respawn" && snapshot.intro !== null) {
-        this.respawnEmitter.setParticleTint(snapshot.hairColor);
-        this.respawnEmitter.emitParticleAt(
-          snapshot.centerX + snapshot.intro.offsetX,
-          snapshot.centerY + snapshot.intro.offsetY,
-          2,
-        );
+        this.emitRespawnReconstructionParticles(snapshot, snapshot.intro, 4);
       }
     }
 
@@ -578,21 +588,16 @@ export class PlayerView {
     this.introSparkTimer = PLAYER_VISUALS.respawnSparkInterval;
     if (snapshot.intro.type === "start") {
       const sample = sampleStartIntro(snapshot.intro.progress);
-      this.respawnEmitter.setParticleTint(snapshot.hairColor);
-      this.respawnEmitter.emitParticleAt(
-        snapshot.x,
+      this.emitRespawnBurst(
+        snapshot.centerX,
         snapshot.y - snapshot.drawH * (1 - sample.ghostScaleY) * 0.18,
         1,
+        snapshot.hairColor,
       );
       return;
     }
 
-    this.respawnEmitter.setParticleTint(snapshot.hairColor);
-    this.respawnEmitter.emitParticleAt(
-      snapshot.centerX + snapshot.intro.offsetX,
-      snapshot.centerY + snapshot.intro.offsetY,
-      1,
-    );
+    this.emitRespawnReconstructionParticles(snapshot, snapshot.intro, 1);
   }
 
   private renderIntro(snapshot: PlayerSnapshot): void {
@@ -872,6 +877,67 @@ export class PlayerView {
     this.deathEmitter.emitParticleAt(cx, cy, Math.ceil(count * 0.3));
     this.deathEmitter.setParticleTint(COLORS.dust);
     this.deathEmitter.emitParticleAt(cx, cy, Math.floor(count * 0.2));
+  }
+
+  private emitRespawnBurst(x: number, y: number, count: number, tint: number): void {
+    const speed = RESPAWN_RECONSTRUCTION_VISUALS.burstSpeed;
+    const spread = RESPAWN_RECONSTRUCTION_VISUALS.burstSpread;
+    this.respawnEmitter.setParticleTint(tint);
+    this.respawnEmitter.speedX = { min: -speed - spread, max: speed + spread };
+    this.respawnEmitter.speedY = { min: -speed - spread, max: speed + spread };
+    this.respawnEmitter.emitParticleAt(x, y, count);
+  }
+
+  private emitRespawnReconstructionParticles(
+    snapshot: PlayerSnapshot,
+    intro: PlayerIntroStateSnapshot,
+    count: number,
+  ): void {
+    const targetX = snapshot.centerX + intro.offsetX;
+    const targetY = snapshot.centerY + intro.offsetY;
+    const startRadiusX = Math.max(
+      snapshot.drawW * RESPAWN_RECONSTRUCTION_VISUALS.startRadiusXScale,
+      RESPAWN_RECONSTRUCTION_VISUALS.minRadiusX,
+    );
+    const startRadiusY = Math.max(
+      snapshot.drawH * RESPAWN_RECONSTRUCTION_VISUALS.startRadiusYScale,
+      RESPAWN_RECONSTRUCTION_VISUALS.minRadiusY,
+    );
+    const endRadiusX = Math.max(
+      snapshot.drawW * RESPAWN_RECONSTRUCTION_VISUALS.endRadiusXScale,
+      RESPAWN_RECONSTRUCTION_VISUALS.minEndRadius,
+    );
+    const endRadiusY = Math.max(
+      snapshot.drawH * RESPAWN_RECONSTRUCTION_VISUALS.endRadiusYScale,
+      RESPAWN_RECONSTRUCTION_VISUALS.minEndRadius,
+    );
+    const radiusX = Phaser.Math.Linear(startRadiusX, endRadiusX, intro.progress);
+    const radiusY = Phaser.Math.Linear(startRadiusY, endRadiusY, intro.progress);
+    const velocityMult = Phaser.Math.Linear(
+      RESPAWN_RECONSTRUCTION_VISUALS.startVelocityMult,
+      RESPAWN_RECONSTRUCTION_VISUALS.endVelocityMult,
+      intro.progress,
+    );
+
+    this.respawnEmitter.setParticleTint(snapshot.hairColor);
+    for (let i = 0; i < count; i++) {
+      const angle = Phaser.Math.FloatBetween(0, Math.PI * 2);
+      const px = targetX + Math.cos(angle) * radiusX;
+      const py = targetY + Math.sin(angle) * radiusY;
+      const baseVx = (targetX - px) * velocityMult;
+      const baseVy = (targetY - py) * velocityMult;
+      const vx = baseVx * Phaser.Math.FloatBetween(
+        1 - RESPAWN_RECONSTRUCTION_VISUALS.velocityJitter,
+        1 + RESPAWN_RECONSTRUCTION_VISUALS.velocityJitter,
+      );
+      const vy = baseVy * Phaser.Math.FloatBetween(
+        1 - RESPAWN_RECONSTRUCTION_VISUALS.velocityJitter,
+        1 + RESPAWN_RECONSTRUCTION_VISUALS.velocityJitter,
+      );
+      this.respawnEmitter.speedX = { min: vx, max: vx };
+      this.respawnEmitter.speedY = { min: vy, max: vy };
+      this.respawnEmitter.emitParticleAt(px, py, 1);
+    }
   }
 
   private clearAfterimages(): void {
