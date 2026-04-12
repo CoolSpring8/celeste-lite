@@ -44,6 +44,14 @@ export function retimedTransitionDuration(
   );
 }
 
+export function shortenedTransitionDuration(
+  kind: DeathRespawnSequenceKind,
+  currentTotalDuration: number,
+  elapsed: number,
+): number {
+  return Math.min(currentTotalDuration, retimedTransitionDuration(kind, elapsed));
+}
+
 export function transitionTimings(
   kind: DeathRespawnSequenceKind,
   totalDuration = baseTransitionDuration(kind),

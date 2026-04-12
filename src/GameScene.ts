@@ -20,7 +20,7 @@ import { PlayerView } from "./view/PlayerView";
 import {
   baseTransitionDuration,
   type DeathRespawnSequenceKind,
-  retimedTransitionDuration,
+  shortenedTransitionDuration,
   transitionTimings,
   SPAWN_WIPE_VISUALS,
 } from "./view/deathRespawn";
@@ -686,7 +686,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    transition.totalDuration = retimedTransitionDuration(transition.kind, transition.elapsed);
+    transition.totalDuration = shortenedTransitionDuration(
+      transition.kind,
+      transition.totalDuration,
+      transition.elapsed,
+    );
   }
 
   private tryApplyBufferedSkip(): void {

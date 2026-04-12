@@ -3,6 +3,7 @@ import { PLAYER_INTRO_TIMING } from "../../src/player/intro.ts";
 import {
   baseTransitionDuration,
   retimedTransitionDuration,
+  shortenedTransitionDuration,
   transitionTimings,
 } from "../../src/view/deathRespawn.ts";
 import { sampleStartIntro } from "../../src/view/startIntro.ts";
@@ -51,5 +52,13 @@ describe("Death and intro presentation math", () => {
     expect(spike.explodeAt).toBeCloseTo(0.5, 5);
     expect(spike.wipeCoverAt).toBeGreaterThan(spike.explodeAt);
     expect(spike.wipeRevealAt).toBeGreaterThan(spike.wipeCoverAt);
+  });
+
+  test("skip shortening is monotonic, so repeated confirm presses cannot replay the wipe", () => {
+    const once = shortenedTransitionDuration("normal", 1, 0.1);
+    const mashedLater = shortenedTransitionDuration("normal", once, 0.55);
+
+    expect(once).toBeCloseTo(0.6, 5);
+    expect(mashedLater).toBeCloseTo(once, 5);
   });
 });
