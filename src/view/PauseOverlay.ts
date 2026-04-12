@@ -14,12 +14,12 @@ interface PauseRowView {
 }
 
 const OVERLAY_DEPTH = 40;
-const PANEL_WIDTH = 248;
-const ACTION_ROW_HEIGHT = 18;
-const OPTIONS_ROW_HEIGHT = 20;
-const PANEL_TOP_PADDING = 28;
-const PANEL_BOTTOM_PADDING = 26;
-const ROW_GAP = 3;
+const LAYOUT_WIDTH = 236;
+const ACTION_ROW_HEIGHT = 16;
+const OPTIONS_ROW_HEIGHT = 18;
+const ROW_GAP = 4;
+const TITLE_TO_ROWS_GAP = 14;
+const ROWS_TO_HINT_GAP = 16;
 const COLOR_TITLE = "#f7f7ff";
 const COLOR_SELECTED = "#ffffff";
 const COLOR_TEXT = "#aeb3d8";
@@ -29,7 +29,6 @@ const COLOR_DISABLED = "#4d526f";
 export class PauseOverlay {
   private readonly container: Phaser.GameObjects.Container;
   private readonly backdrop: Phaser.GameObjects.Graphics;
-  private readonly panel: Phaser.GameObjects.Graphics;
   private readonly title: Phaser.GameObjects.Text;
   private readonly hint: Phaser.GameObjects.Text;
   private readonly rows: PauseRowView[] = [];
@@ -37,22 +36,21 @@ export class PauseOverlay {
   constructor(scene: Phaser.Scene) {
     this.container = scene.add.container(0, 0).setDepth(OVERLAY_DEPTH).setScrollFactor(0);
     this.backdrop = scene.add.graphics();
-    this.panel = scene.add.graphics();
     this.title = scene.add.text(0, 0, "", {
       fontFamily: "monospace",
-      fontSize: "20px",
+      fontSize: "18px",
       color: COLOR_TITLE,
       align: "center",
     });
     this.hint = scene.add.text(0, 0, "", {
       fontFamily: "monospace",
-      fontSize: "9px",
+      fontSize: "8px",
       color: COLOR_MUTED,
       align: "center",
-      wordWrap: { width: PANEL_WIDTH - 20, useAdvancedWrap: true },
+      wordWrap: { width: LAYOUT_WIDTH, useAdvancedWrap: true },
     });
 
-    this.container.add([this.backdrop, this.panel, this.title, this.hint]);
+    this.container.add([this.backdrop, this.title, this.hint]);
     this.hide();
   }
 
@@ -61,19 +59,19 @@ export class PauseOverlay {
 
     const rowHeight = screen.kind === "options" ? OPTIONS_ROW_HEIGHT : ACTION_ROW_HEIGHT;
     const itemHeight = screen.items.length * rowHeight + Math.max(0, screen.items.length - 1) * ROW_GAP;
-    const titleSize = screen.title === "PAUSED" ? 24 : 18;
-    const panelHeight = PANEL_TOP_PADDING + 24 + 12 + itemHeight + PANEL_BOTTOM_PADDING + 20;
-    const panelLeft = Math.round((VIEWPORT.width - PANEL_WIDTH) * 0.5);
-    const panelTop = Math.round((VIEWPORT.height - panelHeight) * 0.5);
-    const panelCenterX = panelLeft + PANEL_WIDTH * 0.5;
-    const rowStartY = panelTop + PANEL_TOP_PADDING + 30;
+    const titleSize = screen.title === "PAUSED" ? 22 : 16;
+    const blockHeight = titleSize + TITLE_TO_ROWS_GAP + itemHeight + ROWS_TO_HINT_GAP + 18;
+    const top = Math.round((VIEWPORT.height - blockHeight) * 0.5);
+    const centerX = Math.round(VIEWPORT.width * 0.5);
+    const layoutLeft = Math.round((VIEWPORT.width - LAYOUT_WIDTH) * 0.5);
+    const rowStartY = top + titleSize + TITLE_TO_ROWS_GAP;
 
-    this.redrawBackdrop(panelLeft, panelTop, panelHeight);
+    this.redrawBackdrop();
     this.title
       .setText(screen.title)
       .setFontSize(titleSize)
       .setOrigin(0.5, 0)
-      .setPosition(panelCenterX, panelTop + PANEL_TOP_PADDING - 4);
+      .setPosition(centerX, top);
 
     for (let i = 0; i < screen.items.length; i++) {
       const row = this.ensureRow(i);
@@ -86,9 +84,9 @@ export class PauseOverlay {
 
       if (screen.kind === "action") {
         row.label
-          .setX(panelCenterX)
+          .setX(centerX)
           .setOrigin(0.5, 0)
-          .setFontSize(14);
+          .setFontSize(12);
         row.leftArrow.setVisible(false);
         row.value.setVisible(false);
         row.rightArrow.setVisible(false);
@@ -98,26 +96,29 @@ export class PauseOverlay {
       const option = screen.items[i];
       const valueColor = selected ? COLOR_SELECTED : COLOR_TEXT;
       row.label
-        .setX(panelLeft + 20)
+        .setX(layoutLeft)
         .setOrigin(0, 0)
-        .setFontSize(12);
+        .setFontSize(11);
       row.leftArrow
         .setVisible(true)
         .setText("<")
-        .setPosition(panelLeft + PANEL_WIDTH - 68, y)
+        .setPosition(layoutLeft + LAYOUT_WIDTH - 62, y)
         .setOrigin(1, 0)
+        .setFontSize(11)
         .setColor(canMovePauseOption(option, -1) ? valueColor : COLOR_DISABLED);
       row.value
         .setVisible(true)
         .setText(currentPauseOptionLabel(option))
-        .setPosition(panelLeft + PANEL_WIDTH - 44, y)
+        .setPosition(layoutLeft + LAYOUT_WIDTH - 38, y)
         .setOrigin(0.5, 0)
+        .setFontSize(11)
         .setColor(valueColor);
       row.rightArrow
         .setVisible(true)
         .setText(">")
-        .setPosition(panelLeft + PANEL_WIDTH - 20, y)
+        .setPosition(layoutLeft + LAYOUT_WIDTH - 14, y)
         .setOrigin(0, 0)
+        .setFontSize(11)
         .setColor(canMovePauseOption(option, 1) ? valueColor : COLOR_DISABLED);
     }
 
@@ -130,14 +131,8 @@ export class PauseOverlay {
     }
 
     this.hint
-      .setText(
-        screen.kind === "options"
-          ? "Up/Down Select  Left/Right Change  X/Esc Save"
-          : screen.title === "PAUSED"
-          ? "Up/Down Select  C Confirm  X/Esc Resume"
-          : "Up/Down Select  C Confirm  X/Esc Back",
-      )
-      .setPosition(panelCenterX, panelTop + panelHeight - PANEL_BOTTOM_PADDING)
+      .setText(this.hintText(screen))
+      .setPosition(centerX, rowStartY + itemHeight + ROWS_TO_HINT_GAP)
       .setOrigin(0.5, 0.5);
   }
 
@@ -150,16 +145,10 @@ export class PauseOverlay {
     this.container.destroy(true);
   }
 
-  private redrawBackdrop(panelLeft: number, panelTop: number, panelHeight: number): void {
+  private redrawBackdrop(): void {
     this.backdrop.clear();
     this.backdrop.fillStyle(0x04050b, 0.68);
     this.backdrop.fillRect(0, 0, VIEWPORT.width, VIEWPORT.height);
-
-    this.panel.clear();
-    this.panel.fillStyle(0x15172a, 0.94);
-    this.panel.fillRoundedRect(panelLeft, panelTop, PANEL_WIDTH, panelHeight, 8);
-    this.panel.lineStyle(1, 0xa7acd4, 0.25);
-    this.panel.strokeRoundedRect(panelLeft, panelTop, PANEL_WIDTH, panelHeight, 8);
   }
 
   private ensureRow(index: number): PauseRowView {
@@ -182,8 +171,20 @@ export class PauseOverlay {
   private makeText(): Phaser.GameObjects.Text {
     return this.container.scene.add.text(0, 0, "", {
       fontFamily: "monospace",
-      fontSize: "12px",
+      fontSize: "11px",
       color: COLOR_TEXT,
     });
+  }
+
+  private hintText(screen: PauseMenuScreen): string {
+    if (screen.kind === "options") {
+      return "UP/DOWN: SELECT  |  LEFT/RIGHT: CHANGE  |  X/ESC: SAVE";
+    }
+
+    if (screen.title === "PAUSED") {
+      return "UP/DOWN: SELECT  |  C: CONFIRM  |  X/ESC: RESUME";
+    }
+
+    return "UP/DOWN: SELECT  |  C: CONFIRM  |  X/ESC: BACK";
   }
 }
