@@ -320,6 +320,20 @@ export class PlayerView {
     this.respawnSprite.container.setVisible(false);
   }
 
+  pauseEffects(): void {
+    this.dashEmitter.pause();
+    this.wallEmitter.pause();
+    this.deathEmitter.pause();
+    this.respawnEmitter.pause();
+  }
+
+  resumeEffects(): void {
+    this.dashEmitter.resume();
+    this.wallEmitter.resume();
+    this.deathEmitter.resume();
+    this.respawnEmitter.resume();
+  }
+
   startDeath(snapshot: PlayerSnapshot): void {
     this.startDeathAt(snapshot, snapshot.centerX, snapshot.centerY);
   }
@@ -413,7 +427,7 @@ export class PlayerView {
           break;
         case "wall_bounce":
           this.squash(0.55, 1.5);
-          this.scene.cameras.main.shake(70, 0.003);
+          this.shakeCamera(70, 0.003);
           break;
         case "respawn_pop":
           this.squash(1.5, 0.5);
@@ -967,6 +981,13 @@ export class PlayerView {
   private addCameraImpulse(x: number, y: number): void {
     const scene = this.scene as Phaser.Scene & { addCameraImpulse?: (ix: number, iy: number) => void };
     scene.addCameraImpulse?.(x, y);
+  }
+
+  private shakeCamera(durationMs: number, intensity: number): void {
+    const scene = this.scene as Phaser.Scene & {
+      requestScreenShake?: (durationMs: number, intensity: number) => void;
+    };
+    scene.requestScreenShake?.(durationMs, intensity);
   }
 
   private ensurePixelTexture(): void {

@@ -12,10 +12,20 @@ import {
   type RoomDirection,
 } from "./level";
 import { PlayerControls } from "./input/PlayerControls";
+import { loadGameOptions, saveGameOptions, type GameOptions } from "./options";
+import {
+  currentPauseOptionValue,
+  PauseMenuChoice,
+  PauseMenuController,
+  type PauseActionMenu,
+  type PauseMenuOption,
+  type PauseOptionsMenu,
+} from "./pause/menu";
 import { clampRespawnSource, type PlayerIntroType } from "./player/intro";
 import { addFloat, approach, maxFloat, stepTimer, subFloat, toFloat } from "./player/math";
 import { Player } from "./player/Player";
 import { InputState, PlayerEffect } from "./player/types";
+import { PauseOverlay } from "./view/PauseOverlay";
 import { PlayerView } from "./view/PlayerView";
 import {
   baseTransitionDuration,
@@ -99,6 +109,10 @@ const EMPTY_INPUT: InputState = {
   dashPressed: false,
   grab: false,
 };
+const ON_OFF_CHOICES: readonly PauseMenuChoice<boolean>[] = [
+  { label: "OFF", value: false },
+  { label: "ON", value: true },
+];
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -114,6 +128,9 @@ export class GameScene extends Phaser.Scene {
   private keys!: Record<string, Phaser.Input.Keyboard.Key>;
   private controls!: PlayerControls;
   private confirmBufferedFrames = 0;
+  private readonly pauseMenu = new PauseMenuController();
+  private pauseOverlay!: PauseOverlay;
+  private gameOptions: GameOptions = loadGameOptions();
 
   private accumulator = 0;
   private readonly fixedDt = toFloat(1 / 60);
@@ -190,6 +207,8 @@ export class GameScene extends Phaser.Scene {
     this.keys.jump.on("down", this.onJumpDown, this);
     this.keys.jump.on("up", this.onJumpUp, this);
     this.keys.dash.on("down", this.onDashDown, this);
+    this.keys.pause = kb.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
+    this.keys.pause.on("down", this.onPauseDown, this);
 
     this.hudText = this.add
       .text(8, 8, "", {
@@ -206,7 +225,7 @@ export class GameScene extends Phaser.Scene {
       .text(
         VIEWPORT.width - 8,
         VIEWPORT.height - 8,
-        "Move: arrow keys\nC jump  X dash  Z grab  R reset",
+        "Move: arrow keys\nC jump  X dash  Z grab  R reset  Esc pause",
         {
           fontFamily: "monospace",
           fontSize: "9px",
@@ -220,6 +239,7 @@ export class GameScene extends Phaser.Scene {
       .setDepth(10)
       .setScrollFactor(0);
 
+    this.pauseOverlay = new PauseOverlay(this);
     this.spawnInitialPlayer();
     const snapshot = this.player.getSnapshot();
     this.playerView.render(snapshot);
@@ -232,6 +252,24 @@ export class GameScene extends Phaser.Scene {
     if (this.confirmBufferedFrames > 0) {
       this.confirmBufferedFrames--;
     }
+
+    if (this.pauseMenu.isOpen) {
+      this.updatePauseInput();
+      const snapshot = this.player.getSnapshot();
+      this.playerView.render(snapshot);
+      this.renderLighting(snapshot);
+      this.updateHUD(snapshot, []);
+      this.renderSpawnWipe();
+      const current = this.pauseMenu.current;
+      if (current) {
+        this.pauseOverlay.render(current);
+      } else {
+        this.pauseOverlay.hide();
+      }
+      return;
+    }
+
+    this.pauseOverlay.hide();
 
     if (this.keys.restart.isDown && this.deathRespawnSequence === null && this.player.canRetry) {
       this.beginNormalRespawn();
@@ -407,7 +445,15 @@ export class GameScene extends Phaser.Scene {
   addCameraImpulse(x: number, y: number): void {
     if (x === 0 && y === 0) return;
     const intensity = Phaser.Math.Clamp(Math.hypot(x, y) * 0.00045, 0.0006, 0.0018);
-    this.cameras.main.shake(45, intensity);
+    this.requestScreenShake(45, intensity);
+  }
+
+  requestScreenShake(durationMs: number, intensity: number): void {
+    if (!this.gameOptions.screenShakeEffects) {
+      return;
+    }
+
+    this.cameras.main.shake(durationMs, intensity);
   }
 
   shutdown(): void {
@@ -415,9 +461,11 @@ export class GameScene extends Phaser.Scene {
       this.keys.jump.off("down", this.onJumpDown, this);
       this.keys.jump.off("up", this.onJumpUp, this);
       this.keys.dash.off("down", this.onDashDown, this);
+      this.keys.pause?.off("down", this.onPauseDown, this);
     }
     this.controls?.reset();
     this.playerView?.destroy();
+    this.pauseOverlay?.destroy();
     this.spawnWipe?.destroy();
     this.refillEmitter?.destroy();
     this.lighting?.destroy();
@@ -447,6 +495,11 @@ export class GameScene extends Phaser.Scene {
 
   private onJumpDown(event: KeyboardEvent): void {
     if (event.repeat) return;
+    if (this.pauseMenu.isOpen) {
+      this.pauseMenu.confirm();
+      this.afterPauseMenuInteraction();
+      return;
+    }
     this.confirmBufferedFrames = 2;
     if (this.deathRespawnSequence !== null) {
       this.requestDeathRespawnSkip();
@@ -464,10 +517,26 @@ export class GameScene extends Phaser.Scene {
 
   private onDashDown(event: KeyboardEvent): void {
     if (event.repeat) return;
+    if (this.pauseMenu.isOpen) {
+      this.pauseMenu.cancel();
+      this.afterPauseMenuInteraction();
+      return;
+    }
     if (!this.player.inControl) {
       return;
     }
     this.controls.queuePress("dash");
+  }
+
+  private onPauseDown(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    if (this.pauseMenu.isOpen) {
+      this.pauseMenu.cancel();
+      this.afterPauseMenuInteraction();
+      return;
+    }
+
+    this.openPauseMenu();
   }
 
   private spawnInitialPlayer(): void {
@@ -609,7 +678,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.startDeath(snapshot);
     }
     if (transition.kind === "spike") {
-      this.cameras.main.shake(120, 0.0026);
+      this.requestScreenShake(120, 0.0026);
     }
     transition.exploded = true;
   }
@@ -1167,7 +1236,7 @@ export class GameScene extends Phaser.Scene {
     for (const refill of consumed) {
       this.refillEmitter.setParticleTint(this.refillColor(refill.type));
       this.refillEmitter.emitParticleAt(refill.x, refill.visualY, 7);
-      this.cameras.main.shake(40, 0.0012);
+      this.requestScreenShake(40, 0.0012);
     }
 
     this.syncRefillViews();
@@ -1241,5 +1310,108 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.hudText.setText(lines.join("\n"));
+  }
+
+  private openPauseMenu(): void {
+    this.controls.clearTransientState();
+    this.stopScreenShake();
+    this.refillEmitter.pause();
+    this.playerView.pauseEffects();
+    this.pauseMenu.open(this.createPauseRootMenu());
+  }
+
+  private createPauseRootMenu(): PauseActionMenu {
+    return {
+      kind: "action",
+      title: "PAUSED",
+      selectedIndex: 0,
+      onCancel: (controller) => {
+        controller.close();
+      },
+      items: [
+        {
+          label: "Resume",
+          activate: (controller) => {
+            controller.close();
+          },
+        },
+        {
+          label: "Retry",
+          activate: (controller) => {
+            controller.close();
+            this.retryFromPause();
+          },
+        },
+        {
+          label: "Options",
+          activate: (controller) => {
+            controller.push(this.createOptionsMenu());
+          },
+        },
+      ],
+    };
+  }
+
+  private createOptionsMenu(): PauseOptionsMenu {
+    const screenShakeOption: PauseMenuOption<boolean> = {
+      label: "Screen Shake Effects",
+      values: ON_OFF_CHOICES,
+      valueIndex: this.gameOptions.screenShakeEffects ? 1 : 0,
+    };
+
+    const draft: PauseOptionsMenu = {
+      kind: "options",
+      title: "OPTIONS",
+      selectedIndex: 0,
+      onCancel: (controller) => {
+        const screenShakeEffects = currentPauseOptionValue(screenShakeOption);
+        this.gameOptions = saveGameOptions({
+          ...this.gameOptions,
+          screenShakeEffects: screenShakeEffects ?? this.gameOptions.screenShakeEffects,
+        });
+        if (!this.gameOptions.screenShakeEffects) {
+          this.stopScreenShake();
+        }
+        controller.pop();
+      },
+      items: [screenShakeOption],
+    };
+    return draft;
+  }
+
+  private updatePauseInput(): void {
+    if (Phaser.Input.Keyboard.JustDown(this.keys.up)) {
+      this.pauseMenu.moveVertical(-1);
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.down)) {
+      this.pauseMenu.moveVertical(1);
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.left)) {
+      this.pauseMenu.moveHorizontal(-1);
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keys.right)) {
+      this.pauseMenu.moveHorizontal(1);
+    }
+  }
+
+  private afterPauseMenuInteraction(): void {
+    this.controls.clearTransientState();
+    if (!this.pauseMenu.isOpen) {
+      this.refillEmitter.resume();
+      this.playerView.resumeEffects();
+      this.pauseOverlay.hide();
+    }
+  }
+
+  private retryFromPause(): void {
+    if (this.deathRespawnSequence !== null || !this.player.canRetry) {
+      return;
+    }
+
+    this.beginNormalRespawn();
+  }
+
+  private stopScreenShake(): void {
+    this.cameras.main.resetFX();
   }
 }
