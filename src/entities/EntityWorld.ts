@@ -452,12 +452,12 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
     const thickness = Math.min(SPIKE_HITBOX_THICKNESS, h);
     switch (spike.dir) {
       case "up":
-        return { x: spike.x, y: spike.y + WORLD.tile - h, w: WORLD.tile, h: thickness };
+        return { x: spike.x, y: spike.y + WORLD.tile - thickness, w: WORLD.tile, h: thickness };
       case "down":
         return { x: spike.x, y: spike.y, w: WORLD.tile, h: thickness };
       case "left":
         return {
-          x: spike.x + WORLD.tile - h,
+          x: spike.x + WORLD.tile - thickness,
           y: spike.y,
           w: thickness,
           h: WORLD.tile,

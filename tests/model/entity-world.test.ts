@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { SPIKE_HITBOX_THICKNESS, SPIKE_RENDER_HEIGHT, WORLD } from "../../src/constants.ts";
+import { SPIKE_HITBOX_THICKNESS, WORLD } from "../../src/constants.ts";
 import { Hitbox } from "../../src/entities/core/Hitbox.ts";
 import { EntityWorld } from "../../src/entities/EntityWorld.ts";
 import {
@@ -124,7 +124,7 @@ describe("EntityWorld Monocle model", () => {
     expect(world.collideCheck(RefillPickupEntity, refillProbe)).toBeTrue();
   });
 
-  test("spike colliders are thin rectangles aligned to the pointed edge", () => {
+  test("spike colliders are thin rectangles aligned to the spike root", () => {
     const world = EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, [
       { kind: "spike", col: 8, row: 9, dir: "up" },
       { kind: "spike", col: 10, row: 9, dir: "down" },
@@ -135,7 +135,7 @@ describe("EntityWorld Monocle model", () => {
     const [up, down, left, right] = world.spikes;
     expect(up?.collider?.bounds).toEqual({
       x: 8 * WORLD.tile,
-      y: 9 * WORLD.tile + WORLD.tile - SPIKE_RENDER_HEIGHT,
+      y: 9 * WORLD.tile + WORLD.tile - SPIKE_HITBOX_THICKNESS,
       w: WORLD.tile,
       h: SPIKE_HITBOX_THICKNESS,
     });
@@ -146,7 +146,7 @@ describe("EntityWorld Monocle model", () => {
       h: SPIKE_HITBOX_THICKNESS,
     });
     expect(left?.collider?.bounds).toEqual({
-      x: 12 * WORLD.tile + WORLD.tile - SPIKE_RENDER_HEIGHT,
+      x: 12 * WORLD.tile + WORLD.tile - SPIKE_HITBOX_THICKNESS,
       y: 9 * WORLD.tile,
       w: SPIKE_HITBOX_THICKNESS,
       h: WORLD.tile,

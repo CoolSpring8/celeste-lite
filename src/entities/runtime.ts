@@ -1,4 +1,4 @@
-import { SPIKE_HITBOX_THICKNESS, SPIKE_RENDER_HEIGHT, WORLD } from "../constants";
+import { SPIKE_HITBOX_THICKNESS, WORLD } from "../constants";
 import { Entity } from "./core/Entity";
 import { Grid } from "./core/Grid";
 import { Hitbox } from "./core/Hitbox";
@@ -13,7 +13,7 @@ function spikeHitbox(dir: SpikeDirection): Hitbox {
         WORLD.tile,
         SPIKE_HITBOX_THICKNESS,
         0,
-        WORLD.tile - SPIKE_RENDER_HEIGHT,
+        WORLD.tile - SPIKE_HITBOX_THICKNESS,
       );
     case "down":
       return new Hitbox(WORLD.tile, SPIKE_HITBOX_THICKNESS);
@@ -21,7 +21,7 @@ function spikeHitbox(dir: SpikeDirection): Hitbox {
       return new Hitbox(
         SPIKE_HITBOX_THICKNESS,
         WORLD.tile,
-        WORLD.tile - SPIKE_RENDER_HEIGHT,
+        WORLD.tile - SPIKE_HITBOX_THICKNESS,
         0,
       );
     case "right":
