@@ -51,6 +51,30 @@ describe("sqrt(11) player hair", () => {
     expect(dash.segmentOffset.y).toBeLessThan(run.segmentOffset.y);
   });
 
+  test("facing mirrors the hair anchor and segment direction instead of reusing the same side", () => {
+    const right = resolveHairLayout({
+      facing: 1,
+      isCrouched: false,
+      onGround: true,
+      state: "normal",
+      vx: 0,
+      vy: 0,
+    });
+    const left = resolveHairLayout({
+      facing: -1,
+      isCrouched: false,
+      onGround: true,
+      state: "normal",
+      vx: 0,
+      vy: 0,
+    });
+
+    expect(left.anchor.x).toBe(-right.anchor.x);
+    expect(left.anchor.y).toBe(right.anchor.y);
+    expect(left.segmentOffset.x).toBe(-right.segmentOffset.x);
+    expect(left.segmentOffset.y).toBe(right.segmentOffset.y);
+  });
+
   test("step keeps each node within the configured max distance of its target", () => {
     const layout = {
       anchor: { x: 0, y: 0 },

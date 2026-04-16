@@ -756,7 +756,7 @@ export class PlayerView {
     this.respawnSprite.container
       .setVisible(true)
       .setAlpha(sample.ghostAlpha)
-      .setScale(sample.ghostScaleX * snapshot.facing, sample.ghostScaleY);
+      .setScale(sample.ghostScaleX, sample.ghostScaleY);
 
     this.respawnAura
       .setVisible(sample.auraAlpha > 0.001)
@@ -854,7 +854,7 @@ export class PlayerView {
   }
 
   private squash(scaleX: number, scaleY: number): void {
-    this.playerSprite.container.setScale(Math.abs(scaleX) * this.facing, scaleY);
+    this.playerSprite.container.setScale(Math.abs(scaleX), scaleY);
   }
 
   private applyFastFallScale(snapshot: PlayerSnapshot): void {
@@ -899,7 +899,7 @@ export class PlayerView {
     const delta = PLAYER_VISUALS.scaleRelaxRate * dt;
     this.playerSprite.container.scaleX = this.approach(
       this.playerSprite.container.scaleX,
-      this.facing,
+      1,
       delta,
     );
     this.playerSprite.container.scaleY = this.approach(
@@ -1199,7 +1199,6 @@ export class PlayerView {
 
   private syncFacing(facing: PlayerSnapshot["facing"]): void {
     this.facing = facing;
-    this.playerSprite.container.scaleX = Math.abs(this.playerSprite.container.scaleX) * facing;
   }
 
   private isDashActive(snapshot: PlayerSnapshot): boolean {
@@ -1223,6 +1222,7 @@ export class PlayerView {
   ): void {
     sprite.container.setPosition(x, y);
     this.setGlyphSpritePose(sprite, pose, w, h);
+    this.setGlyphSpriteFacing(sprite, this.facing);
     this.setGlyphSpriteColors(sprite, bodyColor, hairColor);
     this.setGlyphHairPositions(sprite);
   }
@@ -1248,6 +1248,13 @@ export class PlayerView {
     for (const hairNode of sprite.hairNodes) {
       hairNode.setTint(hairColor);
     }
+  }
+
+  private setGlyphSpriteFacing(sprite: GlyphSprite, facing: PlayerSnapshot["facing"]): void {
+    const flipped = facing < 0;
+    sprite.body.setFlipX(flipped);
+    sprite.bangs.setFlipX(flipped);
+    sprite.legacyHair.setFlipX(flipped);
   }
 
   private updateGlyphHairState(

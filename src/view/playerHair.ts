@@ -39,13 +39,13 @@ const HAIR_LAYOUTS: Record<Sqrt11Pose, { anchor: HairPoint; segmentOffset: HairP
 };
 
 const DEFAULT_HAIR_NODE_COUNT: number = SQRT11_HAIR_RADII.length;
-const DEFAULT_FOLLOW_RATE = 40;
+const DEFAULT_FOLLOW_RATE = 20;
 
 export function resolveHairLayout(snapshot: HairSnapshotLike): HairLayout {
   const pose = resolveHairPose(snapshot);
   const base = HAIR_LAYOUTS[pose];
   const localVx = snapshot.vx * snapshot.facing;
-  let offsetX = base.segmentOffset.x + clamp(-localVx / 140, -0.6, 0.7);
+  let localOffsetX = base.segmentOffset.x + clamp(-localVx / 140, -0.6, 0.7);
   let offsetY = base.segmentOffset.y;
 
   if (!snapshot.onGround) {
@@ -59,17 +59,20 @@ export function resolveHairLayout(snapshot: HairSnapshotLike): HairLayout {
   }
 
   if (snapshot.state === "dash") {
-    offsetX -= 0.4;
+    localOffsetX -= 0.4;
     offsetY -= 0.45;
   } else if (snapshot.state === "climb") {
-    offsetX += 0.15;
+    localOffsetX += 0.15;
     offsetY -= 0.1;
   }
 
   return {
-    anchor: base.anchor,
+    anchor: {
+      x: base.anchor.x * snapshot.facing,
+      y: base.anchor.y,
+    },
     segmentOffset: {
-      x: clamp(offsetX, -1.9, 0.35),
+      x: clamp(localOffsetX, -1.9, 0.35) * snapshot.facing,
       y: clamp(offsetY, 0.45, 2.15),
     },
     maxDistance: base.maxDistance,
