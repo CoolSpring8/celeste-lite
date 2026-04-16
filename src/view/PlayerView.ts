@@ -3,13 +3,26 @@ import { COLORS, PLAYER_CONFIG, PLAYER_VISUALS } from "../constants";
 import type { PlayerIntroStateSnapshot } from "../player/intro";
 import { PlayerEffect, PlayerSnapshot } from "../player/types";
 import { sampleDeathEffect } from "./deathEffect";
+import {
+  resolveHairLayout,
+  snapHairChain,
+  SQRT11_HAIR_RADII,
+  stepHairChain,
+  type HairPoint,
+  type Sqrt11Pose,
+} from "./playerHair";
 import { sampleStartIntro } from "./startIntro";
-
-type Sqrt11Pose = "idle" | "duck";
 
 type PixelRun = readonly [x: number, width: number];
 
 interface PixelGlyph {
+  width: number;
+  height: number;
+  bangRows: readonly (readonly PixelRun[])[];
+  bodyRows: readonly (readonly PixelRun[])[];
+}
+
+interface LegacyPixelGlyph {
   width: number;
   height: number;
   hairRows: readonly (readonly PixelRun[])[];
@@ -17,6 +30,58 @@ interface PixelGlyph {
 }
 
 const SQRT11_GLYPHS: Record<Sqrt11Pose, PixelGlyph> = {
+  idle: {
+    width: 8,
+    height: 11,
+    bangRows: [
+      [],
+      [[2, 6]],
+      [[2, 6]],
+      [[2, 1]],
+      [[2, 1]],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ],
+    bodyRows: [
+      [],
+      [],
+      [],
+      [],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+    ],
+  },
+  duck: {
+    width: 8,
+    height: 6,
+    bangRows: [
+      [[2, 5]],
+      [[2, 2]],
+      [[2, 1]],
+      [],
+      [],
+      [],
+    ],
+    bodyRows: [
+      [],
+      [],
+      [],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+      [[4, 1], [6, 1]],
+    ],
+  },
+};
+
+const LEGACY_SQRT11_GLYPHS: Record<Sqrt11Pose, LegacyPixelGlyph> = {
   idle: {
     width: 8,
     height: 11,
@@ -78,7 +143,10 @@ interface Afterimage {
 interface GlyphSprite {
   container: Phaser.GameObjects.Container;
   body: Phaser.GameObjects.Image;
-  hair: Phaser.GameObjects.Image;
+  bangs: Phaser.GameObjects.Image;
+  legacyHair: Phaser.GameObjects.Image;
+  hairNodes: Phaser.GameObjects.Image[];
+  hairPoints: HairPoint[];
 }
 
 interface DeathFlashState {
@@ -110,10 +178,23 @@ const RESPAWN_RECONSTRUCTION_VISUALS = {
   velocityJitter: 0.14,
 } as const;
 
+const HAIR_NODE_GLYPHS = {
+  thin: {
+    width: 3,
+    height: 3,
+    rows: [
+      [[1, 1]],
+      [[0, 3]],
+      [[1, 1]],
+    ] as const,
+  },
+} as const;
+
 export class PlayerView {
   private scene: Phaser.Scene;
   private playerSprite: GlyphSprite;
   private respawnSprite: GlyphSprite;
+  private dynamicHairEnabled = false;
   private dashSlash: Phaser.GameObjects.Rectangle;
   private deathFlash: Phaser.GameObjects.Ellipse;
   private deathRecoilOrb: Phaser.GameObjects.Ellipse;
@@ -145,6 +226,7 @@ export class PlayerView {
     this.scene = scene;
     this.ensurePixelTexture();
     this.ensureGlyphTextures();
+    this.ensureHairNodeTextures();
 
     this.playerSprite = this.createGlyphSprite(5);
     this.respawnSprite = this.createGlyphSprite(6);
@@ -237,9 +319,19 @@ export class PlayerView {
     this.respawnEmitter.setDepth(6);
   }
 
+  setDynamicHairEnabled(enabled: boolean): void {
+    this.dynamicHairEnabled = enabled;
+  }
+
   tick(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);
+    this.updateGlyphHairState(
+      this.playerSprite,
+      snapshot,
+      dt,
+      snapshot.justRespawned ? "snap" : "simulate",
+    );
     this.updateIntroEffects(snapshot, dt);
     this.processEffects(snapshot, effects);
     this.processDuckStateTransition(snapshot);
@@ -650,6 +742,7 @@ export class PlayerView {
     const x = snapshot.x;
     const y = snapshot.y;
 
+    this.updateGlyphHairState(this.respawnSprite, snapshot, 0, "snap");
     this.applyGlyphSprite(
       this.respawnSprite,
       this.resolveSqrt11Pose(snapshot),
@@ -730,8 +823,17 @@ export class PlayerView {
       .setAlpha(0.55)
       .setVisible(true)
       .setScale(this.playerSprite.container.scaleX, this.playerSprite.container.scaleY);
-    this.setGlyphSpritePose(sprite, pose, drawW, drawH);
-    this.setGlyphSpriteColors(sprite, COLORS.playerBody, color);
+    this.copyGlyphHairState(this.playerSprite, sprite);
+    this.applyGlyphSprite(
+      sprite,
+      pose,
+      x,
+      y,
+      drawW,
+      drawH,
+      COLORS.playerBody,
+      color,
+    );
 
     this.afterimages.push({
       sprite,
@@ -1000,16 +1102,33 @@ export class PlayerView {
     g.destroy();
   }
 
+  private ensureHairNodeTextures(): void {
+    this.ensureHairNodeTexture("thin");
+  }
+
+  private ensureHairNodeTexture(size: keyof typeof HAIR_NODE_GLYPHS): void {
+    const key = this.hairNodeTextureKey(size);
+    if (this.scene.textures.exists(key)) return;
+
+    const glyph = HAIR_NODE_GLYPHS[size];
+    const g = this.scene.add.graphics();
+    this.drawGlyphRows(g, glyph.rows, 0, 0, 1, 1, 0xffffff, 1);
+    g.generateTexture(key, glyph.width, glyph.height);
+    g.destroy();
+  }
+
   private ensureGlyphTextures(): void {
     for (const pose of Object.keys(SQRT11_GLYPHS) as Sqrt11Pose[]) {
       this.ensureGlyphTexture(pose, "body", SQRT11_GLYPHS[pose].bodyRows);
-      this.ensureGlyphTexture(pose, "hair", SQRT11_GLYPHS[pose].hairRows);
+      this.ensureGlyphTexture(pose, "bang", SQRT11_GLYPHS[pose].bangRows);
+      this.ensureLegacyGlyphTexture(pose, "body", LEGACY_SQRT11_GLYPHS[pose].bodyRows);
+      this.ensureLegacyGlyphTexture(pose, "hair", LEGACY_SQRT11_GLYPHS[pose].hairRows);
     }
   }
 
   private ensureGlyphTexture(
     pose: Sqrt11Pose,
-    layer: "body" | "hair",
+    layer: "body" | "bang",
     rows: readonly (readonly PixelRun[])[],
   ): void {
     const key = this.glyphTextureKey(pose, layer);
@@ -1022,16 +1141,59 @@ export class PlayerView {
     g.destroy();
   }
 
+  private ensureLegacyGlyphTexture(
+    pose: Sqrt11Pose,
+    layer: "body" | "hair",
+    rows: readonly (readonly PixelRun[])[],
+  ): void {
+    const key = this.legacyGlyphTextureKey(pose, layer);
+    if (this.scene.textures.exists(key)) return;
+
+    const glyph = LEGACY_SQRT11_GLYPHS[pose];
+    const g = this.scene.add.graphics();
+    this.drawGlyphRows(g, rows, 0, 0, 1, 1, 0xffffff, 1);
+    g.generateTexture(key, glyph.width, glyph.height);
+    g.destroy();
+  }
+
   private createGlyphSprite(depth: number): GlyphSprite {
     const body = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "body")).setOrigin(0.5, 1);
-    const hair = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "hair")).setOrigin(0.5, 1);
-    const container = this.scene.add.container(0, 0, [body, hair]).setDepth(depth);
-    return { container, body, hair };
+    const bangs = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "bang")).setOrigin(0.5, 1);
+    const legacyHair = this.scene.add.image(0, 0, this.legacyGlyphTextureKey("idle", "hair")).setOrigin(0.5, 1);
+    const hairNodes = SQRT11_HAIR_RADII.map(() =>
+      this.scene.add
+        .image(0, 0, this.hairNodeTextureKey("thin"))
+        .setOrigin(0.5)
+        .setTint(COLORS.playerOneDash),
+    );
+    const container = this.scene.add
+      .container(0, 0, [...hairNodes, body, bangs, legacyHair])
+      .setDepth(depth);
+
+    return {
+      container,
+      body,
+      bangs,
+      legacyHair,
+      hairNodes,
+      hairPoints: snapHairChain(resolveHairLayout({
+        facing: 1,
+        isCrouched: false,
+        onGround: true,
+        state: "normal",
+        vx: 0,
+        vy: 0,
+      })),
+    };
   }
 
   private destroyGlyphSprite(sprite: GlyphSprite): void {
     sprite.body.destroy();
-    sprite.hair.destroy();
+    sprite.bangs.destroy();
+    sprite.legacyHair.destroy();
+    for (const hairNode of sprite.hairNodes) {
+      hairNode.destroy();
+    }
     sprite.container.destroy();
   }
 
@@ -1062,24 +1224,76 @@ export class PlayerView {
     sprite.container.setPosition(x, y);
     this.setGlyphSpritePose(sprite, pose, w, h);
     this.setGlyphSpriteColors(sprite, bodyColor, hairColor);
+    this.setGlyphHairPositions(sprite);
   }
 
   private setGlyphSpritePose(sprite: GlyphSprite, pose: Sqrt11Pose, w: number, h: number): void {
     sprite.body
-      .setTexture(this.glyphTextureKey(pose, "body"))
+      .setTexture(this.dynamicHairEnabled
+        ? this.glyphTextureKey(pose, "body")
+        : this.legacyGlyphTextureKey(pose, "body"))
       .setDisplaySize(w, h);
-    sprite.hair
-      .setTexture(this.glyphTextureKey(pose, "hair"))
+    sprite.bangs
+      .setTexture(this.glyphTextureKey(pose, "bang"))
+      .setDisplaySize(w, h);
+    sprite.legacyHair
+      .setTexture(this.legacyGlyphTextureKey(pose, "hair"))
       .setDisplaySize(w, h);
   }
 
   private setGlyphSpriteColors(sprite: GlyphSprite, bodyColor: number, hairColor: number): void {
     sprite.body.setTint(bodyColor);
-    sprite.hair.setTint(hairColor);
+    sprite.bangs.setTint(hairColor);
+    sprite.legacyHair.setTint(hairColor);
+    for (const hairNode of sprite.hairNodes) {
+      hairNode.setTint(hairColor);
+    }
   }
 
-  private glyphTextureKey(pose: Sqrt11Pose, layer: "body" | "hair"): string {
+  private updateGlyphHairState(
+    sprite: GlyphSprite,
+    snapshot: PlayerSnapshot,
+    dt: number,
+    mode: "simulate" | "snap",
+  ): void {
+    const layout = resolveHairLayout(snapshot);
+    sprite.hairPoints = mode === "snap"
+      ? snapHairChain(layout, sprite.hairNodes.length)
+      : stepHairChain(sprite.hairPoints, layout, dt, sprite.hairNodes.length);
+  }
+
+  private copyGlyphHairState(from: GlyphSprite, to: GlyphSprite): void {
+    to.hairPoints = from.hairPoints.map((point) => ({ x: point.x, y: point.y }));
+  }
+
+  private setGlyphHairPositions(sprite: GlyphSprite): void {
+    sprite.legacyHair.setVisible(!this.dynamicHairEnabled);
+    sprite.bangs.setVisible(this.dynamicHairEnabled);
+
+    for (let i = 0; i < sprite.hairNodes.length; i++) {
+      const point = sprite.hairPoints[i];
+      const node = sprite.hairNodes[i];
+      if (!this.dynamicHairEnabled || !point) {
+        node.setVisible(false);
+        continue;
+      }
+
+      node
+        .setVisible(true)
+        .setPosition(point.x, point.y);
+    }
+  }
+
+  private glyphTextureKey(pose: Sqrt11Pose, layer: "body" | "bang"): string {
     return `sqrt11-${pose}-${layer}`;
+  }
+
+  private legacyGlyphTextureKey(pose: Sqrt11Pose, layer: "body" | "hair"): string {
+    return `sqrt11-legacy-${pose}-${layer}`;
+  }
+
+  private hairNodeTextureKey(size: keyof typeof HAIR_NODE_GLYPHS): string {
+    return `sqrt11-hair-node-${size}`;
   }
 
   private drawGlyphRows(

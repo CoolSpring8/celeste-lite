@@ -21,20 +21,28 @@ function createStorage(initial: Record<string, string> = {}): StorageLike {
 }
 
 describe("Game options", () => {
-  test("screen shake defaults to on when storage is empty", () => {
+  test("screen shake defaults to on and dynamic hair defaults to off when storage is empty", () => {
     const storage = createStorage();
     expect(loadGameOptions(storage)).toEqual(DEFAULT_GAME_OPTIONS);
   });
 
-  test("screen shake selection persists through storage", () => {
+  test("screen shake and dynamic hair selections persist through storage", () => {
     const storage = createStorage();
 
-    saveGameOptions({ screenShakeEffects: false }, storage);
+    saveGameOptions({ screenShakeEffects: false, dynamicHair: true }, storage);
 
     expect(storage.getItem(GAME_OPTIONS_STORAGE_KEY)).toBe(
-      JSON.stringify({ screenShakeEffects: false }),
+      JSON.stringify({ screenShakeEffects: false, dynamicHair: true }),
     );
-    expect(loadGameOptions(storage)).toEqual({ screenShakeEffects: false });
+    expect(loadGameOptions(storage)).toEqual({ screenShakeEffects: false, dynamicHair: true });
+  });
+
+  test("missing newer fields in stored payloads fall back to defaults", () => {
+    const storage = createStorage({
+      [GAME_OPTIONS_STORAGE_KEY]: JSON.stringify({ screenShakeEffects: false }),
+    });
+
+    expect(loadGameOptions(storage)).toEqual({ screenShakeEffects: false, dynamicHair: false });
   });
 
   test("invalid stored option payloads fall back to defaults", () => {

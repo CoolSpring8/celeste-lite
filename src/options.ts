@@ -5,12 +5,14 @@ export interface StorageLike {
 
 export interface GameOptions {
   screenShakeEffects: boolean;
+  dynamicHair: boolean;
 }
 
 export const GAME_OPTIONS_STORAGE_KEY = "celeste-lite.options";
 
 export const DEFAULT_GAME_OPTIONS: Readonly<GameOptions> = Object.freeze({
   screenShakeEffects: true,
+  dynamicHair: false,
 });
 
 const memoryStorage = new Map<string, string>();
@@ -48,6 +50,9 @@ function normalizeGameOptions(value: Partial<GameOptions> | null | undefined): G
     screenShakeEffects: typeof value?.screenShakeEffects === "boolean"
       ? value.screenShakeEffects
       : DEFAULT_GAME_OPTIONS.screenShakeEffects,
+    dynamicHair: typeof value?.dynamicHair === "boolean"
+      ? value.dynamicHair
+      : DEFAULT_GAME_OPTIONS.dynamicHair,
   };
 }
 

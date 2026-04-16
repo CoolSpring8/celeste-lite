@@ -179,6 +179,7 @@ export class GameScene extends Phaser.Scene {
 
     this.player = new Player(this.spawnX, this.spawnY, this.world, PLAYER_CONFIG);
     this.playerView = new PlayerView(this);
+    this.playerView.setDynamicHairEnabled(this.gameOptions.dynamicHair);
     this.ensurePixelTexture();
     this.refillEmitter = this.add.particles(0, 0, "pixel", {
       speed: { min: 8, max: 36 },
@@ -1470,6 +1471,11 @@ export class GameScene extends Phaser.Scene {
       values: ON_OFF_CHOICES,
       valueIndex: this.gameOptions.screenShakeEffects ? 1 : 0,
     };
+    const dynamicHairOption: PauseMenuOption<boolean> = {
+      label: "Dynamic Hair",
+      values: ON_OFF_CHOICES,
+      valueIndex: this.gameOptions.dynamicHair ? 1 : 0,
+    };
 
     const draft: PauseOptionsMenu = {
       kind: "options",
@@ -1477,16 +1483,19 @@ export class GameScene extends Phaser.Scene {
       selectedIndex: 0,
       onCancel: (controller) => {
         const screenShakeEffects = currentPauseOptionValue(screenShakeOption);
+        const dynamicHair = currentPauseOptionValue(dynamicHairOption);
         this.gameOptions = saveGameOptions({
           ...this.gameOptions,
           screenShakeEffects: screenShakeEffects ?? this.gameOptions.screenShakeEffects,
+          dynamicHair: dynamicHair ?? this.gameOptions.dynamicHair,
         });
+        this.playerView.setDynamicHairEnabled(this.gameOptions.dynamicHair);
         if (!this.gameOptions.screenShakeEffects) {
           this.stopScreenShake();
         }
         controller.pop();
       },
-      items: [screenShakeOption],
+      items: [screenShakeOption, dynamicHairOption],
     };
     return draft;
   }
