@@ -6,6 +6,7 @@ import {
   buildWorld,
   createPlayer,
   makeInput,
+  step,
   stepOnce,
   withFloor,
 } from "../support/harness.ts";
@@ -73,6 +74,55 @@ describe("Climb behavior", () => {
     player.stamina = 0;
     player.wallBoostTimer = 0;
     expect(player.getSnapshot().isTired).toBeTrue();
+  });
+
+  test("climb sweat snapshot distinguishes climb and danger states", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    for (let row = 15; row <= 19; row++) {
+      specs.push({ kind: "solidTile", col: 10, row });
+    }
+    const world = buildWorld(specs);
+    const player = createPlayer(
+      world,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
+    ) as unknown as { stamina: number; getSnapshot: () => PlayerSnapshot };
+
+    let snapshot = player.getSnapshot();
+    for (let frame = 0; frame < 8; frame++) {
+      snapshot = stepOnce(player, makeInput({ grab: true, y: -1 })).snapshot;
+    }
+    expect(snapshot.state).toBe("climb");
+    expect(snapshot.sweatState).toBe("climb");
+
+    player.stamina = PLAYER_CONFIG.climb.tiredThreshold;
+    snapshot = stepOnce(player, makeInput({ grab: true, y: -1 })).snapshot;
+    expect(snapshot.sweatState).toBe("danger");
+  });
+
+  test("climb jump exposes a temporary jump sweat state", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    for (let row = 15; row <= 19; row++) {
+      specs.push({ kind: "solidTile", col: 10, row });
+    }
+    const world = buildWorld(specs);
+    const player = createPlayer(
+      world,
+      10 * WORLD.tile - PLAYER_GEOMETRY.hitboxW * 0.5 - 1,
+      18 * WORLD.tile + PLAYER_GEOMETRY.hitboxH,
+    );
+
+    for (let frame = 0; frame < 2; frame++) {
+      stepOnce(player, makeInput({ grab: true }));
+    }
+
+    let snapshot = stepOnce(player, makeInput({ grab: true, jumpPressed: true })).snapshot;
+    expect(snapshot.sweatState).toBe("jump");
+
+    snapshot = step(player, makeInput(), 8).at(-1)!.snapshot;
+    expect(snapshot.sweatState).toBe("idle");
   });
 
   test("wall speed retention refunds stored speed when the path clears inside the retention window", () => {

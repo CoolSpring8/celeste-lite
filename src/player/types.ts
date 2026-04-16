@@ -2,6 +2,8 @@ import type { PlayerIntroStateSnapshot } from "./intro";
 
 export type PlayerState = "normal" | "climb" | "dash" | "intro_start" | "intro_respawn";
 
+export type PlayerSweatState = "idle" | "still" | "climb" | "danger" | "jump";
+
 export interface InputState {
   x: number;
   y: number;
@@ -64,6 +66,7 @@ export interface PlayerSnapshot {
   wallDustDir: number;
   dashesLeft: number;
   hairColor: number;
+  sweatState: PlayerSweatState;
   isTired: boolean;
   stamina: number;
   hitboxW: number;

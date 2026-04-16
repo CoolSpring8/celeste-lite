@@ -26,7 +26,7 @@ import {
   type PlayerIntroType,
 } from "./intro";
 import { StateMachine } from "./StateMachine";
-import { InputState, PlayerEffect, PlayerSnapshot, PlayerState } from "./types";
+import { InputState, PlayerEffect, PlayerSnapshot, PlayerState, PlayerSweatState } from "./types";
 
 type DashHorizontalCollisionResult = "none" | "corrected" | "ducked";
 
@@ -37,6 +37,7 @@ const USED_HAIR_LERP_RATE = 6;
 const BOUNCE_AUTO_JUMP_TIME = 0.1;
 const BOUNCE_VAR_JUMP_TIME = 0.2;
 const BOUNCE_SPEED = -140;
+const SWEAT_JUMP_HOLD_TIME = 0.12;
 const ZERO_DIRECTION = { x: 0, y: 0 };
 const EMPTY_INPUT: InputState = {
   x: 0,
@@ -114,6 +115,7 @@ export class Player extends Actor {
   private hairColor: number = COLORS.playerOneDash;
   private hairFlashTimer = 0;
   private lastHairDashes: number;
+  private sweatJumpTimer = 0;
 
   private isFastFalling = false;
 
@@ -290,6 +292,10 @@ export class Player extends Actor {
       this.liftTimer = stepTimer(this.liftTimer, dt);
     }
 
+    if (this.sweatJumpTimer > 0) {
+      this.sweatJumpTimer = stepTimer(this.sweatJumpTimer, dt);
+    }
+
     const lift = this.liftBoost();
     if (lift.y < 0 && this.wasOnGround && !this.onGround && this.vy >= 0) {
       this.vy = lift.y;
@@ -390,6 +396,7 @@ export class Player extends Actor {
       wallDustDir: this.wallDustDir,
       dashesLeft: this.dashesLeft,
       hairColor: this.hairColor,
+      sweatState: this.resolveSweatState(),
       isTired: this.isTired(),
       stamina: this.stamina,
       hitboxW,
@@ -469,6 +476,7 @@ export class Player extends Actor {
 
     this.beforeDashVx = 0;
     this.resetHairState();
+    this.sweatJumpTimer = 0;
 
     this.isFastFalling = false;
 
@@ -505,6 +513,7 @@ export class Player extends Actor {
       x: Math.sign(direction.x),
       y: Math.sign(direction.y),
     };
+    this.sweatJumpTimer = 0;
     this.vx = 0;
     this.vy = 0;
     this.clearMovementRemainders();
@@ -1136,6 +1145,7 @@ export class Player extends Actor {
   private climbJump(): void {
     if (!this.onGround) {
       this.consumeStamina(this.cfg.climb.jumpCost);
+      this.sweatJumpTimer = SWEAT_JUMP_HOLD_TIME;
     }
 
     this.jump(false);
@@ -1629,6 +1639,30 @@ export class Player extends Actor {
 
   private isTired(): boolean {
     return this.checkStamina() < this.cfg.climb.tiredThreshold;
+  }
+
+  private resolveSweatState(): PlayerSweatState {
+    if (this.sweatJumpTimer > 0) {
+      return "jump";
+    }
+
+    if (this.stateMachine.state !== "climb") {
+      return "idle";
+    }
+
+    const isDanger = this.stamina <= this.cfg.climb.tiredThreshold;
+
+    if (this.climbNoMoveTimer <= 0) {
+      if (this.lastClimbMove < 0) {
+        return isDanger ? "danger" : "climb";
+      }
+
+      if (!this.onGround) {
+        return isDanger ? "danger" : "still";
+      }
+    }
+
+    return isDanger ? "danger" : "idle";
   }
 
   private hasJumpPress(): boolean {

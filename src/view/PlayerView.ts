@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, PLAYER_VISUALS } from "../constants";
 import type { PlayerIntroStateSnapshot } from "../player/intro";
-import { PlayerEffect, PlayerSnapshot } from "../player/types";
+import { PlayerEffect, PlayerSnapshot, PlayerSweatState } from "../player/types";
 import { sampleDeathEffect } from "./deathEffect";
 import {
   resolveHairLayout,
@@ -145,6 +145,7 @@ interface GlyphSprite {
   body: Phaser.GameObjects.Image;
   bangs: Phaser.GameObjects.Image;
   legacyHair: Phaser.GameObjects.Image;
+  sweat: Phaser.GameObjects.Image;
   hairNodes: Phaser.GameObjects.Image[];
   hairPoints: HairPoint[];
 }
@@ -190,6 +191,153 @@ const HAIR_NODE_GLYPHS = {
   },
 } as const;
 
+const SWEAT_ANIMATION_INTERVAL_MS = 120;
+
+interface SweatGlyph {
+  width: number;
+  height: number;
+  frames: readonly (readonly (readonly PixelRun[])[])[];
+  loop: boolean;
+}
+
+const SWEAT_GLYPHS: Record<PlayerSweatState, SweatGlyph> = {
+  idle: {
+    width: 8,
+    height: 11,
+    frames: [[
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ]] as const,
+    loop: false,
+  },
+  still: {
+    width: 8,
+    height: 11,
+    frames: [
+      [
+        [],
+        [],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+      [
+        [],
+        [],
+        [[3, 1]],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+    ] as const,
+    loop: true,
+  },
+  climb: {
+    width: 8,
+    height: 11,
+    frames: [
+      [
+        [],
+        [],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+      [
+        [],
+        [],
+        [[3, 1]],
+        [[3, 1]],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+    ] as const,
+    loop: true,
+  },
+  danger: {
+    width: 8,
+    height: 11,
+    frames: [
+      [
+        [],
+        [],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+      [
+        [],
+        [],
+        [[3, 2]],
+        [[3, 1]],
+        [[3, 1]],
+        [],
+        [],
+        [],
+        [],
+        [],
+        [],
+      ],
+    ] as const,
+    loop: true,
+  },
+  jump: {
+    width: 8,
+    height: 11,
+    frames: [[
+      [],
+      [],
+      [[3, 1]],
+      [[3, 1]],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+      [],
+    ]] as const,
+    loop: false,
+  },
+} as const;
+
 export class PlayerView {
   private scene: Phaser.Scene;
   private playerSprite: GlyphSprite;
@@ -227,6 +375,7 @@ export class PlayerView {
     this.ensurePixelTexture();
     this.ensureGlyphTextures();
     this.ensureHairNodeTextures();
+    this.ensureSweatTextures();
 
     this.playerSprite = this.createGlyphSprite(5);
     this.respawnSprite = this.createGlyphSprite(6);
@@ -367,6 +516,7 @@ export class PlayerView {
       snapshot.drawH,
       this.resolveBodyColor(snapshot),
       this.resolveHairColor(snapshot),
+      snapshot.sweatState,
     );
   }
 
@@ -1106,6 +1256,14 @@ export class PlayerView {
     this.ensureHairNodeTexture("thin");
   }
 
+  private ensureSweatTextures(): void {
+    for (const state of Object.keys(SWEAT_GLYPHS) as PlayerSweatState[]) {
+      for (let frame = 0; frame < SWEAT_GLYPHS[state].frames.length; frame++) {
+        this.ensureSweatTexture(state, frame);
+      }
+    }
+  }
+
   private ensureHairNodeTexture(size: keyof typeof HAIR_NODE_GLYPHS): void {
     const key = this.hairNodeTextureKey(size);
     if (this.scene.textures.exists(key)) return;
@@ -1156,10 +1314,26 @@ export class PlayerView {
     g.destroy();
   }
 
+  private ensureSweatTexture(state: PlayerSweatState, frame: number): void {
+    const key = this.sweatTextureKey(state, frame);
+    if (this.scene.textures.exists(key)) return;
+
+    const glyph = SWEAT_GLYPHS[state];
+    const g = this.scene.add.graphics();
+    this.drawGlyphRows(g, glyph.frames[frame], 0, 0, 1, 1, 0xffffff, 1);
+    g.generateTexture(key, glyph.width, glyph.height);
+    g.destroy();
+  }
+
   private createGlyphSprite(depth: number): GlyphSprite {
     const body = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "body")).setOrigin(0.5, 1);
     const bangs = this.scene.add.image(0, 0, this.glyphTextureKey("idle", "bang")).setOrigin(0.5, 1);
     const legacyHair = this.scene.add.image(0, 0, this.legacyGlyphTextureKey("idle", "hair")).setOrigin(0.5, 1);
+    const sweat = this.scene.add
+      .image(0, 0, this.sweatTextureKey("idle", 0))
+      .setOrigin(0.5, 1)
+      .setTint(COLORS.dust)
+      .setVisible(false);
     const hairNodes = SQRT11_HAIR_RADII.map(() =>
       this.scene.add
         .image(0, 0, this.hairNodeTextureKey("thin"))
@@ -1167,7 +1341,7 @@ export class PlayerView {
         .setTint(COLORS.playerOneDash),
     );
     const container = this.scene.add
-      .container(0, 0, [...hairNodes, body, bangs, legacyHair])
+      .container(0, 0, [...hairNodes, body, bangs, legacyHair, sweat])
       .setDepth(depth);
 
     return {
@@ -1175,6 +1349,7 @@ export class PlayerView {
       body,
       bangs,
       legacyHair,
+      sweat,
       hairNodes,
       hairPoints: snapHairChain(resolveHairLayout({
         facing: 1,
@@ -1191,6 +1366,7 @@ export class PlayerView {
     sprite.body.destroy();
     sprite.bangs.destroy();
     sprite.legacyHair.destroy();
+    sprite.sweat.destroy();
     for (const hairNode of sprite.hairNodes) {
       hairNode.destroy();
     }
@@ -1219,11 +1395,13 @@ export class PlayerView {
     h: number,
     bodyColor: number,
     hairColor: number,
+    sweatState: PlayerSweatState = "idle",
   ): void {
     sprite.container.setPosition(x, y);
     this.setGlyphSpritePose(sprite, pose, w, h);
     this.setGlyphSpriteFacing(sprite, this.facing);
     this.setGlyphSpriteColors(sprite, bodyColor, hairColor);
+    this.setGlyphSweatState(sprite, sweatState);
     this.setGlyphHairPositions(sprite);
   }
 
@@ -1239,12 +1417,14 @@ export class PlayerView {
     sprite.legacyHair
       .setTexture(this.legacyGlyphTextureKey(pose, "hair"))
       .setDisplaySize(w, h);
+    sprite.sweat.setDisplaySize(w, h);
   }
 
   private setGlyphSpriteColors(sprite: GlyphSprite, bodyColor: number, hairColor: number): void {
     sprite.body.setTint(bodyColor);
     sprite.bangs.setTint(hairColor);
     sprite.legacyHair.setTint(hairColor);
+    sprite.sweat.setTint(COLORS.dust);
     for (const hairNode of sprite.hairNodes) {
       hairNode.setTint(hairColor);
     }
@@ -1255,6 +1435,24 @@ export class PlayerView {
     sprite.body.setFlipX(flipped);
     sprite.bangs.setFlipX(flipped);
     sprite.legacyHair.setFlipX(flipped);
+    sprite.sweat.setFlipX(flipped);
+  }
+
+  private setGlyphSweatState(sprite: GlyphSprite, sweatState: PlayerSweatState): void {
+    const visible = sweatState !== "idle";
+    const frame = this.resolveSweatFrame(sweatState);
+    sprite.sweat
+      .setTexture(this.sweatTextureKey(sweatState, frame))
+      .setVisible(visible);
+  }
+
+  private resolveSweatFrame(sweatState: PlayerSweatState): number {
+    const glyph = SWEAT_GLYPHS[sweatState];
+    if (!glyph.loop || glyph.frames.length <= 1) {
+      return 0;
+    }
+
+    return Math.floor(this.scene.time.now / SWEAT_ANIMATION_INTERVAL_MS) % glyph.frames.length;
   }
 
   private updateGlyphHairState(
@@ -1301,6 +1499,10 @@ export class PlayerView {
 
   private hairNodeTextureKey(size: keyof typeof HAIR_NODE_GLYPHS): string {
     return `sqrt11-hair-node-${size}`;
+  }
+
+  private sweatTextureKey(state: PlayerSweatState, frame: number): string {
+    return `sqrt11-sweat-${state}-${frame}`;
   }
 
   private drawGlyphRows(
