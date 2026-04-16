@@ -95,14 +95,33 @@ describe("EntityWorld Monocle model", () => {
     expect(refill?.baseY).toBe(72);
     expect(refill?.visualY).not.toBe(72);
     expect(refill?.bounds).toEqual({
-      x: 56,
-      y: 64,
-      w: 16,
-      h: 16,
+      x: 61,
+      y: 69,
+      w: 6,
+      h: 6,
     });
 
     world.resetTransientState();
     expect(refill?.visualY).toBe(72);
+  });
+
+  test("consumed refills drop out of generic hitbox queries until they respawn", () => {
+    const world = EntityWorld.fromSpecs(WORLD.cols, WORLD.rows, [
+      { kind: "refill", x: 64, y: 72, type: "max" },
+    ]);
+
+    const refillProbe = new Hitbox(8, 8, 60, 68);
+    const playerBounds = { x: 61, y: 69, w: 6, h: 6 };
+    const refill = world.refills[0];
+
+    expect(world.collideCheck(RefillPickupEntity, refillProbe)).toBeTrue();
+    expect(world.consumeTouchingRefills(playerBounds, () => true)).toHaveLength(1);
+    expect(refill?.collidable).toBeFalse();
+    expect(world.collideCheck(RefillPickupEntity, refillProbe)).toBeFalse();
+
+    world.update(2.5, 0.5);
+    expect(refill?.collidable).toBeTrue();
+    expect(world.collideCheck(RefillPickupEntity, refillProbe)).toBeTrue();
   });
 
   test("spike colliders are thin rectangles aligned to the pointed edge", () => {

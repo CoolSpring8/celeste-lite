@@ -20,7 +20,6 @@ import {
   SpikeDirection,
 } from "./types";
 
-const REFILL_PICKUP_SIZE = 6;
 const REFILL_RESPAWN_TIME = 2.5;
 const REFILL_BOB_AMPLITUDE = WORLD.tile * 0.1;
 const SPIKE_SIZE = WORLD.tile;
@@ -80,6 +79,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
         if (refill.respawnTimer <= 0) {
           refill.respawnTimer = 0;
           refill.active = true;
+          refill.collidable = true;
         }
       }
 
@@ -91,6 +91,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
   resetTransientState(): void {
     for (const refill of this.refills) {
       refill.active = true;
+      refill.collidable = true;
       refill.respawnTimer = 0;
       refill.visualOffsetY = 0;
     }
@@ -248,13 +249,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
         continue;
       }
 
-      const size = REFILL_PICKUP_SIZE;
-      const pickupBox = {
-        x: refill.x - size * 0.5,
-        y: refill.y - size * 0.5,
-        w: size,
-        h: size,
-      };
+      const pickupBox = refill.bounds;
 
       if (!this.overlapAabb(playerBounds, pickupBox)) {
         continue;
@@ -264,6 +259,7 @@ export class EntityWorld implements SolidGrid, CollisionWorld {
       }
 
       refill.active = false;
+      refill.collidable = false;
       refill.respawnTimer = refill.respawnDelay;
       consumed.push(refill);
     }

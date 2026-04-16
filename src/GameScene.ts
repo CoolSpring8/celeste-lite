@@ -1376,8 +1376,12 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private drawDebugBounds(bounds: { x: number; y: number; w: number; h: number }, color: number): void {
-    this.debugGfx.lineStyle(1, color, 1);
+  private drawDebugBounds(
+    bounds: { x: number; y: number; w: number; h: number },
+    color: number,
+    alpha = 1,
+  ): void {
+    this.debugGfx.lineStyle(1, color, alpha);
     this.debugGfx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
   }
 
