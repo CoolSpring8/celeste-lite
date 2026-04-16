@@ -1,6 +1,8 @@
 import Phaser from "phaser";
 import { COLORS, PLAYER_CONFIG, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
+import { Grid } from "./entities/core/Grid";
+import { Hitbox } from "./entities/core/Hitbox";
 import { type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
@@ -98,6 +100,8 @@ const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 const REFILL_CONSUME_FREEZE_TIME = 0.05;
 const SPAWN_WIPE_HEIGHT = VIEWPORT.height + SPAWN_WIPE_VISUALS.edgeOverscan * 2;
+const DEBUG_HITBOX_COLOR = 0xff0000;
+const DEBUG_HURTBOX_COLOR = 0x00ff00;
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
@@ -140,15 +144,16 @@ export class GameScene extends Phaser.Scene {
   private freezeTimer = 0;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
+  private debugGfx!: Phaser.GameObjects.Graphics;
   private spawnWipe!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
-  private helpText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
   private deathRespawnSequence: DeathRespawnSequenceState | null = null;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
+  private debugEnabled = false;
 
   constructor() {
     super("GameScene");
@@ -166,6 +171,8 @@ export class GameScene extends Phaser.Scene {
 
     this.computeTileDepths();
     this.tileGfx = this.add.graphics();
+    this.debugGfx = this.add.graphics().setDepth(9);
+    this.debugGfx.setVisible(false);
     this.spawnWipe = this.add.graphics().setDepth(20).setScrollFactor(0);
     this.drawTiles();
     this.lighting = new LightingSystem(this, this.world);
@@ -211,6 +218,8 @@ export class GameScene extends Phaser.Scene {
     this.keys.dash.on("down", this.onDashDown, this);
     this.keys.pause = kb.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.keys.pause.on("down", this.onPauseDown, this);
+    this.keys.debug = kb.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK);
+    this.keys.debug.on("down", this.onDebugToggleDown, this);
 
     this.hudText = this.add
       .text(8, 8, "", {
@@ -222,30 +231,15 @@ export class GameScene extends Phaser.Scene {
       })
       .setDepth(10)
       .setScrollFactor(0);
-
-    this.helpText = this.add
-      .text(
-        VIEWPORT.width - 8,
-        VIEWPORT.height - 8,
-        "Move: arrow keys\nC jump  X dash  Z grab  R reset  Esc pause",
-        {
-          fontFamily: "monospace",
-          fontSize: "9px",
-          color: "#666699",
-          align: "right",
-          lineSpacing: -2,
-          wordWrap: { width: 168, useAdvancedWrap: true },
-        },
-      )
-      .setOrigin(1, 1)
-      .setDepth(10)
-      .setScrollFactor(0);
+    this.hudText.setVisible(false);
 
     this.pauseOverlay = new PauseOverlay(this);
     this.spawnInitialPlayer();
     const snapshot = this.player.getSnapshot();
     this.playerView.render(snapshot);
     this.renderLighting(snapshot);
+    this.updateHUD(snapshot, []);
+    this.renderDebugOverlay(snapshot);
     this.renderSpawnWipe();
   }
 
@@ -261,6 +255,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, []);
+      this.renderDebugOverlay(snapshot);
       this.renderSpawnWipe();
       const current = this.pauseMenu.current;
       if (current) {
@@ -294,6 +289,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
+      this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
       return;
     }
@@ -313,6 +309,7 @@ export class GameScene extends Phaser.Scene {
         this.playerView.render(snapshot);
         this.renderLighting(snapshot);
         this.updateHUD(snapshot, effects);
+        this.renderDebugOverlay(snapshot);
         this.renderSpawnWipe();
         return;
       }
@@ -325,6 +322,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
+      this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
       return;
     }
@@ -338,6 +336,7 @@ export class GameScene extends Phaser.Scene {
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
+      this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
       return;
     }
@@ -399,6 +398,7 @@ export class GameScene extends Phaser.Scene {
     this.renderLighting(snapshot);
 
     this.updateHUD(snapshot, effects);
+    this.renderDebugOverlay(snapshot);
     this.clearSpawnWipe();
   }
 
@@ -475,11 +475,13 @@ export class GameScene extends Phaser.Scene {
       this.keys.jump.off("up", this.onJumpUp, this);
       this.keys.dash.off("down", this.onDashDown, this);
       this.keys.pause?.off("down", this.onPauseDown, this);
+      this.keys.debug?.off("down", this.onDebugToggleDown, this);
     }
     this.controls?.reset();
     this.unpauseRecovery.clear();
     this.playerView?.destroy();
     this.pauseOverlay?.destroy();
+    this.debugGfx?.destroy();
     this.spawnWipe?.destroy();
     this.refillEmitter?.destroy();
     this.lighting?.destroy();
@@ -560,6 +562,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.openPauseMenu();
+  }
+
+  private onDebugToggleDown(event: KeyboardEvent): void {
+    if (event.repeat) return;
+    this.debugEnabled = !this.debugEnabled;
   }
 
   private spawnInitialPlayer(): void {
@@ -1312,7 +1319,75 @@ export class GameScene extends Phaser.Scene {
     this.lighting.render(this.cameras.main, lights);
   }
 
+  private renderDebugOverlay(snapshot: ReturnType<Player["getSnapshot"]>): void {
+    if (!this.debugEnabled) {
+      this.debugGfx.clear();
+      this.debugGfx.setVisible(false);
+      return;
+    }
+
+    this.debugGfx.clear();
+    this.debugGfx.setVisible(true);
+
+    for (const entity of this.world.entities) {
+      if (!entity.active || !entity.collidable || entity.collider === null) {
+        continue;
+      }
+
+      if (entity.collider instanceof Grid) {
+        this.drawDebugGrid(entity.collider);
+        continue;
+      }
+
+      if (entity.collider instanceof Hitbox) {
+        this.drawDebugBounds(entity.collider.bounds, DEBUG_HITBOX_COLOR);
+      }
+    }
+
+    this.drawDebugBounds(
+      {
+        x: snapshot.left,
+        y: snapshot.top,
+        w: snapshot.hitboxW,
+        h: snapshot.hitboxH,
+      },
+      DEBUG_HITBOX_COLOR,
+    );
+    this.drawDebugBounds(this.player.getHurtboxBounds(), DEBUG_HURTBOX_COLOR);
+  }
+
+  private drawDebugGrid(grid: Grid): void {
+    for (let row = 0; row < grid.cellsY; row++) {
+      for (let col = 0; col < grid.cellsX; col++) {
+        if (!grid.getCell(col, row)) {
+          continue;
+        }
+
+        this.drawDebugBounds(
+          {
+            x: grid.absoluteLeft + col * grid.cellWidth,
+            y: grid.absoluteTop + row * grid.cellHeight,
+            w: grid.cellWidth,
+            h: grid.cellHeight,
+          },
+          DEBUG_HITBOX_COLOR,
+        );
+      }
+    }
+  }
+
+  private drawDebugBounds(bounds: { x: number; y: number; w: number; h: number }, color: number): void {
+    this.debugGfx.lineStyle(1, color, 1);
+    this.debugGfx.strokeRect(bounds.x, bounds.y, bounds.w, bounds.h);
+  }
+
   private updateHUD(snapshot: ReturnType<Player["getSnapshot"]>, effects: PlayerEffect[]): void {
+    if (!this.debugEnabled) {
+      this.hudText.setVisible(false);
+      this.hudText.setText("");
+      return;
+    }
+
     const state = snapshot.state.toUpperCase();
     const wallSliding =
       !snapshot.onGround && snapshot.wallDir !== 0 && snapshot.vy > 0 && snapshot.state === "normal"
@@ -1332,6 +1407,7 @@ export class GameScene extends Phaser.Scene {
 
     const lines = [
       roomLine,
+      `POS ${snapshot.x.toFixed(2)}, ${snapshot.y.toFixed(2)}`,
       `${state}${wallSliding}  ${snapshot.onGround ? "GROUND" : "AIR"}  D:${snapshot.dashesLeft}  ST:${snapshot.stamina.toFixed(0)}`,
       `VEL ${snapshot.vx.toFixed(0)}, ${snapshot.vy.toFixed(0)}  CAM ${this.cameras.main.scrollX.toFixed(0)}, ${this.cameras.main.scrollY.toFixed(0)}`,
     ];
@@ -1339,6 +1415,7 @@ export class GameScene extends Phaser.Scene {
       lines.push(`FX ${events}`);
     }
 
+    this.hudText.setVisible(true);
     this.hudText.setText(lines.join("\n"));
   }
 
@@ -1452,6 +1529,7 @@ export class GameScene extends Phaser.Scene {
     this.playerView.render(snapshot);
     this.renderLighting(snapshot);
     this.updateHUD(snapshot, []);
+    this.renderDebugOverlay(snapshot);
     if (this.deathRespawnSequence !== null) {
       this.renderSpawnWipe();
     } else {
