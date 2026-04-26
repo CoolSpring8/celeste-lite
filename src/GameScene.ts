@@ -323,7 +323,6 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
-      this.clearTransientKeyEdges();
       return;
     }
 
@@ -358,7 +357,6 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
-      this.clearTransientKeyEdges();
       return;
     }
 
@@ -373,7 +371,6 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
-      this.clearTransientKeyEdges();
       return;
     }
 

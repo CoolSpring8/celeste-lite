@@ -11,7 +11,7 @@ describe("Unpause recovery", () => {
     const recovery = new UnpauseRecovery();
     recovery.start({ pause: true, jump: false, dash: false, crouchDash: false });
 
-    for (let frame = 0; frame < UNPAUSE_REPAUSE_FRAME; frame++) {
+    for (let frame = 0; frame <= UNPAUSE_REPAUSE_FRAME; frame++) {
       const holdingPause = frame >= UNPAUSE_INPUT_BUFFER_START_FRAME;
       const result = recovery.step({
         pause: holdingPause,
@@ -37,7 +37,7 @@ describe("Unpause recovery", () => {
     const recovery = new UnpauseRecovery();
     recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
 
-    for (let frame = 0; frame < UNPAUSE_REPAUSE_FRAME; frame++) {
+    for (let frame = 0; frame <= UNPAUSE_REPAUSE_FRAME; frame++) {
       const result = recovery.step({
         pause: frame >= UNPAUSE_INPUT_BUFFER_START_FRAME - 1,
         jump: false,
