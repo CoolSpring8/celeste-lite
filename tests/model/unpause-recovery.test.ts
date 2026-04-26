@@ -9,7 +9,7 @@ import {
 describe("Unpause recovery", () => {
   test("blocks gameplay for 10 frames, returns control on frame 10, and allows repause on frame 11", () => {
     const recovery = new UnpauseRecovery();
-    recovery.start({ pause: true, jump: false, dash: false });
+    recovery.start({ pause: true, jump: false, dash: false, crouchDash: false });
 
     for (let frame = 0; frame < UNPAUSE_REPAUSE_FRAME; frame++) {
       const holdingPause = frame >= UNPAUSE_INPUT_BUFFER_START_FRAME;
@@ -17,6 +17,7 @@ describe("Unpause recovery", () => {
         pause: holdingPause,
         jump: false,
         dash: false,
+        crouchDash: false,
       });
 
       if (frame < UNPAUSE_CONTROL_RETURN_FRAME) {
@@ -34,13 +35,14 @@ describe("Unpause recovery", () => {
 
   test("pause held too early does not repause on frame 11", () => {
     const recovery = new UnpauseRecovery();
-    recovery.start({ pause: false, jump: false, dash: false });
+    recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
 
     for (let frame = 0; frame < UNPAUSE_REPAUSE_FRAME; frame++) {
       const result = recovery.step({
         pause: frame >= UNPAUSE_INPUT_BUFFER_START_FRAME - 1,
         jump: false,
         dash: false,
+        crouchDash: false,
       });
 
       if (frame < UNPAUSE_CONTROL_RETURN_FRAME) {
@@ -56,13 +58,14 @@ describe("Unpause recovery", () => {
 
   test("jump and dash held during the late unpause window queue on the control-return frame", () => {
     const recovery = new UnpauseRecovery();
-    recovery.start({ pause: false, jump: false, dash: false });
+    recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
 
     for (let frame = 0; frame <= UNPAUSE_CONTROL_RETURN_FRAME; frame++) {
       const result = recovery.step({
         pause: false,
         jump: frame >= UNPAUSE_INPUT_BUFFER_START_FRAME,
         dash: frame >= UNPAUSE_INPUT_BUFFER_START_FRAME,
+        crouchDash: false,
       });
 
       if (frame < UNPAUSE_CONTROL_RETURN_FRAME) {
@@ -76,9 +79,30 @@ describe("Unpause recovery", () => {
     }
   });
 
+  test("crouch dash held during the late unpause window queues on the control-return frame", () => {
+    const recovery = new UnpauseRecovery();
+    recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
+
+    for (let frame = 0; frame <= UNPAUSE_CONTROL_RETURN_FRAME; frame++) {
+      const result = recovery.step({
+        pause: false,
+        jump: false,
+        dash: false,
+        crouchDash: frame >= UNPAUSE_INPUT_BUFFER_START_FRAME,
+      });
+
+      if (frame < UNPAUSE_CONTROL_RETURN_FRAME) {
+        expect(result.queueCrouchDash).toBeFalse();
+      } else {
+        expect(result.blockGameplay).toBeFalse();
+        expect(result.queueCrouchDash).toBeTrue();
+      }
+    }
+  });
+
   test("buffered jump and dash are lost if the buttons are released before control returns", () => {
     const recovery = new UnpauseRecovery();
-    recovery.start({ pause: false, jump: false, dash: false });
+    recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
 
     for (let frame = 0; frame <= UNPAUSE_CONTROL_RETURN_FRAME; frame++) {
       const held = frame >= UNPAUSE_INPUT_BUFFER_START_FRAME && frame < UNPAUSE_CONTROL_RETURN_FRAME - 1;
@@ -86,6 +110,7 @@ describe("Unpause recovery", () => {
         pause: false,
         jump: held,
         dash: held,
+        crouchDash: false,
       });
 
       if (frame === UNPAUSE_CONTROL_RETURN_FRAME) {
@@ -97,13 +122,14 @@ describe("Unpause recovery", () => {
 
   test("jump and dash that begin exactly on the control-return frame are left to the normal input path", () => {
     const recovery = new UnpauseRecovery();
-    recovery.start({ pause: false, jump: false, dash: false });
+    recovery.start({ pause: false, jump: false, dash: false, crouchDash: false });
 
     for (let frame = 0; frame <= UNPAUSE_CONTROL_RETURN_FRAME; frame++) {
       const result = recovery.step({
         pause: false,
         jump: frame === UNPAUSE_CONTROL_RETURN_FRAME,
         dash: frame === UNPAUSE_CONTROL_RETURN_FRAME,
+        crouchDash: false,
       });
 
       if (frame === UNPAUSE_CONTROL_RETURN_FRAME) {

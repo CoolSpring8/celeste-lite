@@ -3,6 +3,11 @@ import {
   type AirDashAssist,
   type AssistOptions,
 } from "./assists";
+import {
+  DEFAULT_KEY_BINDINGS,
+  normalizeKeyBindings,
+  type KeyBindings,
+} from "./input/keybindings";
 
 export interface StorageLike {
   getItem(key: string): string | null;
@@ -12,6 +17,7 @@ export interface StorageLike {
 export interface GameOptions extends AssistOptions {
   screenShakeEffects: boolean;
   dynamicHair: boolean;
+  keyboardBindings: KeyBindings;
 }
 
 export const GAME_OPTIONS_STORAGE_KEY = "celeste-lite.options";
@@ -19,6 +25,7 @@ export const GAME_OPTIONS_STORAGE_KEY = "celeste-lite.options";
 export const DEFAULT_GAME_OPTIONS: Readonly<GameOptions> = Object.freeze({
   screenShakeEffects: true,
   dynamicHair: false,
+  keyboardBindings: normalizeKeyBindings(DEFAULT_KEY_BINDINGS),
   ...DEFAULT_ASSIST_OPTIONS,
 });
 
@@ -60,6 +67,7 @@ function normalizeGameOptions(value: Partial<GameOptions> | null | undefined): G
     dynamicHair: typeof value?.dynamicHair === "boolean"
       ? value.dynamicHair
       : DEFAULT_GAME_OPTIONS.dynamicHair,
+    keyboardBindings: normalizeKeyBindings(value?.keyboardBindings),
     infiniteStamina: typeof value?.infiniteStamina === "boolean"
       ? value.infiniteStamina
       : DEFAULT_GAME_OPTIONS.infiniteStamina,

@@ -38,9 +38,9 @@ Legend:
 | Grounded Ultras | WORKS | 390 burst observed from 325 * 1.2 |
 | Grounded Ultra Cancel | EXCLUDED | Requires dash interruption sources not present |
 | Delayed Ultra | WORKS | Landing after a down-diagonal dash still applies the ultra slide conversion |
-| Demodash | EXCLUDED | Input system implements Monocle-style directional handling but demo-specific startup behavior doesn't emerge |
-| Demohyper | EXCLUDED | Depends on the excluded demo input path |
-| Up Diagonal Demo | EXCLUDED | Depends on the excluded demo input path |
+| Demodash | WORKS | Dedicated configurable crouch-dash input and manual down+dash startup both use the 6px crouched hitbox / 4px hurtbox; manual down+dash can redirect left/right before dash motion commits and ignores direction changes after commit |
+| Demohyper | WORKS | Horizontal crouch dash / demodash into jump resolves through the crouched super-jump path, produces hyper values, and keeps faster horizontal dash startup than a down-diagonal hyper setup |
+| Up Diagonal Demo | WORKS | Manual down+dash startup can redirect to up-diagonal before dash motion commits, preserves the crouched hurtbox through the dash, then returns to normal height after dash end |
 | Wallbounce | WORKS | Updash + wall jump yields super wall jump values (170/-160) |
 | Spiked Wallbounce | WORKS | Enabled by the corrected directional spike handling |
 
@@ -140,4 +140,4 @@ All items in this section are currently `EXCLUDED` because required entities/sys
 | Screen Transition Cassette Offset | EXCLUDED | No cassette/screen transition system |
 | Spinner Stunning | EXCLUDED | No spinner entity |
 | Spinner Freeze | EXCLUDED | No spinner/timeactive system |
-| Undemo Dashing | EXCLUDED | Depends on the excluded demo/manual crouch-dash input path |
+| Undemo Dashing | WORKS | Neutral/non-down dash startup can redirect downward before dash motion commits without setting the crouched demo flag, so the downward dash keeps the normal hurtbox |

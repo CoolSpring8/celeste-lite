@@ -7,33 +7,35 @@ import { OverlapBehavior } from "./VirtualInput";
 import type { InputState } from "../player/types";
 
 export type PlayerBinding =
-  | "leftArrow"
-  | "rightArrow"
-  | "upArrow"
-  | "downArrow"
+  | "left"
+  | "right"
+  | "up"
+  | "down"
   | "grab"
   | "dash"
-  | "jump";
+  | "jump"
+  | "crouchDash";
 
 const PLAYER_BINDINGS: readonly PlayerBinding[] = [
-  "leftArrow",
-  "rightArrow",
-  "upArrow",
-  "downArrow",
+  "left",
+  "right",
+  "up",
+  "down",
   "grab",
   "dash",
   "jump",
+  "crouchDash",
 ];
 
 export class PlayerControls {
   private readonly bank = new ButtonBank(PLAYER_BINDINGS);
 
   private readonly moveX = new VirtualIntegerAxis(
-    new AxisButtonsNode(this.bank, OverlapBehavior.TakeNewer, "leftArrow", "rightArrow"),
+    new AxisButtonsNode(this.bank, OverlapBehavior.TakeNewer, "left", "right"),
   );
 
   private readonly moveY = new VirtualIntegerAxis(
-    new AxisButtonsNode(this.bank, OverlapBehavior.TakeNewer, "upArrow", "downArrow"),
+    new AxisButtonsNode(this.bank, OverlapBehavior.TakeNewer, "up", "down"),
   );
 
   private readonly aim = new VirtualJoystick(
@@ -41,15 +43,16 @@ export class PlayerControls {
     new JoystickButtonsNode(
       this.bank,
       OverlapBehavior.TakeNewer,
-      "leftArrow",
-      "rightArrow",
-      "upArrow",
-      "downArrow",
+      "left",
+      "right",
+      "up",
+      "down",
     ),
   );
 
   private readonly jump = new VirtualButton(0, new ButtonBindingNode(this.bank, "jump"));
   private readonly dash = new VirtualButton(0, new ButtonBindingNode(this.bank, "dash"));
+  private readonly crouchDash = new VirtualButton(0, new ButtonBindingNode(this.bank, "crouchDash"));
   private readonly grab = new VirtualButton(0, new ButtonBindingNode(this.bank, "grab"));
 
   setCheck(binding: PlayerBinding, value: boolean): void {
@@ -71,6 +74,7 @@ export class PlayerControls {
     this.aim.update(dt);
     this.jump.update(dt);
     this.dash.update(dt);
+    this.crouchDash.update(dt);
     this.grab.update(dt);
 
     const aim = this.aim.value;
@@ -85,6 +89,8 @@ export class PlayerControls {
       jumpReleased: this.jump.released,
       dash: this.dash.check,
       dashPressed: this.dash.pressed,
+      crouchDash: this.crouchDash.check,
+      crouchDashPressed: this.crouchDash.pressed,
       grab: this.grab.check,
     };
   }
@@ -93,6 +99,7 @@ export class PlayerControls {
     this.bank.clearQueues();
     this.jump.reset();
     this.dash.reset();
+    this.crouchDash.reset();
     this.grab.reset();
   }
 
@@ -103,6 +110,7 @@ export class PlayerControls {
     this.aim.reset();
     this.jump.reset();
     this.dash.reset();
+    this.crouchDash.reset();
     this.grab.reset();
   }
 }

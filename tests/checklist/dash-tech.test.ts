@@ -51,6 +51,214 @@ describe("Checklist dash tech", () => {
     expect(jump.snapshot.vy).toBeCloseTo(-52.5, 5);
   });
 
+  test("crouch dash starts a horizontal dash with the crouched hitbox", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    stepOnce(player, makeInput());
+    const begin = stepOnce(player, makeInput({ x: 1, crouchDash: true, crouchDashPressed: true }));
+
+    expect(begin.snapshot.state).toBe("dash");
+    expect(begin.snapshot.isCrouched).toBeTrue();
+    expect(begin.snapshot.hitboxH).toBe(PLAYER_GEOMETRY.crouchHitboxH);
+    expect(player.getHurtboxBounds().h).toBe(PLAYER_GEOMETRY.crouchHurtboxH);
+
+    let dashStart = null as ReturnType<typeof stepOnce>["effects"][number] | null;
+    for (let frame = 0; frame < 8; frame++) {
+      const result = stepOnce(player, makeInput({ x: 1, crouchDash: true }));
+      dashStart = result.effects.find((effect) => effect.type === "dash_start") ?? dashStart;
+      if (dashStart) {
+        expect(result.snapshot.isCrouched).toBeTrue();
+        expect(result.snapshot.hitboxH).toBe(PLAYER_GEOMETRY.crouchHitboxH);
+        expect(player.getHurtboxBounds().h).toBe(PLAYER_GEOMETRY.crouchHurtboxH);
+        break;
+      }
+    }
+
+    expect(dashStart).toBeTruthy();
+    expect(dashStart?.dirX).toBe(1);
+    expect(dashStart?.dirY).toBe(0);
+  });
+
+  test("manual down plus dash redirects symmetrically into horizontal crouch dashes", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+
+    for (const dir of [-1, 1] as const) {
+      const player = createPlayerOnFloor(world, 104, 20);
+
+      stepOnce(player, makeInput());
+      const begin = stepOnce(player, makeInput({ y: 1, dash: true, dashPressed: true }));
+
+      expect(begin.snapshot.state).toBe("dash");
+      expect(begin.snapshot.isCrouched).toBeTrue();
+
+      let commit = null as ReturnType<typeof stepOnce> | null;
+      for (let frame = 0; frame < 8; frame++) {
+        const result = stepOnce(player, makeInput({ x: dir }));
+        if (result.effects.some((effect) => effect.type === "dash_start")) {
+          commit = result;
+          break;
+        }
+      }
+
+      const dashStart = commit?.effects.find((effect) => effect.type === "dash_start");
+      expect(dashStart).toBeTruthy();
+      expect(dashStart?.dirX).toBe(dir);
+      expect(dashStart?.dirY).toBe(0);
+      expect(commit?.snapshot.isCrouched).toBeTrue();
+
+      const afterCommit = stepOnce(player, makeInput({ x: -dir }));
+      expect(afterCommit.snapshot.vx * dir).toBeGreaterThan(0);
+    }
+  });
+
+  test("horizontal crouch dash jump resolves as demohyper", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ x: 1, crouchDash: true, crouchDashPressed: true }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    stepOnce(player, makeInput({ x: 1 }));
+    const jump = stepOnce(player, makeInput({ x: 1, jump: true, jumpPressed: true }));
+
+    expect(jump.effects.some((effect) => effect.type === "hyper")).toBeTrue();
+    expect(jump.snapshot.vx).toBeCloseTo(325, 5);
+    expect(jump.snapshot.vy).toBeCloseTo(-52.5, 5);
+  });
+
+  test("horizontal demohyper startup is faster than down-diagonal hyper startup", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+
+    const horizontalDemo = createPlayerOnFloor(world, 104, 20);
+    stepOnce(horizontalDemo, makeInput());
+    stepOnce(horizontalDemo, makeInput({ x: 1, crouchDash: true, crouchDashPressed: true }));
+
+    let horizontalCommit = null as ReturnType<typeof stepOnce> | null;
+    for (let frame = 0; frame < 8; frame++) {
+      const result = stepOnce(horizontalDemo, makeInput({ x: 1, crouchDash: true }));
+      if (result.effects.some((effect) => effect.type === "dash_start")) {
+        horizontalCommit = result;
+        break;
+      }
+    }
+
+    const downDiagonal = createPlayerOnFloor(world, 104, 20);
+    stepOnce(downDiagonal, makeInput());
+    stepOnce(downDiagonal, makeInput({ x: 1, y: 1, dash: true, dashPressed: true }));
+
+    let diagonalCommit = null as ReturnType<typeof stepOnce> | null;
+    for (let frame = 0; frame < 8; frame++) {
+      const result = stepOnce(downDiagonal, makeInput({ x: 1, y: 1, dash: true }));
+      if (result.effects.some((effect) => effect.type === "dash_start")) {
+        diagonalCommit = result;
+        break;
+      }
+    }
+
+    expect(horizontalCommit?.snapshot.vx).toBeCloseTo(240, 5);
+    expect(diagonalCommit?.snapshot.vx).toBeLessThan(horizontalCommit!.snapshot.vx);
+  });
+
+  test("manual down plus dash can redirect into an up-diagonal demo", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ y: 1, dash: true, dashPressed: true }));
+
+    let commit = null as ReturnType<typeof stepOnce> | null;
+    for (let frame = 0; frame < 8; frame++) {
+      const result = stepOnce(player, makeInput({ x: 1, y: -1 }));
+      if (result.effects.some((effect) => effect.type === "dash_start")) {
+        commit = result;
+        break;
+      }
+    }
+
+    const dashStart = commit?.effects.find((effect) => effect.type === "dash_start");
+    expect(dashStart).toBeTruthy();
+    expect(dashStart?.dirX).toBeCloseTo(Math.SQRT1_2, 5);
+    expect(dashStart?.dirY).toBeCloseTo(-Math.SQRT1_2, 5);
+    expect(commit?.snapshot.isCrouched).toBeTrue();
+    expect(commit?.snapshot.hitboxH).toBe(PLAYER_GEOMETRY.crouchHitboxH);
+    expect(player.getHurtboxBounds().h).toBe(PLAYER_GEOMETRY.crouchHurtboxH);
+
+    let afterDash = commit?.snapshot ?? player.getSnapshot();
+    for (let frame = 0; frame < 30; frame++) {
+      afterDash = stepOnce(player, makeInput({ x: 1, y: -1 })).snapshot;
+      if (afterDash.state !== "dash") {
+        break;
+      }
+    }
+
+    expect(afterDash.state).toBe("normal");
+    expect(afterDash.isCrouched).toBeFalse();
+    expect(afterDash.hitboxH).toBe(PLAYER_GEOMETRY.hitboxH);
+    expect(player.getHurtboxBounds().h).toBe(PLAYER_GEOMETRY.hurtboxH);
+  });
+
+  test("neutral dash startup can redirect downward without becoming a demo", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayer(world, 104, 20 * WORLD.tile - 48);
+
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ dash: true, dashPressed: true }));
+
+    let commit = null as ReturnType<typeof stepOnce> | null;
+    for (let frame = 0; frame < 8; frame++) {
+      const result = stepOnce(player, makeInput({ y: 1 }));
+      if (result.effects.some((effect) => effect.type === "dash_start")) {
+        commit = result;
+        break;
+      }
+    }
+
+    const dashStart = commit?.effects.find((effect) => effect.type === "dash_start");
+    expect(dashStart).toBeTruthy();
+    expect(dashStart?.dirX).toBe(0);
+    expect(dashStart?.dirY).toBe(1);
+    expect(commit?.snapshot.isCrouched).toBeFalse();
+    expect(commit?.snapshot.hitboxH).toBe(PLAYER_GEOMETRY.hitboxH);
+    expect(player.getHurtboxBounds().h).toBe(PLAYER_GEOMETRY.hurtboxH);
+  });
+
+  test("crouch dash uncrouches when the dash ends", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ x: 1, crouchDash: true, crouchDashPressed: true }));
+
+    let last = player.getSnapshot();
+    for (let frame = 0; frame < 30; frame++) {
+      last = stepOnce(player, makeInput({ x: 1 })).snapshot;
+      if (last.state !== "dash") {
+        break;
+      }
+    }
+
+    expect(last.state).toBe("normal");
+    expect(last.isCrouched).toBeFalse();
+  });
+
   test("wavedash produces hyper values and restores the dash when extended", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);

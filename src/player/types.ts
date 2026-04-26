@@ -14,6 +14,8 @@ export interface InputState {
   jumpReleased: boolean;
   dash: boolean;
   dashPressed: boolean;
+  crouchDash: boolean;
+  crouchDashPressed: boolean;
   grab: boolean;
 }
 

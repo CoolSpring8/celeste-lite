@@ -34,6 +34,8 @@ describe("Player intro lifecycle", () => {
       jumpReleased: false,
       dash: false,
       dashPressed: false,
+      crouchDash: false,
+      crouchDashPressed: false,
       grab: false,
     }, 36);
 

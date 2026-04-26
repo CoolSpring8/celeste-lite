@@ -6,6 +6,7 @@ import {
   saveGameOptions,
   type StorageLike,
 } from "../../src/options.ts";
+import { DEFAULT_KEY_BINDINGS } from "../../src/input/keybindings.ts";
 
 function createStorage(initial: Record<string, string> = {}): StorageLike {
   const values = new Map(Object.entries(initial));
@@ -26,12 +27,17 @@ describe("Game options", () => {
     expect(loadGameOptions(storage)).toEqual(DEFAULT_GAME_OPTIONS);
   });
 
-  test("screen shake, dynamic hair, and assist selections persist through storage", () => {
+  test("screen shake, dynamic hair, assists, and keyboard bindings persist through storage", () => {
     const storage = createStorage();
 
     saveGameOptions({
       screenShakeEffects: false,
       dynamicHair: true,
+      keyboardBindings: {
+        ...DEFAULT_KEY_BINDINGS,
+        jump: ["KeyC", "Space"],
+        crouchDash: ["KeyV"],
+      },
       infiniteStamina: true,
       airDashes: "infinite",
       invincibility: true,
@@ -41,6 +47,11 @@ describe("Game options", () => {
       JSON.stringify({
         screenShakeEffects: false,
         dynamicHair: true,
+        keyboardBindings: {
+          ...DEFAULT_KEY_BINDINGS,
+          jump: ["KeyC", "Space"],
+          crouchDash: ["KeyV"],
+        },
         infiniteStamina: true,
         airDashes: "infinite",
         invincibility: true,
@@ -49,6 +60,11 @@ describe("Game options", () => {
     expect(loadGameOptions(storage)).toEqual({
       screenShakeEffects: false,
       dynamicHair: true,
+      keyboardBindings: {
+        ...DEFAULT_KEY_BINDINGS,
+        jump: ["KeyC", "Space"],
+        crouchDash: ["KeyV"],
+      },
       infiniteStamina: true,
       airDashes: "infinite",
       invincibility: true,
@@ -63,6 +79,7 @@ describe("Game options", () => {
     expect(loadGameOptions(storage)).toEqual({
       screenShakeEffects: false,
       dynamicHair: false,
+      keyboardBindings: DEFAULT_KEY_BINDINGS,
       infiniteStamina: false,
       airDashes: "default",
       invincibility: false,
@@ -75,6 +92,25 @@ describe("Game options", () => {
     });
 
     expect(loadGameOptions(storage).airDashes).toBe("default");
+  });
+
+  test("keyboard bindings support empty lists and drop duplicate stored keys", () => {
+    const storage = createStorage({
+      [GAME_OPTIONS_STORAGE_KEY]: JSON.stringify({
+        keyboardBindings: {
+          jump: ["KeyC", "Space", "Space"],
+          confirm: [],
+          crouchDash: ["KeyV"],
+        },
+      }),
+    });
+
+    expect(loadGameOptions(storage).keyboardBindings).toEqual({
+      ...DEFAULT_KEY_BINDINGS,
+      jump: ["KeyC", "Space"],
+      confirm: [],
+      crouchDash: ["KeyV"],
+    });
   });
 
   test("invalid stored option payloads fall back to defaults", () => {

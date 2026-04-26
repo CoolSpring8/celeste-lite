@@ -69,7 +69,7 @@ describe("Dash behavior", () => {
     expect(trailXs[1]).toBeLessThan(trailXs[2]);
   });
 
-  test("jump resolves before dash motion on the coroutine commit frame", () => {
+  test("manual crouch dash jump resolves as hyper before dash motion on the coroutine commit frame", () => {
     const specs: LevelEntitySpec[] = [];
     withFloor(specs, 20);
     const world = buildWorld(specs);
@@ -95,10 +95,10 @@ describe("Dash behavior", () => {
     step(player, makeInput({ x: 1, y: 1 }), commitFrame);
     const jump = stepOnce(player, makeInput({ x: 1, y: 1, jump: true, jumpPressed: true }));
 
-    expect(jump.effects.some((effect) => effect.type === "super")).toBeTrue();
-    expect(jump.effects.some((effect) => effect.type === "hyper")).toBeFalse();
+    expect(jump.effects.some((effect) => effect.type === "super")).toBeFalse();
+    expect(jump.effects.some((effect) => effect.type === "hyper")).toBeTrue();
     expect(jump.snapshot.state).toBe("normal");
-    expect(jump.snapshot.vx).toBeCloseTo(260, 5);
-    expect(jump.snapshot.vy).toBeCloseTo(-105, 5);
+    expect(jump.snapshot.vx).toBeCloseTo(325, 5);
+    expect(jump.snapshot.vy).toBeCloseTo(-52.5, 5);
   });
 });

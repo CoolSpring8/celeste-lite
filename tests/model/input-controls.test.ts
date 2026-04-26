@@ -35,17 +35,17 @@ describe("Input model", () => {
   test("player controls use TakeNewer resolution for opposing horizontal inputs", () => {
     const controls = new PlayerControls();
 
-    controls.setCheck("leftArrow", true);
+    controls.setCheck("left", true);
     const first = controls.update(DT);
     expect(first.x).toBe(-1);
     expect(first.aimX).toBe(-1);
 
-    controls.setCheck("rightArrow", true);
+    controls.setCheck("right", true);
     const newer = controls.update(DT);
     expect(newer.x).toBe(1);
     expect(newer.aimX).toBe(1);
 
-    controls.setCheck("rightArrow", false);
+    controls.setCheck("right", false);
     const fallback = controls.update(DT);
     expect(fallback.x).toBe(-1);
     expect(fallback.aimX).toBe(-1);
@@ -70,5 +70,22 @@ describe("Input model", () => {
     const released = controls.update(DT);
     expect(released.jump).toBeFalse();
     expect(released.jumpReleased).toBeTrue();
+  });
+
+  test("crouch dash exposes an independent press edge", () => {
+    const controls = new PlayerControls();
+
+    controls.setCheck("crouchDash", true);
+    controls.queuePress("crouchDash");
+    const pressed = controls.update(DT);
+
+    expect(pressed.dashPressed).toBeFalse();
+    expect(pressed.crouchDash).toBeTrue();
+    expect(pressed.crouchDashPressed).toBeTrue();
+
+    controls.setCheck("crouchDash", true);
+    const held = controls.update(DT);
+    expect(held.crouchDash).toBeTrue();
+    expect(held.crouchDashPressed).toBeFalse();
   });
 });

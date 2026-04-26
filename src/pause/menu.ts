@@ -4,10 +4,36 @@ export interface PauseMenuChoice<T = unknown> {
 }
 
 export interface PauseMenuOption<T = unknown> {
+  kind?: "choice";
   label: string;
   values: readonly PauseMenuChoice<T>[];
   valueIndex: number;
 }
+
+export interface PauseMenuSubmenuItem {
+  kind: "submenu";
+  label: string;
+  activate: (controller: PauseMenuController) => void;
+}
+
+export interface PauseMenuKeyBindingItem<TAction = unknown> {
+  kind: "keybinding";
+  label: string;
+  action: TAction;
+  keys: string[];
+}
+
+export interface PauseMenuCommandItem {
+  kind: "command";
+  label: string;
+  activate: (controller: PauseMenuController) => void;
+}
+
+export type PauseMenuOptionItem<T = unknown> =
+  | PauseMenuOption<T>
+  | PauseMenuSubmenuItem
+  | PauseMenuKeyBindingItem<T>
+  | PauseMenuCommandItem;
 
 export interface PauseMenuItem {
   label: string;
@@ -27,10 +53,26 @@ export interface PauseActionMenu extends PauseMenuScreenBase {
 
 export interface PauseOptionsMenu extends PauseMenuScreenBase {
   kind: "options";
-  items: PauseMenuOption<unknown>[];
+  items: PauseMenuOptionItem<unknown>[];
 }
 
 export type PauseMenuScreen = PauseActionMenu | PauseOptionsMenu;
+
+export function isPauseChoiceOption(item: PauseMenuOptionItem<unknown>): item is PauseMenuOption<unknown> {
+  return item.kind === undefined || item.kind === "choice";
+}
+
+export function isPauseSubmenuItem(item: PauseMenuOptionItem<unknown>): item is PauseMenuSubmenuItem {
+  return item.kind === "submenu";
+}
+
+export function isPauseKeyBindingItem(item: PauseMenuOptionItem<unknown>): item is PauseMenuKeyBindingItem<unknown> {
+  return item.kind === "keybinding";
+}
+
+export function isPauseCommandItem(item: PauseMenuOptionItem<unknown>): item is PauseMenuCommandItem {
+  return item.kind === "command";
+}
 
 export function currentPauseOptionValue<T>(option: PauseMenuOption<T>): T | null {
   return option.values[option.valueIndex]?.value ?? null;
@@ -100,7 +142,11 @@ export class PauseMenuController {
     }
 
     const option = screen.items[screen.selectedIndex];
-    if (!option || !canMovePauseOption(option, direction)) {
+    if (!option || !isPauseChoiceOption(option)) {
+      return;
+    }
+
+    if (!canMovePauseOption(option, direction)) {
       return;
     }
 
@@ -109,12 +155,28 @@ export class PauseMenuController {
 
   confirm(): void {
     const screen = this.current;
-    if (screen === null || screen.kind !== "action") {
+    if (screen === null) {
+      return;
+    }
+
+    if (screen.kind === "action") {
+      const item = screen.items[screen.selectedIndex];
+      if (!item) {
+        return;
+      }
+
+      item.activate(this);
       return;
     }
 
     const item = screen.items[screen.selectedIndex];
-    item?.activate(this);
+    if (!item) {
+      return;
+    }
+
+    if (isPauseSubmenuItem(item) || isPauseCommandItem(item)) {
+      item.activate(this);
+    }
   }
 
   cancel(): void {

@@ -51,6 +51,8 @@ const EMPTY_INPUT: InputState = {
   jumpReleased: false,
   dash: false,
   dashPressed: false,
+  crouchDash: false,
+  crouchDashPressed: false,
   grab: false,
 };
 
@@ -84,11 +86,13 @@ export class Player extends Actor {
 
   private dashCooldownTimer = 0;
   private dashPressBufferTimer = 0;
+  private dashPressCrouches = false;
   private dashRefillCooldownTimer = 0;
   private dashAttackTimer = 0;
   private dashTrailTimer = 0;
   private freezeRequestTimer = 0;
   private dashStartedOnGround = false;
+  private crouchDashActive = false;
 
   private wallSlideTimer: number;
   private wallSlideDir = 0;
@@ -224,12 +228,20 @@ export class Player extends Actor {
       this.jumpPressBufferTimer = stepTimer(this.jumpPressBufferTimer, dt);
     }
 
-    if (input.dashPressed) {
+    if (input.crouchDashPressed) {
       this.dashPressBufferTimer = toFloat(this.cfg.input.dashBufferTime);
-    } else if (!input.dash) {
+      this.dashPressCrouches = true;
+    } else if (input.dashPressed) {
+      this.dashPressBufferTimer = toFloat(this.cfg.input.dashBufferTime);
+      this.dashPressCrouches = input.y === 1;
+    } else if (!input.dash && !input.crouchDash) {
       this.dashPressBufferTimer = 0;
+      this.dashPressCrouches = false;
     } else if (this.dashPressBufferTimer > 0) {
       this.dashPressBufferTimer = stepTimer(this.dashPressBufferTimer, dt);
+      if (this.dashPressBufferTimer <= 0) {
+        this.dashPressCrouches = false;
+      }
     }
 
     if (this.wallSlideDir !== 0) {
@@ -471,11 +483,13 @@ export class Player extends Actor {
 
     this.dashCooldownTimer = 0;
     this.dashPressBufferTimer = 0;
+    this.dashPressCrouches = false;
     this.dashRefillCooldownTimer = 0;
     this.dashAttackTimer = 0;
     this.dashTrailTimer = 0;
     this.freezeRequestTimer = 0;
     this.dashStartedOnGround = false;
+    this.crouchDashActive = false;
 
     this.wallSlideTimer = this.cfg.gravity.wallSlideTime;
     this.wallSlideDir = 0;
@@ -1042,7 +1056,9 @@ export class Player extends Actor {
     this.vy = 0;
     this.dashDir = { x: 0, y: 0 };
 
-    if (!this.onGround && this.ducking && this.canUnDuck()) {
+    if (this.crouchDashActive) {
+      this.setDucking(true);
+    } else if (!this.onGround && this.ducking && this.canUnDuck()) {
       this.setDucking(false);
     }
 
@@ -1249,6 +1265,7 @@ export class Player extends Actor {
   }
 
   private startDash(): PlayerState {
+    this.crouchDashActive = this.dashPressCrouches || this.input.y === 1;
     this.consumeDashPress();
     this.wasDashB = this.dashesLeft === 2;
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
@@ -1307,6 +1324,13 @@ export class Player extends Actor {
 
     if (this.vy < 0) {
       this.vy = mulFloat(this.vy, this.cfg.dash.endDashUpMult);
+    }
+
+    if (this.crouchDashActive) {
+      if (this.canUnDuck()) {
+        this.setDucking(false);
+      }
+      this.crouchDashActive = false;
     }
   }
 
@@ -1576,6 +1600,9 @@ export class Player extends Actor {
 
   private setDucking(value: boolean): void {
     if (this.ducking === value) return;
+    if (!value) {
+      this.crouchDashActive = false;
+    }
 
     const footY = this.getHitboxBottom();
     const nextHitbox = value ? this.duckHitbox : this.normalHitbox;
@@ -1753,6 +1780,7 @@ export class Player extends Actor {
 
   private consumeDashPress(): void {
     this.dashPressBufferTimer = 0;
+    this.dashPressCrouches = false;
   }
 
   private requireBodyHitbox(): Hitbox {

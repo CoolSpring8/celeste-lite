@@ -18,6 +18,7 @@ export function makeInput(partial: Partial<InputState> = {}): InputState {
   const y = partial.y ?? 0;
   const jump = partial.jump ?? !!partial.jumpPressed;
   const dash = partial.dash ?? !!partial.dashPressed;
+  const crouchDash = partial.crouchDash ?? !!partial.crouchDashPressed;
 
   return {
     x,
@@ -29,6 +30,8 @@ export function makeInput(partial: Partial<InputState> = {}): InputState {
     jumpReleased: false,
     dash,
     dashPressed: false,
+    crouchDash,
+    crouchDashPressed: false,
     grab: false,
     ...partial,
   };

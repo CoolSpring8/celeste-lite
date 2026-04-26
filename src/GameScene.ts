@@ -8,6 +8,13 @@ import { type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import {
+  DEFAULT_KEY_BINDINGS,
+  KEY_BINDING_DEFINITIONS,
+  normalizeKeyBindings,
+  type KeyBindingAction,
+  type KeyBindings,
+} from "./input/keybindings";
+import {
   findAdjacentRoom,
   findRoomAtPoint,
   type LevelRoom,
@@ -18,8 +25,11 @@ import { PlayerControls } from "./input/PlayerControls";
 import { loadGameOptions, saveGameOptions, type GameOptions } from "./options";
 import {
   currentPauseOptionValue,
+  isPauseKeyBindingItem,
   PauseMenuChoice,
   PauseMenuController,
+  type PauseMenuKeyBindingItem,
+  type PauseMenuOptionItem,
   type PauseActionMenu,
   type PauseMenuOption,
   type PauseOptionsMenu,
@@ -115,8 +125,17 @@ const EMPTY_INPUT: InputState = {
   jumpReleased: false,
   dash: false,
   dashPressed: false,
+  crouchDash: false,
+  crouchDashPressed: false,
   grab: false,
 };
+const MENU_UP_CODES: readonly string[] = ["ArrowUp"];
+const MENU_DOWN_CODES: readonly string[] = ["ArrowDown"];
+const MENU_LEFT_CODES: readonly string[] = ["ArrowLeft"];
+const MENU_RIGHT_CODES: readonly string[] = ["ArrowRight"];
+const MENU_CONFIRM_CODES: readonly string[] = ["Enter", "NumpadEnter"];
+const MENU_CANCEL_CODES: readonly string[] = ["Escape"];
+const MENU_CLEAR_CODES: readonly string[] = ["Backspace", "Delete"];
 const ON_OFF_CHOICES: readonly PauseMenuChoice<boolean>[] = [
   { label: "OFF", value: false },
   { label: "ON", value: true },
@@ -138,8 +157,13 @@ export class GameScene extends Phaser.Scene {
   private spawnY!: number;
   private tileDepths!: Int32Array;
 
-  private keys!: Record<string, Phaser.Input.Keyboard.Key>;
+  private debugKey!: Phaser.Input.Keyboard.Key;
+  private readonly heldKeyCodes = new Set<string>();
+  private readonly pressedKeyCodes = new Set<string>();
+  private readonly releasedKeyCodes = new Set<string>();
+  private gameplayEdgesConsumed = false;
   private controls!: PlayerControls;
+  private captureKeyBindingAction: KeyBindingAction | null = null;
   private confirmBufferedFrames = 0;
   private readonly pauseMenu = new PauseMenuController();
   private readonly unpauseRecovery = new UnpauseRecovery();
@@ -212,24 +236,11 @@ export class GameScene extends Phaser.Scene {
     this.updateCamera(this.player.getSnapshot(), 0);
 
     const kb = this.input.keyboard!;
-    this.keys = {
-      left: kb.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT),
-      right: kb.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT),
-      up: kb.addKey(Phaser.Input.Keyboard.KeyCodes.UP),
-      down: kb.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN),
-      grab: kb.addKey(Phaser.Input.Keyboard.KeyCodes.Z),
-      dash: kb.addKey(Phaser.Input.Keyboard.KeyCodes.X),
-      jump: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
-      restart: kb.addKey(Phaser.Input.Keyboard.KeyCodes.R),
-    };
+    kb.on("keydown", this.onKeyDown, this);
+    kb.on("keyup", this.onKeyUp, this);
     this.controls = new PlayerControls();
-    this.keys.jump.on("down", this.onJumpDown, this);
-    this.keys.jump.on("up", this.onJumpUp, this);
-    this.keys.dash.on("down", this.onDashDown, this);
-    this.keys.pause = kb.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.keys.pause.on("down", this.onPauseDown, this);
-    this.keys.debug = kb.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK);
-    this.keys.debug.on("down", this.onDebugToggleDown, this);
+    this.debugKey = kb.addKey(Phaser.Input.Keyboard.KeyCodes.BACKTICK);
+    this.debugKey.on("down", this.onDebugToggleDown, this);
 
     this.hudText = this.add
       .text(8, 8, "", {
@@ -255,8 +266,14 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
+    this.gameplayEdgesConsumed = false;
     if (this.confirmBufferedFrames > 0) {
       this.confirmBufferedFrames--;
+    }
+
+    if (!this.pauseMenu.isOpen && !this.unpauseRecovery.active && this.actionPressed("pause")) {
+      this.openPauseMenu();
+      this.clearTransientKeyEdges();
     }
 
     if (this.pauseMenu.isOpen) {
@@ -269,26 +286,31 @@ export class GameScene extends Phaser.Scene {
       this.renderSpawnWipe();
       const current = this.pauseMenu.current;
       if (current) {
-        this.pauseOverlay.render(current);
+        this.pauseOverlay.render(current, this.captureKeyBindingAction);
       } else {
         this.pauseOverlay.hide();
       }
+      this.clearTransientKeyEdges();
       return;
     }
 
     this.pauseOverlay.hide();
+
+    if (this.actionPressed("confirm")) {
+      this.confirmBufferedFrames = 2;
+      if (this.deathRespawnSequence !== null) {
+        this.requestDeathRespawnSkip();
+      }
+    }
 
     let accumulatorPrimed = false;
     if (this.unpauseRecovery.active) {
       accumulatorPrimed = true;
       if (this.advanceUnpauseRecovery(rawFrameDt)) {
         this.renderPassiveFrame();
+        this.clearTransientKeyEdges();
         return;
       }
-    }
-
-    if (this.keys.restart.isDown && this.deathRespawnSequence === null && this.player.canRetry) {
-      this.beginNormalRespawn();
     }
 
     const effects: PlayerEffect[] = [];
@@ -301,6 +323,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.clearTransientKeyEdges();
       return;
     }
 
@@ -321,6 +344,7 @@ export class GameScene extends Phaser.Scene {
         this.updateHUD(snapshot, effects);
         this.renderDebugOverlay(snapshot);
         this.renderSpawnWipe();
+        this.clearTransientKeyEdges();
         return;
       }
     }
@@ -334,6 +358,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.clearTransientKeyEdges();
       return;
     }
 
@@ -348,6 +373,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.clearTransientKeyEdges();
       return;
     }
 
@@ -415,6 +441,9 @@ export class GameScene extends Phaser.Scene {
     this.updateHUD(snapshot, effects);
     this.renderDebugOverlay(snapshot);
     this.clearSpawnWipe();
+    if (this.gameplayEdgesConsumed) {
+      this.clearTransientKeyEdges();
+    }
   }
 
   setCameraOffset(x: number, y: number): void {
@@ -489,13 +518,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   shutdown(): void {
-    if (this.keys) {
-      this.keys.jump.off("down", this.onJumpDown, this);
-      this.keys.jump.off("up", this.onJumpUp, this);
-      this.keys.dash.off("down", this.onDashDown, this);
-      this.keys.pause?.off("down", this.onPauseDown, this);
-      this.keys.debug?.off("down", this.onDebugToggleDown, this);
+    if (this.input.keyboard) {
+      this.input.keyboard.off("keydown", this.onKeyDown, this);
+      this.input.keyboard.off("keyup", this.onKeyUp, this);
     }
+    if (this.debugKey) {
+      this.debugKey.off("down", this.onDebugToggleDown, this);
+    }
+    this.heldKeyCodes.clear();
+    this.pressedKeyCodes.clear();
+    this.releasedKeyCodes.clear();
+    this.captureKeyBindingAction = null;
     this.controls?.reset();
     this.unpauseRecovery.clear();
     this.playerView?.destroy();
@@ -517,75 +550,109 @@ export class GameScene extends Phaser.Scene {
       return EMPTY_INPUT;
     }
 
-    this.controls.setCheck("leftArrow", this.keys.left.isDown);
-    this.controls.setCheck("rightArrow", this.keys.right.isDown);
-    this.controls.setCheck("upArrow", this.keys.up.isDown);
-    this.controls.setCheck("downArrow", this.keys.down.isDown);
-    this.controls.setCheck("jump", this.keys.jump.isDown);
-    this.controls.setCheck("dash", this.keys.dash.isDown);
-    this.controls.setCheck("grab", this.keys.grab.isDown);
+    const useEdges = !this.gameplayEdgesConsumed;
+    this.controls.setCheck("left", this.actionHeld("left"));
+    this.controls.setCheck("right", this.actionHeld("right"));
+    this.controls.setCheck("up", this.actionHeld("up"));
+    this.controls.setCheck("down", this.actionHeld("down"));
+    this.controls.setCheck("jump", this.actionHeld("jump"));
+    this.controls.setCheck("dash", this.actionHeld("dash"));
+    this.controls.setCheck("crouchDash", this.actionHeld("crouchDash"));
+    this.controls.setCheck("grab", this.actionHeld("grab"));
+
+    if (useEdges) {
+      this.queueControlEdges("jump", "jump");
+      this.queueControlEdges("dash", "dash");
+      this.queueControlEdges("crouchDash", "crouchDash");
+      this.gameplayEdgesConsumed = true;
+    }
 
     return this.controls.update(this.fixedDt);
   }
 
-  private onJumpDown(event: KeyboardEvent): void {
-    if (event.repeat) return;
-    if (this.pauseMenu.isOpen) {
-      this.pauseMenu.confirm();
-      this.afterPauseMenuInteraction();
-      return;
-    }
-    if (this.unpauseRecovery.blocksControl) {
-      return;
-    }
-    this.confirmBufferedFrames = 2;
-    if (this.deathRespawnSequence !== null) {
-      this.requestDeathRespawnSkip();
-      return;
-    }
-    if (!this.player.inControl) {
-      return;
-    }
-    this.controls.queuePress("jump");
-  }
-
-  private onJumpUp(): void {
-    this.controls.queueRelease("jump");
-  }
-
-  private onDashDown(event: KeyboardEvent): void {
-    if (event.repeat) return;
-    if (this.pauseMenu.isOpen) {
-      this.pauseMenu.cancel();
-      this.afterPauseMenuInteraction();
-      return;
-    }
-    if (this.unpauseRecovery.blocksControl) {
-      return;
-    }
-    if (!this.player.inControl) {
-      return;
-    }
-    this.controls.queuePress("dash");
-  }
-
-  private onPauseDown(event: KeyboardEvent): void {
-    if (event.repeat) return;
-    if (this.pauseMenu.isOpen) {
-      this.pauseMenu.cancel();
-      this.afterPauseMenuInteraction();
-      return;
-    }
-    if (this.unpauseRecovery.active) {
-      return;
-    }
-
-    this.openPauseMenu();
-  }
-
   private onDebugToggleDown(event: KeyboardEvent): void {
     if (event.repeat) return;
+    if (this.captureKeyBindingAction !== null) return;
     this.debugEnabled = !this.debugEnabled;
+  }
+
+  private onKeyDown(event: KeyboardEvent): void {
+    if (event.repeat) {
+      return;
+    }
+
+    const code = event.code;
+    this.heldKeyCodes.add(code);
+    this.pressedKeyCodes.add(code);
+    this.releasedKeyCodes.delete(code);
+
+    if (this.captureKeyBindingAction !== null || this.isHandledKey(code)) {
+      event.preventDefault();
+    }
+  }
+
+  private onKeyUp(event: KeyboardEvent): void {
+    const code = event.code;
+    this.heldKeyCodes.delete(code);
+    this.releasedKeyCodes.add(code);
+
+    if (this.captureKeyBindingAction !== null || this.isHandledKey(code)) {
+      event.preventDefault();
+    }
+  }
+
+  private queueControlEdges(action: KeyBindingAction, binding: Parameters<PlayerControls["queuePress"]>[0]): void {
+    if (this.actionPressed(action)) {
+      this.controls.queuePress(binding);
+    }
+    if (this.actionReleased(action)) {
+      this.controls.queueRelease(binding);
+    }
+  }
+
+  private actionHeld(action: KeyBindingAction): boolean {
+    return this.bindingCodes(action).some((code) => this.heldKeyCodes.has(code));
+  }
+
+  private actionPressed(action: KeyBindingAction): boolean {
+    return this.bindingCodes(action).some((code) => this.pressedKeyCodes.has(code));
+  }
+
+  private actionReleased(action: KeyBindingAction): boolean {
+    return this.bindingCodes(action).some((code) => this.releasedKeyCodes.has(code));
+  }
+
+  private menuPressed(action: KeyBindingAction, fallbackCodes: readonly string[]): boolean {
+    return this.actionPressed(action) || this.anyCodePressed(fallbackCodes);
+  }
+
+  private anyCodePressed(codes: readonly string[]): boolean {
+    return codes.some((code) => this.pressedKeyCodes.has(code));
+  }
+
+  private bindingCodes(action: KeyBindingAction): readonly string[] {
+    return this.gameOptions.keyboardBindings[action] ?? [];
+  }
+
+  private isHandledKey(code: string): boolean {
+    return this.isBoundKey(code) ||
+      MENU_UP_CODES.includes(code) ||
+      MENU_DOWN_CODES.includes(code) ||
+      MENU_LEFT_CODES.includes(code) ||
+      MENU_RIGHT_CODES.includes(code) ||
+      MENU_CONFIRM_CODES.includes(code) ||
+      MENU_CANCEL_CODES.includes(code) ||
+      MENU_CLEAR_CODES.includes(code);
+  }
+
+  private isBoundKey(code: string): boolean {
+    return KEY_BINDING_DEFINITIONS.some(({ action }) => this.bindingCodes(action).includes(code));
+  }
+
+  private clearTransientKeyEdges(): void {
+    this.pressedKeyCodes.clear();
+    this.releasedKeyCodes.clear();
+    this.gameplayEdgesConsumed = false;
   }
 
   private spawnInitialPlayer(): void {
@@ -890,7 +957,7 @@ export class GameScene extends Phaser.Scene {
       return true;
     }
 
-    this.player.bounceFromBottom(bounds.y + bounds.h, this.keys.jump.isDown);
+    this.player.bounceFromBottom(bounds.y + bounds.h, this.actionHeld("jump"));
     return false;
   }
 
@@ -1586,6 +1653,13 @@ export class GameScene extends Phaser.Scene {
       items: [
         screenShakeOption,
         dynamicHairOption,
+        {
+          kind: "submenu",
+          label: "Keyboard Config",
+          activate: (controller) => {
+            controller.push(this.createKeyboardConfigMenu());
+          },
+        },
         infiniteStaminaOption,
         airDashesOption,
         invincibilityOption,
@@ -1594,19 +1668,158 @@ export class GameScene extends Phaser.Scene {
     return draft;
   }
 
+  private createKeyboardConfigMenu(): PauseOptionsMenu {
+    const items: PauseMenuOptionItem<KeyBindingAction>[] = [
+      ...KEY_BINDING_DEFINITIONS.map<PauseMenuKeyBindingItem<KeyBindingAction>>(({ action, label }) => ({
+        kind: "keybinding",
+        label,
+        action,
+        keys: [...this.gameOptions.keyboardBindings[action]],
+      })),
+      {
+        kind: "command",
+        label: "Reset All to Defaults",
+        activate: (controller) => {
+          this.setKeyboardBindings(normalizeKeyBindings(DEFAULT_KEY_BINDINGS));
+          this.refreshKeyboardConfigScreen(controller.current);
+        },
+      },
+    ];
+
+    return {
+      kind: "options",
+      title: "KEYBOARD CONFIG",
+      selectedIndex: 0,
+      onCancel: (controller) => {
+        this.captureKeyBindingAction = null;
+        controller.pop();
+      },
+      items,
+    };
+  }
+
+  private setKeyboardBindings(bindings: KeyBindings): void {
+    this.gameOptions = saveGameOptions({
+      ...this.gameOptions,
+      keyboardBindings: normalizeKeyBindings(bindings),
+    });
+  }
+
+  private refreshKeyboardConfigScreen(screen: PauseOptionsMenu | PauseActionMenu | null): void {
+    if (screen === null || screen.kind !== "options" || screen.title !== "KEYBOARD CONFIG") {
+      return;
+    }
+
+    for (const item of screen.items) {
+      if (isPauseKeyBindingItem(item)) {
+        item.keys = [...this.gameOptions.keyboardBindings[item.action as KeyBindingAction]];
+      }
+    }
+  }
+
   private updatePauseInput(): void {
-    if (Phaser.Input.Keyboard.JustDown(this.keys.up)) {
+    if (this.captureKeyBindingAction !== null) {
+      this.updateKeyBindingCapture();
+      return;
+    }
+
+    if (this.menuPressed("up", MENU_UP_CODES)) {
       this.pauseMenu.moveVertical(-1);
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.down)) {
+    if (this.menuPressed("down", MENU_DOWN_CODES)) {
       this.pauseMenu.moveVertical(1);
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.left)) {
-      this.pauseMenu.moveHorizontal(-1);
+    if (this.menuPressed("left", MENU_LEFT_CODES)) {
+      this.movePauseSelectionHorizontal(-1);
     }
-    if (Phaser.Input.Keyboard.JustDown(this.keys.right)) {
-      this.pauseMenu.moveHorizontal(1);
+    if (this.menuPressed("right", MENU_RIGHT_CODES)) {
+      this.movePauseSelectionHorizontal(1);
     }
+    if (this.anyCodePressed(MENU_CLEAR_CODES)) {
+      this.clearSelectedKeyBindings();
+    }
+    if (this.menuPressed("confirm", MENU_CONFIRM_CODES)) {
+      this.confirmPauseSelection();
+      this.afterPauseMenuInteraction();
+    }
+    if (this.menuPressed("cancel", MENU_CANCEL_CODES)) {
+      this.pauseMenu.cancel();
+      this.afterPauseMenuInteraction();
+    }
+  }
+
+  private updateKeyBindingCapture(): void {
+    const code = this.firstPressedCode();
+    if (code === null || this.captureKeyBindingAction === null) {
+      return;
+    }
+
+    const action = this.captureKeyBindingAction;
+    const bindings = normalizeKeyBindings(this.gameOptions.keyboardBindings);
+    const keys = bindings[action];
+    const existingIndex = keys.indexOf(code);
+    if (existingIndex >= 0) {
+      keys.splice(existingIndex, 1);
+    } else {
+      keys.push(code);
+    }
+
+    this.setKeyboardBindings(bindings);
+    this.captureKeyBindingAction = null;
+    this.refreshKeyboardConfigScreen(this.pauseMenu.current);
+  }
+
+  private firstPressedCode(): string | null {
+    for (const code of this.pressedKeyCodes) {
+      return code;
+    }
+
+    return null;
+  }
+
+  private movePauseSelectionHorizontal(direction: -1 | 1): void {
+    const item = this.selectedPauseOptionItem();
+    if (item && isPauseKeyBindingItem(item)) {
+      this.clearSelectedKeyBindings();
+      return;
+    }
+
+    this.pauseMenu.moveHorizontal(direction);
+  }
+
+  private confirmPauseSelection(): void {
+    const item = this.selectedPauseOptionItem();
+    if (item && isPauseKeyBindingItem(item)) {
+      this.captureKeyBindingAction = item.action as KeyBindingAction;
+      return;
+    }
+
+    this.pauseMenu.confirm();
+  }
+
+  private clearSelectedKeyBindings(): void {
+    const item = this.selectedPauseOptionItem();
+    if (!item || !isPauseKeyBindingItem(item)) {
+      return;
+    }
+
+    const action = item.action as KeyBindingAction;
+    const bindings = normalizeKeyBindings(this.gameOptions.keyboardBindings);
+    bindings[action] = [];
+    this.setKeyboardBindings(bindings);
+    item.keys = [];
+    if (this.captureKeyBindingAction === action) {
+      this.captureKeyBindingAction = null;
+    }
+  }
+
+  private selectedPauseOptionItem(): PauseMenuOptionItem<unknown> | null {
+    const screen = this.pauseMenu.current;
+    if (screen === null || screen.kind !== "options") {
+      return null;
+    }
+
+    return screen.items[screen.selectedIndex] ?? null;
   }
 
   private afterPauseMenuInteraction(): void {
@@ -1667,6 +1880,9 @@ export class GameScene extends Phaser.Scene {
       if (result.queueDash) {
         this.controls.queuePress("dash");
       }
+      if (result.queueCrouchDash) {
+        this.controls.queuePress("crouchDash");
+      }
       this.resumePauseManagedEffects();
       return false;
     }
@@ -1674,11 +1890,12 @@ export class GameScene extends Phaser.Scene {
     return this.unpauseRecovery.active;
   }
 
-  private currentUnpauseRecoveryHeldState(): { pause: boolean; jump: boolean; dash: boolean } {
+  private currentUnpauseRecoveryHeldState(): { pause: boolean; jump: boolean; dash: boolean; crouchDash: boolean } {
     return {
-      pause: this.keys.pause.isDown,
-      jump: this.keys.jump.isDown,
-      dash: this.keys.dash.isDown,
+      pause: this.actionHeld("pause"),
+      jump: this.actionHeld("jump"),
+      dash: this.actionHeld("dash"),
+      crouchDash: this.actionHeld("crouchDash"),
     };
   }
 

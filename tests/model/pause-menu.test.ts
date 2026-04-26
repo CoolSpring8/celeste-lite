@@ -106,4 +106,46 @@ describe("Pause menu controller", () => {
     expect(savedValue).toBe(false);
     expect(controller.current?.title).toBe("PAUSED");
   });
+
+  test("options screen can open submenu rows and run command rows", () => {
+    const controller = new PauseMenuController();
+    let commandRan = false;
+
+    const child: PauseOptionsMenu = {
+      kind: "options",
+      title: "KEYBOARD CONFIG",
+      selectedIndex: 0,
+      onCancel: (menu) => menu.pop(),
+      items: [],
+    };
+    const options: PauseOptionsMenu = {
+      kind: "options",
+      title: "OPTIONS",
+      selectedIndex: 0,
+      onCancel: (menu) => menu.pop(),
+      items: [
+        {
+          kind: "submenu",
+          label: "Keyboard Config",
+          activate: (menu) => menu.push(child),
+        },
+        {
+          kind: "command",
+          label: "Reset All to Defaults",
+          activate: () => {
+            commandRan = true;
+          },
+        },
+      ],
+    };
+
+    controller.open(options);
+    controller.confirm();
+    expect(controller.current?.title).toBe("KEYBOARD CONFIG");
+
+    controller.cancel();
+    controller.moveVertical(1);
+    controller.confirm();
+    expect(commandRan).toBeTrue();
+  });
 });

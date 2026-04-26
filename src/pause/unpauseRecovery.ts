@@ -2,6 +2,7 @@ export interface UnpauseRecoveryHeldState {
   pause: boolean;
   jump: boolean;
   dash: boolean;
+  crouchDash: boolean;
 }
 
 export interface UnpauseRecoveryStepResult {
@@ -9,6 +10,7 @@ export interface UnpauseRecoveryStepResult {
   openPause: boolean;
   queueJump: boolean;
   queueDash: boolean;
+  queueCrouchDash: boolean;
 }
 
 export const UNPAUSE_INPUT_BUFFER_START_FRAME = 6;
@@ -20,6 +22,7 @@ const EMPTY_STEP_RESULT: UnpauseRecoveryStepResult = {
   openPause: false,
   queueJump: false,
   queueDash: false,
+  queueCrouchDash: false,
 };
 
 export class UnpauseRecovery {
@@ -27,9 +30,11 @@ export class UnpauseRecovery {
   private prevPauseDown = false;
   private prevJumpDown = false;
   private prevDashDown = false;
+  private prevCrouchDashDown = false;
   private pauseBuffered = false;
   private jumpBuffered = false;
   private dashBuffered = false;
+  private crouchDashBuffered = false;
 
   get active(): boolean {
     return this.frame >= 0;
@@ -44,9 +49,11 @@ export class UnpauseRecovery {
     this.prevPauseDown = held.pause;
     this.prevJumpDown = held.jump;
     this.prevDashDown = held.dash;
+    this.prevCrouchDashDown = held.crouchDash;
     this.pauseBuffered = false;
     this.jumpBuffered = false;
     this.dashBuffered = false;
+    this.crouchDashBuffered = false;
   }
 
   clear(): void {
@@ -54,9 +61,11 @@ export class UnpauseRecovery {
     this.prevPauseDown = false;
     this.prevJumpDown = false;
     this.prevDashDown = false;
+    this.prevCrouchDashDown = false;
     this.pauseBuffered = false;
     this.jumpBuffered = false;
     this.dashBuffered = false;
+    this.crouchDashBuffered = false;
   }
 
   step(held: UnpauseRecoveryHeldState): UnpauseRecoveryStepResult {
@@ -68,6 +77,7 @@ export class UnpauseRecovery {
     const pausePressed = held.pause && !this.prevPauseDown;
     const jumpPressed = held.jump && !this.prevJumpDown;
     const dashPressed = held.dash && !this.prevDashDown;
+    const crouchDashPressed = held.crouchDash && !this.prevCrouchDashDown;
 
     if (frame >= UNPAUSE_INPUT_BUFFER_START_FRAME && frame < UNPAUSE_CONTROL_RETURN_FRAME) {
       if (jumpPressed) {
@@ -75,6 +85,9 @@ export class UnpauseRecovery {
       }
       if (dashPressed) {
         this.dashBuffered = true;
+      }
+      if (crouchDashPressed) {
+        this.crouchDashBuffered = true;
       }
     }
 
@@ -91,6 +104,9 @@ export class UnpauseRecovery {
     if (!held.dash) {
       this.dashBuffered = false;
     }
+    if (!held.crouchDash) {
+      this.crouchDashBuffered = false;
+    }
 
     let result: UnpauseRecoveryStepResult;
 
@@ -100,6 +116,7 @@ export class UnpauseRecovery {
         openPause: this.pauseBuffered && held.pause,
         queueJump: false,
         queueDash: false,
+        queueCrouchDash: false,
       };
       this.clear();
       return result;
@@ -111,11 +128,13 @@ export class UnpauseRecovery {
         openPause: false,
         queueJump: this.jumpBuffered && held.jump,
         queueDash: this.dashBuffered && held.dash,
+        queueCrouchDash: this.crouchDashBuffered && held.crouchDash,
       };
       this.frame++;
       this.prevPauseDown = held.pause;
       this.prevJumpDown = held.jump;
       this.prevDashDown = held.dash;
+      this.prevCrouchDashDown = held.crouchDash;
       return result;
     }
 
@@ -123,11 +142,13 @@ export class UnpauseRecovery {
     this.prevPauseDown = held.pause;
     this.prevJumpDown = held.jump;
     this.prevDashDown = held.dash;
+    this.prevCrouchDashDown = held.crouchDash;
     return {
       blockGameplay: true,
       openPause: false,
       queueJump: false,
       queueDash: false,
+      queueCrouchDash: false,
     };
   }
 }
