@@ -46,6 +46,7 @@ export abstract class Actor extends Entity {
       }
 
       collided = true;
+      this.remX = 0;
       const result = this.onCollideH(step);
       if (result === "moved") {
         move -= step;
@@ -87,6 +88,7 @@ export abstract class Actor extends Entity {
       }
 
       collided = true;
+      this.remY = 0;
       const result = this.onCollideV(step);
       if (result === "moved") {
         move -= step;
