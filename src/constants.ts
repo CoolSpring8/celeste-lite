@@ -42,6 +42,7 @@ export const PLAYER_VISUALS = {
   wallSlideDustInterval: 0.01,
   dashParticleCount: 1,
   dashParticleInterval: 0.02,
+  dashParticleScale: 0.5,
   dustLifeMinMs: 300,
   dustLifeMaxMs: 500,
   dustSpeedMin: 5,

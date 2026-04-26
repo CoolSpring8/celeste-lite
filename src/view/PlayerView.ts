@@ -420,7 +420,7 @@ export class PlayerView {
         max: PLAYER_VISUALS.dashParticleLifeMaxMs,
       },
       quantity: 0,
-      scale: 1,
+      scale: PLAYER_VISUALS.dashParticleScale,
       alpha: { start: 1, end: 0 },
       tint: COLORS.playerNoDash,
       gravityY: PLAYER_VISUALS.dashParticleGravityY,
