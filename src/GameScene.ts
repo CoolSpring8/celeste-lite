@@ -99,6 +99,8 @@ const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
 const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 const REFILL_CONSUME_FREEZE_TIME = 0.05;
+const DEATH_SHAKE_DURATION_MS = 120;
+const DEATH_SHAKE_INTENSITY = 0.0026;
 const SPAWN_WIPE_HEIGHT = VIEWPORT.height + SPAWN_WIPE_VISUALS.edgeOverscan * 2;
 const DEBUG_HITBOX_COLOR = 0xff0000;
 const DEBUG_HURTBOX_COLOR = 0x00ff00;
@@ -462,6 +464,10 @@ export class GameScene extends Phaser.Scene {
     this.requestScreenShake(45, intensity);
   }
 
+  private requestDeathShake(): void {
+    this.requestScreenShake(DEATH_SHAKE_DURATION_MS, DEATH_SHAKE_INTENSITY);
+  }
+
   requestScreenShake(durationMs: number, intensity: number): void {
     if (!this.gameOptions.screenShakeEffects) {
       return;
@@ -576,7 +582,10 @@ export class GameScene extends Phaser.Scene {
 
   private beginNormalRespawn(): void {
     const snapshot = this.player.getSnapshot();
-    this.player.die({ x: 0, y: 0 });
+    if (!this.player.die({ x: 0, y: 0 })) {
+      return;
+    }
+    this.requestDeathShake();
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.freezeTimer = 0;
@@ -598,7 +607,10 @@ export class GameScene extends Phaser.Scene {
     spikeDir: "up" | "down" | "left" | "right",
   ): void {
     const knockback = this.spikeKnockback(snapshot, spikeDir);
-    this.player.die(this.spikeDirectionVector(spikeDir));
+    if (!this.player.die(this.spikeDirectionVector(spikeDir))) {
+      return;
+    }
+    this.requestDeathShake();
     this.freezeTimer = 0;
     this.controls.clearTransientState();
     this.accumulator = 0;
@@ -714,9 +726,6 @@ export class GameScene extends Phaser.Scene {
       );
     } else {
       this.playerView.startDeath(snapshot);
-    }
-    if (transition.kind === "spike") {
-      this.requestScreenShake(120, 0.0026);
     }
     transition.exploded = true;
   }
