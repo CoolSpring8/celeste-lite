@@ -2,5 +2,7 @@ import { defineConfig } from "vite";
 
 export default defineConfig({
   base: "./",
-  build: {},
+  build: {
+    chunkSizeWarningLimit: 1500,
+  },
 });
