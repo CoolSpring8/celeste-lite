@@ -1,3 +1,4 @@
+import { DEFAULT_ASSIST_OPTIONS, type AssistOptions } from "../assists";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
 import { CollisionWorld } from "../entities/CollisionWorld";
 import { Hitbox } from "../entities/core/Hitbox";
@@ -133,6 +134,7 @@ export class Player extends Actor {
   private introSourceY: number | null = null;
   private wasOnGround = false;
   private effects: PlayerEffect[] = [];
+  private assistOptions: AssistOptions = DEFAULT_ASSIST_OPTIONS;
 
   private cfg: PlayerConfig;
 
@@ -201,6 +203,9 @@ export class Player extends Actor {
     }
 
     this.refreshEnvironment();
+    if (this.assistOptions.infiniteStamina) {
+      this.stamina = toFloat(this.cfg.climb.max);
+    }
     this.wallDustDir = 0;
 
     if (this.forceMoveXTimer > 0) {
@@ -262,14 +267,16 @@ export class Player extends Actor {
 
     if (this.dashRefillCooldownTimer > 0) {
       this.dashRefillCooldownTimer = stepTimer(this.dashRefillCooldownTimer, dt);
+    } else if (this.assistOptions.airDashes === "infinite") {
+      this.refillDash();
     } else {
       const hurtbox = this.getHurtboxBounds();
       if (
         this.onGround &&
-        this.dashesLeft < this.cfg.dash.maxDashes &&
+        this.dashesLeft < this.maxAirDashes() &&
         !this.world.collidesWithSpikeAt(hurtbox.x, hurtbox.y, hurtbox.w, hurtbox.h, this.vx, this.vy)
       ) {
-        this.dashesLeft = this.cfg.dash.maxDashes;
+        this.refillDash();
       }
     }
 
@@ -349,9 +356,26 @@ export class Player extends Actor {
     return this.bodyBoundsFor(this.hurtbox, this.x, this.y);
   }
 
+  setAssistOptions(options: AssistOptions): void {
+    const previousMaxDashes = this.maxAirDashes();
+    this.assistOptions = { ...options };
+    const nextMaxDashes = this.maxAirDashes();
+
+    if (this.dashesLeft >= previousMaxDashes || this.assistOptions.airDashes === "infinite") {
+      this.dashesLeft = nextMaxDashes;
+      this.updateHairState(0);
+    } else {
+      this.dashesLeft = Math.min(this.dashesLeft, nextMaxDashes);
+    }
+
+    if (this.assistOptions.infiniteStamina) {
+      this.stamina = toFloat(this.cfg.climb.max);
+    }
+  }
+
   tryRefill(targetDashes: number | "max"): boolean {
     const target = targetDashes === "max"
-      ? this.cfg.dash.maxDashes
+      ? this.maxAirDashes()
       : Math.max(0, targetDashes);
 
     const needsDashRefill = this.dashesLeft < target;
@@ -470,7 +494,7 @@ export class Player extends Actor {
 
     this.lastAim = { x: this.facing, y: 0 };
     this.dashDir = { x: 0, y: 0 };
-    this.dashesLeft = this.cfg.dash.maxDashes;
+    this.dashesLeft = this.maxAirDashes();
     this.stamina = toFloat(this.cfg.climb.max);
     this.wasDashB = false;
 
@@ -502,8 +526,8 @@ export class Player extends Actor {
     }
   }
 
-  die(direction: Readonly<{ x: number; y: number }>): boolean {
-    if (this.dead) {
+  die(direction: Readonly<{ x: number; y: number }>, evenIfInvincible = false): boolean {
+    if (this.dead || (!evenIfInvincible && this.assistOptions.invincibility)) {
       return false;
     }
 
@@ -587,8 +611,9 @@ export class Player extends Actor {
     this.jumpGraceTimer = 0;
     this.forceMoveXTimer = 0;
 
-    const dashRefilled = this.dashesLeft < this.cfg.dash.maxDashes;
-    this.dashesLeft = this.cfg.dash.maxDashes;
+    const maxDashes = this.maxAirDashes();
+    const dashRefilled = this.dashesLeft < maxDashes;
+    this.refillDash();
     this.stamina = toFloat(this.cfg.climb.max);
     this.dashRefillCooldownTimer = 0;
 
@@ -1192,7 +1217,7 @@ export class Player extends Actor {
       ? (this.dashStartedOnGround ? "hyper" : "wavedash")
       : "super";
 
-    const extended = this.dashesLeft >= this.cfg.dash.maxDashes;
+    const extended = this.dashesLeft >= this.maxAirDashes();
 
     this.emit({
       type,
@@ -1211,6 +1236,9 @@ export class Player extends Actor {
     this.consumeDashPress();
     this.wasDashB = this.dashesLeft === 2;
     this.dashesLeft = Math.max(0, this.dashesLeft - 1);
+    if (this.assistOptions.airDashes === "infinite") {
+      this.hairFlashTimer = HAIR_FLASH_DURATION;
+    }
     return "dash";
   }
 
@@ -1463,7 +1491,33 @@ export class Player extends Actor {
   }
 
   private consumeStamina(amount: number): void {
+    if (this.assistOptions.infiniteStamina) {
+      this.stamina = toFloat(this.cfg.climb.max);
+      return;
+    }
+
     this.stamina = maxFloat(0, subFloat(this.stamina, amount));
+  }
+
+  private maxAirDashes(): number {
+    switch (this.assistOptions.airDashes) {
+      case "two":
+        return 2;
+      case "infinite":
+        return Math.max(2, this.cfg.dash.maxDashes);
+      default:
+        return this.cfg.dash.maxDashes;
+    }
+  }
+
+  private refillDash(): boolean {
+    const maxDashes = this.maxAirDashes();
+    if (this.dashesLeft >= maxDashes) {
+      return false;
+    }
+
+    this.dashesLeft = maxDashes;
+    return true;
   }
 
   private applyLiftBoost(): void {
@@ -1632,6 +1686,10 @@ export class Player extends Actor {
   }
 
   private checkStamina(): number {
+    if (this.assistOptions.infiniteStamina) {
+      return this.cfg.climb.max;
+    }
+
     return this.wallBoostTimer > 0
       ? addFloat(this.stamina, this.cfg.climb.jumpCost)
       : this.stamina;
@@ -1733,6 +1791,13 @@ export class Player extends Actor {
   }
 
   private updateHairState(dt: number): void {
+    if (this.assistOptions.airDashes === "infinite") {
+      this.hairColor = this.hairFlashTimer > 0 ? COLORS.playerHairFlash : COLORS.playerTwoDash;
+      this.hairFlashTimer = maxFloat(0, subFloat(this.hairFlashTimer, dt));
+      this.lastHairDashes = this.dashesLeft;
+      return;
+    }
+
     if (this.dashesLeft === 0 && this.dashesLeft < this.cfg.dash.maxDashes) {
       this.hairColor = this.lerpColor(this.hairColor, COLORS.playerNoDash, USED_HAIR_LERP_RATE * dt);
       this.hairFlashTimer = 0;
@@ -1750,6 +1815,10 @@ export class Player extends Actor {
   }
 
   private resolveHairBaseColor(): number {
+    if (this.assistOptions.airDashes === "infinite") {
+      return COLORS.playerTwoDash;
+    }
+
     return this.dashesLeft === 2 ? COLORS.playerTwoDash : COLORS.playerOneDash;
   }
 

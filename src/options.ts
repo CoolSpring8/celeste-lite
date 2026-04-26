@@ -1,9 +1,15 @@
+import {
+  DEFAULT_ASSIST_OPTIONS,
+  type AirDashAssist,
+  type AssistOptions,
+} from "./assists";
+
 export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
 
-export interface GameOptions {
+export interface GameOptions extends AssistOptions {
   screenShakeEffects: boolean;
   dynamicHair: boolean;
 }
@@ -13,6 +19,7 @@ export const GAME_OPTIONS_STORAGE_KEY = "celeste-lite.options";
 export const DEFAULT_GAME_OPTIONS: Readonly<GameOptions> = Object.freeze({
   screenShakeEffects: true,
   dynamicHair: false,
+  ...DEFAULT_ASSIST_OPTIONS,
 });
 
 const memoryStorage = new Map<string, string>();
@@ -53,7 +60,20 @@ function normalizeGameOptions(value: Partial<GameOptions> | null | undefined): G
     dynamicHair: typeof value?.dynamicHair === "boolean"
       ? value.dynamicHair
       : DEFAULT_GAME_OPTIONS.dynamicHair,
+    infiniteStamina: typeof value?.infiniteStamina === "boolean"
+      ? value.infiniteStamina
+      : DEFAULT_GAME_OPTIONS.infiniteStamina,
+    airDashes: normalizeAirDashes(value?.airDashes),
+    invincibility: typeof value?.invincibility === "boolean"
+      ? value.invincibility
+      : DEFAULT_GAME_OPTIONS.invincibility,
   };
+}
+
+function normalizeAirDashes(value: unknown): AirDashAssist {
+  return value === "two" || value === "infinite"
+    ? value
+    : DEFAULT_GAME_OPTIONS.airDashes;
 }
 
 export function loadGameOptions(storage?: StorageLike): GameOptions {

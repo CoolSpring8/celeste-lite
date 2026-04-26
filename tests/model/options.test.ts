@@ -21,20 +21,38 @@ function createStorage(initial: Record<string, string> = {}): StorageLike {
 }
 
 describe("Game options", () => {
-  test("screen shake defaults to on and dynamic hair defaults to off when storage is empty", () => {
+  test("screen shake defaults to on while visual and assist options default to parity settings", () => {
     const storage = createStorage();
     expect(loadGameOptions(storage)).toEqual(DEFAULT_GAME_OPTIONS);
   });
 
-  test("screen shake and dynamic hair selections persist through storage", () => {
+  test("screen shake, dynamic hair, and assist selections persist through storage", () => {
     const storage = createStorage();
 
-    saveGameOptions({ screenShakeEffects: false, dynamicHair: true }, storage);
+    saveGameOptions({
+      screenShakeEffects: false,
+      dynamicHair: true,
+      infiniteStamina: true,
+      airDashes: "infinite",
+      invincibility: true,
+    }, storage);
 
     expect(storage.getItem(GAME_OPTIONS_STORAGE_KEY)).toBe(
-      JSON.stringify({ screenShakeEffects: false, dynamicHair: true }),
+      JSON.stringify({
+        screenShakeEffects: false,
+        dynamicHair: true,
+        infiniteStamina: true,
+        airDashes: "infinite",
+        invincibility: true,
+      }),
     );
-    expect(loadGameOptions(storage)).toEqual({ screenShakeEffects: false, dynamicHair: true });
+    expect(loadGameOptions(storage)).toEqual({
+      screenShakeEffects: false,
+      dynamicHair: true,
+      infiniteStamina: true,
+      airDashes: "infinite",
+      invincibility: true,
+    });
   });
 
   test("missing newer fields in stored payloads fall back to defaults", () => {
@@ -42,7 +60,21 @@ describe("Game options", () => {
       [GAME_OPTIONS_STORAGE_KEY]: JSON.stringify({ screenShakeEffects: false }),
     });
 
-    expect(loadGameOptions(storage)).toEqual({ screenShakeEffects: false, dynamicHair: false });
+    expect(loadGameOptions(storage)).toEqual({
+      screenShakeEffects: false,
+      dynamicHair: false,
+      infiniteStamina: false,
+      airDashes: "default",
+      invincibility: false,
+    });
+  });
+
+  test("invalid air dash assist values fall back to default", () => {
+    const storage = createStorage({
+      [GAME_OPTIONS_STORAGE_KEY]: JSON.stringify({ airDashes: "triple" }),
+    });
+
+    expect(loadGameOptions(storage).airDashes).toBe("default");
   });
 
   test("invalid stored option payloads fall back to defaults", () => {

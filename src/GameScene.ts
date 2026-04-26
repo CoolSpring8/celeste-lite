@@ -1,4 +1,5 @@
 import Phaser from "phaser";
+import type { AirDashAssist } from "./assists";
 import { COLORS, PLAYER_CONFIG, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { Grid } from "./entities/core/Grid";
@@ -120,6 +121,11 @@ const ON_OFF_CHOICES: readonly PauseMenuChoice<boolean>[] = [
   { label: "OFF", value: false },
   { label: "ON", value: true },
 ];
+const AIR_DASH_CHOICES: readonly PauseMenuChoice<AirDashAssist>[] = [
+  { label: "Default", value: "default" },
+  { label: "2", value: "two" },
+  { label: "Infinite", value: "infinite" },
+];
 
 export class GameScene extends Phaser.Scene {
   private player!: Player;
@@ -180,6 +186,7 @@ export class GameScene extends Phaser.Scene {
     this.lighting = new LightingSystem(this, this.world);
 
     this.player = new Player(this.spawnX, this.spawnY, this.world, PLAYER_CONFIG);
+    this.player.setAssistOptions(this.gameOptions);
     this.playerView = new PlayerView(this);
     this.playerView.setDynamicHairEnabled(this.gameOptions.dynamicHair);
     this.ensurePixelTexture();
@@ -364,12 +371,13 @@ export class GameScene extends Phaser.Scene {
         stepSnapshot.vy,
       );
       if (spike) {
-        this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
-        effects.push(...stepEffects);
-        this.beginSpikeDeathRespawn(stepSnapshot, spike.dir);
-        this.accumulator = 0;
-        steps++;
-        break;
+        if (this.beginSpikeDeathRespawn(stepSnapshot, spike.dir)) {
+          this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
+          effects.push(...stepEffects);
+          this.accumulator = 0;
+          steps++;
+          break;
+        }
       }
 
       const snapshot = this.player.getSnapshot();
@@ -582,7 +590,7 @@ export class GameScene extends Phaser.Scene {
 
   private beginNormalRespawn(): void {
     const snapshot = this.player.getSnapshot();
-    if (!this.player.die({ x: 0, y: 0 })) {
+    if (!this.player.die({ x: 0, y: 0 }, true)) {
       return;
     }
     this.requestDeathShake();
@@ -605,10 +613,10 @@ export class GameScene extends Phaser.Scene {
   private beginSpikeDeathRespawn(
     snapshot: ReturnType<Player["getSnapshot"]>,
     spikeDir: "up" | "down" | "left" | "right",
-  ): void {
+  ): boolean {
     const knockback = this.spikeKnockback(snapshot, spikeDir);
     if (!this.player.die(this.spikeDirectionVector(spikeDir))) {
-      return;
+      return false;
     }
     this.requestDeathShake();
     this.freezeTimer = 0;
@@ -624,6 +632,7 @@ export class GameScene extends Phaser.Scene {
       knockback,
     });
     this.playerView.startDeathRecoil(snapshot);
+    return true;
   }
 
   private updateDeathRespawnSequence(dt: number): void {
@@ -1485,6 +1494,24 @@ export class GameScene extends Phaser.Scene {
       values: ON_OFF_CHOICES,
       valueIndex: this.gameOptions.dynamicHair ? 1 : 0,
     };
+    const infiniteStaminaOption: PauseMenuOption<boolean> = {
+      label: "Infinite Stamina",
+      values: ON_OFF_CHOICES,
+      valueIndex: this.gameOptions.infiniteStamina ? 1 : 0,
+    };
+    const airDashesOption: PauseMenuOption<AirDashAssist> = {
+      label: "Air Dashes",
+      values: AIR_DASH_CHOICES,
+      valueIndex: AIR_DASH_CHOICES.findIndex((choice) => choice.value === this.gameOptions.airDashes),
+    };
+    if (airDashesOption.valueIndex < 0) {
+      airDashesOption.valueIndex = 0;
+    }
+    const invincibilityOption: PauseMenuOption<boolean> = {
+      label: "Invincibility",
+      values: ON_OFF_CHOICES,
+      valueIndex: this.gameOptions.invincibility ? 1 : 0,
+    };
 
     const draft: PauseOptionsMenu = {
       kind: "options",
@@ -1493,18 +1520,31 @@ export class GameScene extends Phaser.Scene {
       onCancel: (controller) => {
         const screenShakeEffects = currentPauseOptionValue(screenShakeOption);
         const dynamicHair = currentPauseOptionValue(dynamicHairOption);
+        const infiniteStamina = currentPauseOptionValue(infiniteStaminaOption);
+        const airDashes = currentPauseOptionValue(airDashesOption);
+        const invincibility = currentPauseOptionValue(invincibilityOption);
         this.gameOptions = saveGameOptions({
           ...this.gameOptions,
           screenShakeEffects: screenShakeEffects ?? this.gameOptions.screenShakeEffects,
           dynamicHair: dynamicHair ?? this.gameOptions.dynamicHair,
+          infiniteStamina: infiniteStamina ?? this.gameOptions.infiniteStamina,
+          airDashes: airDashes ?? this.gameOptions.airDashes,
+          invincibility: invincibility ?? this.gameOptions.invincibility,
         });
+        this.player.setAssistOptions(this.gameOptions);
         this.playerView.setDynamicHairEnabled(this.gameOptions.dynamicHair);
         if (!this.gameOptions.screenShakeEffects) {
           this.stopScreenShake();
         }
         controller.pop();
       },
-      items: [screenShakeOption, dynamicHairOption],
+      items: [
+        screenShakeOption,
+        dynamicHairOption,
+        infiniteStaminaOption,
+        airDashesOption,
+        invincibilityOption,
+      ],
     };
     return draft;
   }
