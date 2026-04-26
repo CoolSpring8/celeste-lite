@@ -38,6 +38,7 @@ const USED_HAIR_LERP_RATE = 6;
 const BOUNCE_AUTO_JUMP_TIME = 0.1;
 const BOUNCE_VAR_JUMP_TIME = 0.2;
 const BOUNCE_SPEED = -140;
+const BOTTOM_BOUNCE_JUMP_HELD_SPEED = -180;
 const SWEAT_JUMP_HOLD_TIME = 0.12;
 const ZERO_DIRECTION = { x: 0, y: 0 };
 const EMPTY_INPUT: InputState = {
@@ -634,6 +635,21 @@ export class Player extends Actor {
     this.varJumpSpeed = this.vy = BOUNCE_SPEED;
     this.clearVerticalRemainder();
     this.emit({ type: "bounce", dirY: -1 });
+  }
+
+  bounceFromBottom(bottomLimit: number, jumpHeld: boolean): void {
+    const hitbox = this.requireBodyHitbox();
+    if (this.getHitboxBottom() > bottomLimit) {
+      this.y = this.entityYForFoot(hitbox, bottomLimit);
+    }
+
+    this.bounce();
+    if (jumpHeld) {
+      this.varJumpTimer = BOUNCE_VAR_JUMP_TIME;
+      this.autoJump = true;
+      this.autoJumpTimer = BOUNCE_AUTO_JUMP_TIME;
+      this.varJumpSpeed = this.vy = BOTTOM_BOUNCE_JUMP_HELD_SPEED;
+    }
   }
 
   enforceTopLimit(minTop: number): void {

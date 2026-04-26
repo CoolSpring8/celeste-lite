@@ -71,4 +71,18 @@ describe("Transition behavior", () => {
     const result = stepOnce(player, makeInput());
     expect(result.snapshot.vy).toBe(-140);
   });
+
+  test("bottom bounce clamps to the room edge and jumps higher while jump is held", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 100, 100);
+
+    player.bounceFromBottom(92, true);
+
+    const bounced = player.getSnapshot();
+    expect(bounced.bottom).toBe(92);
+    expect(bounced.vy).toBe(-180);
+
+    const result = stepOnce(player, makeInput({ jump: true }));
+    expect(result.snapshot.vy).toBe(-180);
+  });
 });

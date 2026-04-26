@@ -261,7 +261,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.pauseMenu.isOpen) {
       this.updatePauseInput();
-      const snapshot = this.player.getSnapshot();
+      let snapshot = this.player.getSnapshot();
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, []);
@@ -295,7 +295,7 @@ export class GameScene extends Phaser.Scene {
 
     if (this.roomTransition) {
       this.updateRoomTransition(rawFrameDt);
-      const snapshot = this.player.getSnapshot();
+      let snapshot = this.player.getSnapshot();
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
@@ -380,13 +380,17 @@ export class GameScene extends Phaser.Scene {
         }
       }
 
-      const snapshot = this.player.getSnapshot();
+      let snapshot = this.player.getSnapshot();
       this.playerView.tick(snapshot, stepEffects, this.fixedDt);
       effects.push(...stepEffects);
 
       if (this.tryStartRoomTransition(snapshot)) {
         break;
       }
+      if (this.tryHandleBottomFallout(snapshot)) {
+        break;
+      }
+      snapshot = this.player.getSnapshot();
 
       this.updateCamera(snapshot, this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
@@ -868,6 +872,47 @@ export class GameScene extends Phaser.Scene {
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.freezeTimer = 0;
+    return true;
+  }
+
+  private tryHandleBottomFallout(snapshot: ReturnType<Player["getSnapshot"]>): boolean {
+    const bounds = this.currentRoom.bounds;
+    if (snapshot.top <= bounds.y + bounds.h) {
+      return false;
+    }
+
+    const roomBelow = findAdjacentRoom(this.rooms, this.currentRoom, "down", snapshot.centerX);
+    if (roomBelow !== null) {
+      return false;
+    }
+
+    if (this.beginBottomFalloutRespawn(snapshot)) {
+      return true;
+    }
+
+    this.player.bounceFromBottom(bounds.y + bounds.h, this.keys.jump.isDown);
+    return false;
+  }
+
+  private beginBottomFalloutRespawn(snapshot: ReturnType<Player["getSnapshot"]>): boolean {
+    if (!this.player.die({ x: 0, y: 0 })) {
+      return false;
+    }
+    this.requestDeathShake();
+    this.controls.clearTransientState();
+    this.accumulator = 0;
+    this.freezeTimer = 0;
+    this.roomTransition = null;
+    this.startDeathRespawnSequence({
+      kind: "normal",
+      exploded: false,
+      revealStarted: false,
+      respawnStarted: false,
+      respawnSourceX: snapshot.centerX,
+      respawnSourceY: snapshot.centerY,
+      knockback: null,
+    });
+    this.startTransitionExplosion(snapshot);
     return true;
   }
 
