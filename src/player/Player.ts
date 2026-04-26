@@ -1369,8 +1369,7 @@ export class Player extends Actor {
     );
     if (!wouldHitSolid && !wouldHitJumpThru) return;
 
-    this.y += dist;
-    this.clearVerticalRemainder();
+    this.moveVExact(dist);
   }
 
   private applyDashJumpThruNudge(): void {

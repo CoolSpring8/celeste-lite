@@ -1,7 +1,9 @@
 import { describe, expect, test } from "bun:test";
+import { WORLD } from "../../src/constants.ts";
 import type { LevelEntitySpec } from "../../src/entities/types.ts";
 import {
   buildWorld,
+  createPlayer,
   createPlayerOnFloor,
   makeInput,
   step,
@@ -100,5 +102,41 @@ describe("Dash behavior", () => {
     expect(jump.snapshot.state).toBe("normal");
     expect(jump.snapshot.vx).toBeCloseTo(325, 5);
     expect(jump.snapshot.vy).toBeCloseTo(-52.5, 5);
+  });
+
+  test("post-dash floor snap does not embed horizontal dashes in solid ground", () => {
+    const floorRow = 20;
+    const floorY = floorRow * WORLD.tile;
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, floorRow);
+    const world = buildWorld(specs);
+    const player = createPlayer(world, 104, floorY - 4);
+
+    stepOnce(player, makeInput());
+    stepOnce(player, makeInput({ x: 1, dashPressed: true }));
+
+    let landed = null as ReturnType<typeof player.getSnapshot> | null;
+    for (let frame = 0; frame < 60; frame++) {
+      const result = stepOnce(player, makeInput({ x: 1 }));
+      if (result.snapshot.onGround && result.snapshot.state === "normal") {
+        landed = result.snapshot;
+        break;
+      }
+    }
+
+    expect(landed).toBeTruthy();
+    expect(landed!.bottom).toBe(floorY);
+
+    const run = stepOnce(player, makeInput({ x: 1 })).snapshot;
+    expect(run.x).toBeGreaterThan(landed!.x);
+    expect(run.bottom).toBe(floorY);
+
+    const duck = stepOnce(player, makeInput({ y: 1 })).snapshot;
+    expect(duck.isCrouched).toBeTrue();
+    expect(duck.bottom).toBe(floorY);
+
+    const stand = stepOnce(player, makeInput()).snapshot;
+    expect(stand.isCrouched).toBeFalse();
+    expect(stand.bottom).toBe(floorY);
   });
 });
