@@ -49,6 +49,11 @@ import {
   transitionTimings,
   SPAWN_WIPE_VISUALS,
 } from "./view/deathRespawn";
+import {
+  INTRO_IRIS_VISUALS,
+  introIrisTotalDuration,
+  sampleIntroIrisRadius,
+} from "./view/introIris";
 import { LightingSource, LightingSystem } from "./lighting/LightingSystem";
 
 interface RefillView {
@@ -93,6 +98,10 @@ interface DeathRespawnSequenceState {
       endY: number;
     }
     | null;
+}
+
+interface IntroIrisState {
+  elapsed: number;
 }
 
 const CAMERA_SMOOTH_BASE = 0.01;
@@ -184,12 +193,14 @@ export class GameScene extends Phaser.Scene {
   private tileGfx!: Phaser.GameObjects.Graphics;
   private debugGfx!: Phaser.GameObjects.Graphics;
   private spawnWipe!: Phaser.GameObjects.Graphics;
+  private introIris!: Phaser.GameObjects.Graphics;
   private hudText!: Phaser.GameObjects.Text;
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
   private displacement!: DisplacementSystem;
   private deathRespawnSequence: DeathRespawnSequenceState | null = null;
+  private introIrisState: IntroIrisState | null = null;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
   private debugEnabled = false;
@@ -213,6 +224,7 @@ export class GameScene extends Phaser.Scene {
     this.debugGfx = this.add.graphics().setDepth(9);
     this.debugGfx.setVisible(false);
     this.spawnWipe = this.add.graphics().setDepth(20).setScrollFactor(0);
+    this.introIris = this.add.graphics().setDepth(30).setScrollFactor(0);
     this.drawTiles();
     this.lighting = new LightingSystem(this, this.world);
     this.displacement = new DisplacementSystem(this);
@@ -270,6 +282,7 @@ export class GameScene extends Phaser.Scene {
     this.updateHUD(snapshot, []);
     this.renderDebugOverlay(snapshot);
     this.renderSpawnWipe();
+    this.renderIntroIris(snapshot);
   }
 
   update(_time: number, delta: number): void {
@@ -297,6 +310,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, []);
       this.renderDebugOverlay(snapshot);
       this.renderSpawnWipe();
+      this.renderIntroIris(snapshot);
       const current = this.pauseMenu.current;
       if (current) {
         this.pauseOverlay.render(current, this.captureKeyBindingAction);
@@ -308,6 +322,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.pauseOverlay.hide();
+    this.advanceIntroIris(rawFrameDt);
 
     if (this.actionPressed("confirm")) {
       this.confirmBufferedFrames = 2;
@@ -336,6 +351,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.renderIntroIris(snapshot);
       return;
     }
 
@@ -356,6 +372,7 @@ export class GameScene extends Phaser.Scene {
         this.updateHUD(snapshot, effects);
         this.renderDebugOverlay(snapshot);
         this.renderSpawnWipe();
+        this.renderIntroIris(snapshot);
         this.clearTransientKeyEdges();
         return;
       }
@@ -370,6 +387,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.renderIntroIris(snapshot);
       return;
     }
 
@@ -384,6 +402,7 @@ export class GameScene extends Phaser.Scene {
       this.updateHUD(snapshot, effects);
       this.renderDebugOverlay(snapshot);
       this.clearSpawnWipe();
+      this.renderIntroIris(snapshot);
       return;
     }
 
@@ -453,6 +472,7 @@ export class GameScene extends Phaser.Scene {
     this.updateHUD(snapshot, effects);
     this.renderDebugOverlay(snapshot);
     this.clearSpawnWipe();
+    this.renderIntroIris(snapshot);
     if (this.gameplayEdgesConsumed) {
       this.clearTransientKeyEdges();
     }
@@ -547,6 +567,7 @@ export class GameScene extends Phaser.Scene {
     this.pauseOverlay?.destroy();
     this.debugGfx?.destroy();
     this.spawnWipe?.destroy();
+    this.introIris?.destroy();
     this.refillEmitter?.destroy();
     this.lighting?.destroy();
     this.displacement?.destroy();
@@ -676,7 +697,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private spawnInitialPlayer(): void {
-    this.revivePlayerAtCheckpoint("none");
+    this.startIntroIris();
+    this.revivePlayerAtCheckpoint("start", this.spawnX, this.spawnY, introIrisTotalDuration());
   }
 
   private beginNormalRespawn(): void {
@@ -759,6 +781,7 @@ export class GameScene extends Phaser.Scene {
     introType: PlayerIntroType,
     sourceX = this.spawnX,
     sourceY = this.spawnY,
+    introDuration?: number,
   ): void {
     this.world.resetTransientState();
     this.syncRefillViews();
@@ -787,6 +810,7 @@ export class GameScene extends Phaser.Scene {
       this.player.reviveAt(this.spawnX, this.spawnY, {
         type: "start",
         facingCenterX,
+        duration: introDuration,
       });
     } else {
       this.player.reviveAt(this.spawnX, this.spawnY, introType);
@@ -810,6 +834,18 @@ export class GameScene extends Phaser.Scene {
     this.deathRespawnSequence = null;
     this.controls.clearTransientState();
     this.clearSpawnWipe();
+  }
+
+  private startIntroIris(): void {
+    this.introIrisState = { elapsed: 0 };
+  }
+
+  private advanceIntroIris(dt: number): void {
+    if (!this.introIrisState) {
+      return;
+    }
+
+    this.introIrisState.elapsed += dt;
   }
 
   private startTransitionExplosion(snapshot = this.player.getSnapshot()): void {
@@ -1383,6 +1419,81 @@ export class GameScene extends Phaser.Scene {
     this.spawnWipe.setVisible(false);
   }
 
+  private renderIntroIris(snapshot: ReturnType<Player["getSnapshot"]>): void {
+    const state = this.introIrisState;
+    if (!state) {
+      this.clearIntroIris();
+      return;
+    }
+
+    const camera = this.cameras.main;
+    const centerX = snapshot.centerX - camera.scrollX;
+    const centerY = snapshot.centerY - camera.scrollY;
+    const sample = sampleIntroIrisRadius(
+      state.elapsed,
+      this.introIrisMaxRadius(centerX, centerY),
+    );
+    if (sample.done) {
+      this.introIrisState = null;
+      this.clearIntroIris();
+      return;
+    }
+
+    this.drawIntroIris(centerX, centerY, sample.radius);
+  }
+
+  private introIrisMaxRadius(centerX: number, centerY: number): number {
+    return Math.max(
+      Math.hypot(centerX, centerY),
+      Math.hypot(VIEWPORT.width - centerX, centerY),
+      Math.hypot(centerX, VIEWPORT.height - centerY),
+      Math.hypot(VIEWPORT.width - centerX, VIEWPORT.height - centerY),
+    ) + 2;
+  }
+
+  private drawIntroIris(centerX: number, centerY: number, radius: number): void {
+    const rowHeight = INTRO_IRIS_VISUALS.scanlineHeight;
+    const radiusSq = radius * radius;
+    this.introIris.clear();
+    this.introIris.fillStyle(INTRO_IRIS_VISUALS.color, 1);
+
+    if (radius <= 0) {
+      this.introIris.fillRect(0, 0, VIEWPORT.width, VIEWPORT.height);
+      this.introIris.setVisible(true);
+      return;
+    }
+
+    for (let y = 0; y < VIEWPORT.height; y += rowHeight) {
+      const midY = y + rowHeight * 0.5;
+      const dy = midY - centerY;
+      if (Math.abs(dy) >= radius) {
+        this.introIris.fillRect(0, y, VIEWPORT.width, rowHeight);
+        continue;
+      }
+
+      const halfWidth = Math.sqrt(Math.max(0, radiusSq - dy * dy));
+      const leftWidth = Math.max(0, Math.floor(centerX - halfWidth));
+      const rightX = Math.min(VIEWPORT.width, Math.ceil(centerX + halfWidth));
+      if (leftWidth > 0) {
+        this.introIris.fillRect(0, y, leftWidth, rowHeight);
+      }
+      if (rightX < VIEWPORT.width) {
+        this.introIris.fillRect(rightX, y, VIEWPORT.width - rightX, rowHeight);
+      }
+    }
+
+    this.introIris.setVisible(true);
+  }
+
+  private clearIntroIris(): void {
+    if (!this.introIris) {
+      return;
+    }
+
+    this.introIris.clear();
+    this.introIris.setVisible(false);
+  }
+
   private traceWipeEdge(baseY: number, edge: "top" | "bottom"): void {
     const overscan = SPAWN_WIPE_VISUALS.edgeOverscan;
     const minX = -overscan;
@@ -1908,6 +2019,7 @@ export class GameScene extends Phaser.Scene {
     } else {
       this.clearSpawnWipe();
     }
+    this.renderIntroIris(snapshot);
   }
 
   private advanceUnpauseRecovery(rawFrameDt: number): boolean {
