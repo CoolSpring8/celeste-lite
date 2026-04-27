@@ -91,7 +91,8 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
   scene.player = {
     inControl: true,
     timePaused: false,
-    getSnapshot: () => ({}),
+    canRetry: true,
+    getSnapshot: () => ({ dead: false, state: "normal" }),
   };
   scene.playerView = {
     render() {},
@@ -142,6 +143,27 @@ describe("GameScene input edge lifecycle", () => {
     expect(held.jumpPressed).toBeFalse();
   });
 
+  test("pause pressed during a room transition is consumed without opening the pause menu", async () => {
+    const scene = await createSceneHarness();
+    let openedPause = false;
+    scene.openPauseMenu = () => {
+      openedPause = true;
+    };
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyP"));
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
+    scene.roomTransition = {};
+    (scene.update as (time: number, delta: number) => void)(0, 16);
+
+    expect(openedPause).toBeFalse();
+    expect((scene.actionPressed as (action: string) => boolean)("pause")).toBeFalse();
+
+    scene.roomTransition = null;
+    const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
+    expect(input.jump).toBeTrue();
+    expect(input.jumpPressed).toBeTrue();
+  });
+
   test("freeze frames preserve dash press edges for the first resumed gameplay step", async () => {
     const scene = await createSceneHarness();
 
@@ -167,6 +189,50 @@ describe("GameScene input edge lifecycle", () => {
     const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
     expect(input.jump).toBeTrue();
     expect(input.jumpPressed).toBeTrue();
+  });
+
+  test("pause stays blocked through death and wipe until respawn starts", async () => {
+    const scene = await createSceneHarness();
+    let openedPause = false;
+    scene.openPauseMenu = () => {
+      openedPause = true;
+    };
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyP"));
+    scene.deathRespawnSequence = {
+      revealStarted: false,
+      respawnStarted: false,
+    };
+    (scene.update as (time: number, delta: number) => void)(0, 16);
+
+    expect(openedPause).toBeFalse();
+    expect((scene.actionPressed as (action: string) => boolean)("pause")).toBeFalse();
+
+    const player = scene.player as {
+      timePaused: boolean;
+      getSnapshot: () => { dead: boolean; state: string };
+    };
+    scene.deathRespawnSequence = {
+      revealStarted: true,
+      respawnStarted: true,
+    };
+    player.timePaused = true;
+    player.getSnapshot = () => ({ dead: false, state: "intro_respawn" });
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyP"));
+    (scene.update as (time: number, delta: number) => void)(0, 16);
+
+    expect(openedPause).toBeTrue();
+    expect((scene.actionPressed as (action: string) => boolean)("pause")).toBeFalse();
+  });
+
+  test("pause root disables retry when the player cannot retry", async () => {
+    const scene = await createSceneHarness();
+    const player = scene.player as { canRetry: boolean };
+    player.canRetry = false;
+
+    const root = (scene.createPauseRootMenu as () => { items: Array<{ label: string; disabled?: boolean }> })();
+    expect(root.items.find((item) => item.label === "Retry")?.disabled).toBeTrue();
   });
 
   test("unpause recovery consumes held input separately and clears raw press edges", async () => {

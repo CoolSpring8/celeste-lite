@@ -148,4 +148,33 @@ describe("Pause menu controller", () => {
     controller.confirm();
     expect(commandRan).toBeTrue();
   });
+
+  test("disabled action menu items render in place but ignore confirm", () => {
+    const controller = new PauseMenuController();
+    let retried = false;
+
+    const root: PauseActionMenu = {
+      kind: "action",
+      title: "PAUSED",
+      selectedIndex: 1,
+      onCancel: (menu) => menu.close(),
+      items: [
+        { label: "Resume", activate: () => {} },
+        {
+          label: "Retry",
+          disabled: true,
+          activate: () => {
+            retried = true;
+          },
+        },
+        { label: "Options", activate: () => {} },
+      ],
+    };
+
+    controller.open(root);
+    controller.confirm();
+
+    expect(retried).toBeFalse();
+    expect(controller.current?.selectedIndex).toBe(1);
+  });
 });

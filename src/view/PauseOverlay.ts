@@ -5,6 +5,7 @@ import {
   isPauseChoiceOption,
   isPauseCommandItem,
   isPauseKeyBindingItem,
+  isPauseMenuItemDisabled,
   isPauseSubmenuItem,
   type PauseMenuScreen,
 } from "../pause/menu";
@@ -103,12 +104,12 @@ export class PauseOverlay {
       const rowVisible = !scrollable ||
         (y >= rowStartY - rowHeight && y <= rowStartY + visibleRowsHeight);
       const selected = i === screen.selectedIndex;
-      const labelColor = selected ? COLOR_SELECTED : COLOR_TEXT;
-
-      row.label.setVisible(rowVisible).setText(screen.items[i].label).setColor(labelColor);
-      row.label.setY(y);
 
       if (screen.kind === "action") {
+        const item = screen.items[i];
+        const labelColor = isPauseMenuItemDisabled(item) ? COLOR_DISABLED : selected ? COLOR_SELECTED : COLOR_TEXT;
+        row.label.setVisible(rowVisible).setText(item.label).setColor(labelColor);
+        row.label.setY(y);
         row.label
           .setX(centerX)
           .setOrigin(0.5, 0)
@@ -120,7 +121,11 @@ export class PauseOverlay {
       }
 
       const item = screen.items[i];
-      const valueColor = selected ? COLOR_SELECTED : COLOR_TEXT;
+      const disabled = (isPauseSubmenuItem(item) || isPauseCommandItem(item)) && isPauseMenuItemDisabled(item);
+      const labelColor = disabled ? COLOR_DISABLED : selected ? COLOR_SELECTED : COLOR_TEXT;
+      const valueColor = disabled ? COLOR_DISABLED : selected ? COLOR_SELECTED : COLOR_TEXT;
+      row.label.setVisible(rowVisible).setText(item.label).setColor(labelColor);
+      row.label.setY(y);
       if (!rowVisible) {
         row.leftArrow.setVisible(false);
         row.value.setVisible(false);

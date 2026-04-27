@@ -273,8 +273,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!this.pauseMenu.isOpen && !this.unpauseRecovery.active && this.actionPressed("pause")) {
-      this.openPauseMenu();
-      this.clearTransientKeyEdges();
+      if (this.canOpenPauseMenu()) {
+        this.openPauseMenu();
+        this.clearTransientKeyEdges();
+      } else {
+        this.clearActionTransientKeyEdges("pause");
+      }
     }
 
     if (this.pauseMenu.isOpen) {
@@ -651,6 +655,13 @@ export class GameScene extends Phaser.Scene {
     this.pressedKeyCodes.clear();
     this.releasedKeyCodes.clear();
     this.gameplayEdgesConsumed = false;
+  }
+
+  private clearActionTransientKeyEdges(action: KeyBindingAction): void {
+    for (const code of this.bindingCodes(action)) {
+      this.pressedKeyCodes.delete(code);
+      this.releasedKeyCodes.delete(code);
+    }
   }
 
   private spawnInitialPlayer(): void {
@@ -1564,7 +1575,17 @@ export class GameScene extends Phaser.Scene {
     this.pauseMenu.open(this.createPauseRootMenu());
   }
 
+  private canOpenPauseMenu(): boolean {
+    const snapshot = this.player.getSnapshot();
+    if (this.roomTransition !== null || snapshot.dead) {
+      return false;
+    }
+
+    return this.deathRespawnSequence === null || this.deathRespawnSequence.respawnStarted;
+  }
+
   private createPauseRootMenu(): PauseActionMenu {
+    const canRetry = this.canRetryFromPause();
     return {
       kind: "action",
       title: "PAUSED",
@@ -1581,6 +1602,7 @@ export class GameScene extends Phaser.Scene {
         },
         {
           label: "Retry",
+          disabled: !canRetry,
           activate: () => {
             this.closePauseMenuImmediately();
             this.retryFromPause();
@@ -1834,11 +1856,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private retryFromPause(): void {
-    if (this.deathRespawnSequence !== null || !this.player.canRetry) {
+    if (!this.canRetryFromPause()) {
       return;
     }
 
     this.beginNormalRespawn();
+  }
+
+  private canRetryFromPause(): boolean {
+    return this.deathRespawnSequence === null && this.player.canRetry;
   }
 
   private stopScreenShake(): void {
@@ -1866,7 +1892,13 @@ export class GameScene extends Phaser.Scene {
 
       if (result.openPause) {
         this.accumulator = 0;
-        this.openPauseMenu();
+        if (this.canOpenPauseMenu()) {
+          this.openPauseMenu();
+        } else {
+          this.clearActionTransientKeyEdges("pause");
+          this.resumePauseManagedEffects();
+          return false;
+        }
         return true;
       }
 

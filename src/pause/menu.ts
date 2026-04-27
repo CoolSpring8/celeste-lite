@@ -13,6 +13,7 @@ export interface PauseMenuOption<T = unknown> {
 export interface PauseMenuSubmenuItem {
   kind: "submenu";
   label: string;
+  disabled?: boolean;
   activate: (controller: PauseMenuController) => void;
 }
 
@@ -26,6 +27,7 @@ export interface PauseMenuKeyBindingItem<TAction = unknown> {
 export interface PauseMenuCommandItem {
   kind: "command";
   label: string;
+  disabled?: boolean;
   activate: (controller: PauseMenuController) => void;
 }
 
@@ -37,6 +39,7 @@ export type PauseMenuOptionItem<T = unknown> =
 
 export interface PauseMenuItem {
   label: string;
+  disabled?: boolean;
   activate: (controller: PauseMenuController) => void;
 }
 
@@ -72,6 +75,10 @@ export function isPauseKeyBindingItem(item: PauseMenuOptionItem<unknown>): item 
 
 export function isPauseCommandItem(item: PauseMenuOptionItem<unknown>): item is PauseMenuCommandItem {
   return item.kind === "command";
+}
+
+export function isPauseMenuItemDisabled(item: { disabled?: boolean }): boolean {
+  return item.disabled === true;
 }
 
 export function currentPauseOptionValue<T>(option: PauseMenuOption<T>): T | null {
@@ -161,7 +168,7 @@ export class PauseMenuController {
 
     if (screen.kind === "action") {
       const item = screen.items[screen.selectedIndex];
-      if (!item) {
+      if (!item || isPauseMenuItemDisabled(item)) {
         return;
       }
 
@@ -174,7 +181,7 @@ export class PauseMenuController {
       return;
     }
 
-    if (isPauseSubmenuItem(item) || isPauseCommandItem(item)) {
+    if ((isPauseSubmenuItem(item) || isPauseCommandItem(item)) && !isPauseMenuItemDisabled(item)) {
       item.activate(this);
     }
   }
