@@ -4,7 +4,7 @@ import { COLORS, PLAYER_CONFIG, VIEWPORT, WORLD } from "./constants";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { Grid } from "./entities/core/Grid";
 import { Hitbox } from "./entities/core/Hitbox";
-import { type RefillPickupEntity } from "./entities/runtime";
+import { JumpThruTilesEntity, type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
 import { TILE_JUMP_THROUGH, tileAt } from "./grid";
 import {
@@ -115,6 +115,7 @@ const DEATH_SHAKE_INTENSITY = 0.0026;
 const SPAWN_WIPE_HEIGHT = VIEWPORT.height + SPAWN_WIPE_VISUALS.edgeOverscan * 2;
 const DEBUG_HITBOX_COLOR = 0xff0000;
 const DEBUG_HURTBOX_COLOR = 0x00ff00;
+const DEBUG_JUMP_THRU_HEIGHT = JUMP_THRU_EDGE_HEIGHT + JUMP_THRU_BODY_HEIGHT;
 const EMPTY_INPUT: InputState = {
   x: 0,
   y: 0,
@@ -1463,7 +1464,10 @@ export class GameScene extends Phaser.Scene {
       }
 
       if (entity.collider instanceof Grid) {
-        this.drawDebugGrid(entity.collider);
+        this.drawDebugGrid(
+          entity.collider,
+          entity instanceof JumpThruTilesEntity ? DEBUG_JUMP_THRU_HEIGHT : entity.collider.cellHeight,
+        );
         continue;
       }
 
@@ -1484,7 +1488,7 @@ export class GameScene extends Phaser.Scene {
     this.drawDebugBounds(this.player.getHurtboxBounds(), DEBUG_HURTBOX_COLOR);
   }
 
-  private drawDebugGrid(grid: Grid): void {
+  private drawDebugGrid(grid: Grid, debugCellHeight: number): void {
     for (let row = 0; row < grid.cellsY; row++) {
       for (let col = 0; col < grid.cellsX; col++) {
         if (!grid.getCell(col, row)) {
@@ -1496,7 +1500,7 @@ export class GameScene extends Phaser.Scene {
             x: grid.absoluteLeft + col * grid.cellWidth,
             y: grid.absoluteTop + row * grid.cellHeight,
             w: grid.cellWidth,
-            h: grid.cellHeight,
+            h: debugCellHeight,
           },
           DEBUG_HITBOX_COLOR,
         );
