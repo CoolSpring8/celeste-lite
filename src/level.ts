@@ -89,7 +89,7 @@ const ROOM_BLUEPRINTS: readonly LevelRoomBlueprint[] = [
       "...................................XXXXX",
       "S.....................XXXXXXX......XXXXX",
       "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
-      "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
+      "XXXXXXXXXXXXXXXXXX.==XXXXXXXXXXXXXXXXXXX",
       "XXXXXXXXXXXXXXXXXX...XXXXXXXXXXXXXXXXXXX",
     ],
   },
