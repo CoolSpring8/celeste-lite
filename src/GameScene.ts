@@ -112,6 +112,10 @@ const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 const REFILL_CONSUME_FREEZE_TIME = 0.05;
 const DEATH_SHAKE_DURATION_MS = 120;
 const DEATH_SHAKE_INTENSITY = 0.0026;
+const PLAYER_LIGHT_OFFSET_Y = {
+  normal: -8,
+  crouched: -3,
+} as const;
 const SPAWN_WIPE_HEIGHT = VIEWPORT.height + SPAWN_WIPE_VISUALS.edgeOverscan * 2;
 const DEBUG_HITBOX_COLOR = 0xff0000;
 const DEBUG_HURTBOX_COLOR = 0x00ff00;
@@ -1446,10 +1450,13 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderLighting(snapshot: ReturnType<Player["getSnapshot"]>): void {
+    const playerLightOffsetY = snapshot.isCrouched
+      ? PLAYER_LIGHT_OFFSET_Y.crouched
+      : PLAYER_LIGHT_OFFSET_Y.normal;
     const lights: LightingSource[] = [
       {
-        x: snapshot.centerX,
-        y: snapshot.centerY - 2,
+        x: snapshot.x,
+        y: snapshot.y + playerLightOffsetY,
         radius: 48,
         color: COLORS.dust,
         intensity: 0.12,
