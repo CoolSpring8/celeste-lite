@@ -24,6 +24,7 @@ function phaserMock() {
       public y = 0,
     ) {}
   }
+  class PostFXPipeline {}
 
   return {
     default: {
@@ -52,6 +53,13 @@ function phaserMock() {
       Scenes: {
         Events: {
           SHUTDOWN: "shutdown",
+        },
+      },
+      Renderer: {
+        WebGL: {
+          Pipelines: {
+            PostFXPipeline,
+          },
         },
       },
     },
@@ -103,6 +111,7 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
   scene.deathRespawnSequence = null;
   scene.freezeTimer = 0;
   scene.forceCameraUpdate = false;
+  scene.displacement = { update() {} };
   scene.renderLighting = () => {};
   scene.updateHUD = () => {};
   scene.renderDebugOverlay = () => {};

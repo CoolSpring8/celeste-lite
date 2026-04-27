@@ -1,6 +1,7 @@
 import Phaser from "phaser";
 import type { AirDashAssist } from "./assists";
 import { COLORS, PLAYER_CONFIG, VIEWPORT, WORLD } from "./constants";
+import { DisplacementSystem } from "./displacement/DisplacementSystem";
 import { EntityWorld, spikeTriangles } from "./entities/EntityWorld";
 import { Grid } from "./entities/core/Grid";
 import { Hitbox } from "./entities/core/Hitbox";
@@ -187,6 +188,7 @@ export class GameScene extends Phaser.Scene {
   private refills: RefillView[] = [];
   private refillEmitter!: Phaser.GameObjects.Particles.ParticleEmitter;
   private lighting!: LightingSystem;
+  private displacement!: DisplacementSystem;
   private deathRespawnSequence: DeathRespawnSequenceState | null = null;
   private forceCameraUpdate = false;
   private forceCameraSnapNextFrame = true;
@@ -213,6 +215,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnWipe = this.add.graphics().setDepth(20).setScrollFactor(0);
     this.drawTiles();
     this.lighting = new LightingSystem(this, this.world);
+    this.displacement = new DisplacementSystem(this);
 
     this.player = new Player(this.spawnX, this.spawnY, this.world, PLAYER_CONFIG);
     this.player.setAssistOptions(this.gameOptions);
@@ -271,6 +274,7 @@ export class GameScene extends Phaser.Scene {
 
   update(_time: number, delta: number): void {
     const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
+    this.displacement.update(rawFrameDt);
     this.gameplayEdgesConsumed = false;
     if (this.confirmBufferedFrames > 0) {
       this.confirmBufferedFrames--;
@@ -405,6 +409,7 @@ export class GameScene extends Phaser.Scene {
       if (spike) {
         if (this.beginSpikeDeathRespawn(stepSnapshot, spike.dir)) {
           this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
+          this.applyDisplacementEffects(stepSnapshot, stepEffects);
           effects.push(...stepEffects);
           this.accumulator = 0;
           steps++;
@@ -414,6 +419,7 @@ export class GameScene extends Phaser.Scene {
 
       let snapshot = this.player.getSnapshot();
       this.playerView.tick(snapshot, stepEffects, this.fixedDt);
+      this.applyDisplacementEffects(snapshot, stepEffects);
       effects.push(...stepEffects);
 
       if (this.tryStartRoomTransition(snapshot)) {
@@ -543,6 +549,7 @@ export class GameScene extends Phaser.Scene {
     this.spawnWipe?.destroy();
     this.refillEmitter?.destroy();
     this.lighting?.destroy();
+    this.displacement?.destroy();
     for (const refill of this.refills) {
       refill.glow.destroy();
       refill.body.destroy();
@@ -913,7 +920,19 @@ export class GameScene extends Phaser.Scene {
     const stepSnapshot = this.player.getSnapshot();
     const stepEffects = this.player.consumeEffects();
     this.playerView.tick(stepSnapshot, stepEffects, dt);
+    this.applyDisplacementEffects(stepSnapshot, stepEffects);
     effects.push(...stepEffects);
+  }
+
+  private applyDisplacementEffects(
+    snapshot: ReturnType<Player["getSnapshot"]>,
+    effects: readonly PlayerEffect[],
+  ): void {
+    for (const effect of effects) {
+      if (effect.type === "dash_begin") {
+        this.displacement.addBurst(snapshot.centerX, snapshot.centerY);
+      }
+    }
   }
 
   private tryStartRoomTransition(snapshot: ReturnType<Player["getSnapshot"]>): boolean {
