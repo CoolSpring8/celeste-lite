@@ -104,6 +104,33 @@ describe("Dash behavior", () => {
     expect(jump.snapshot.vy).toBeCloseTo(-52.5, 5);
   });
 
+  test("down dash from held crouch stays crouched through dash cleanup", () => {
+    const specs: LevelEntitySpec[] = [];
+    withFloor(specs, 20);
+    const world = buildWorld(specs);
+    const player = createPlayerOnFloor(world, 104, 20);
+
+    const duck = stepOnce(player, makeInput({ y: 1 })).snapshot;
+    expect(duck.isCrouched).toBeTrue();
+
+    const press = stepOnce(player, makeInput({ y: 1, dash: true, dashPressed: true }));
+    expect(press.snapshot.state).toBe("dash");
+    expect(press.snapshot.isCrouched).toBeTrue();
+
+    let finished = false;
+    for (let frame = 0; frame < 40; frame++) {
+      const result = stepOnce(player, makeInput({ y: 1 }));
+      expect(result.snapshot.isCrouched).toBeTrue();
+
+      if (result.snapshot.state !== "dash") {
+        finished = true;
+        break;
+      }
+    }
+
+    expect(finished).toBeTrue();
+  });
+
   test("post-dash floor snap does not embed horizontal dashes in solid ground", () => {
     const floorRow = 20;
     const floorY = floorRow * WORLD.tile;

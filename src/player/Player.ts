@@ -1333,7 +1333,7 @@ export class Player extends Actor {
     }
 
     if (this.crouchDashActive) {
-      if (this.canUnDuck()) {
+      if (this.input.y !== 1 && this.canUnDuck()) {
         this.setDucking(false);
       }
       this.crouchDashActive = false;
