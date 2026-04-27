@@ -1589,7 +1589,7 @@ export class GameScene extends Phaser.Scene {
         y: snapshot.y + playerLightOffsetY,
         radius: 48,
         color: COLORS.dust,
-        intensity: 0.12,
+        intensity: 0.15,
       },
     ];
 
