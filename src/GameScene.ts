@@ -1397,7 +1397,7 @@ export class GameScene extends Phaser.Scene {
   private updateRefills(): number {
     if (this.refills.length === 0) return 0;
 
-    const player = this.player.getHitboxBounds();
+    const player = this.player.getPlayerColliderBounds();
     const consumed = this.world.consumeTouchingRefills(player, (target) => this.player.tryRefill(target));
     for (const refill of consumed) {
       this.refillEmitter.setParticleTint(this.refillColor(refill.type));

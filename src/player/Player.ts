@@ -2,6 +2,7 @@ import { DEFAULT_ASSIST_OPTIONS, type AssistOptions } from "../assists";
 import { COLORS, PLAYER_CONFIG, PLAYER_GEOMETRY, PlayerConfig, WORLD } from "../constants";
 import { CollisionWorld } from "../entities/CollisionWorld";
 import { Hitbox } from "../entities/core/Hitbox";
+import type { Aabb } from "../entities/types";
 import {
   addFloat,
   approach,
@@ -357,16 +358,21 @@ export class Player extends Actor {
     return out;
   }
 
-  getCollisionBounds(): { x: number; y: number; w: number; h: number } {
+  getCollisionBounds(): Aabb {
     return this.getHitboxBounds();
   }
 
-  getHitboxBounds(): { x: number; y: number; w: number; h: number } {
+  getHitboxBounds(): Aabb {
     return this.bodyBoundsFor(this.requireBodyHitbox(), this.x, this.y);
   }
 
-  getHurtboxBounds(): { x: number; y: number; w: number; h: number } {
+  getHurtboxBounds(): Aabb {
     return this.bodyBoundsFor(this.hurtbox, this.x, this.y);
+  }
+
+  // Celeste temporarily swaps Collider to hurtbox for PlayerCollider checks.
+  getPlayerColliderBounds(): Aabb {
+    return this.getHurtboxBounds();
   }
 
   setAssistOptions(options: AssistOptions): void {
@@ -1791,7 +1797,7 @@ export class Player extends Actor {
     return collider;
   }
 
-  private bodyBoundsFor(hitbox: Hitbox, entityX: number, entityY: number): { x: number; y: number; w: number; h: number } {
+  private bodyBoundsFor(hitbox: Hitbox, entityX: number, entityY: number): Aabb {
     return {
       x: entityX + hitbox.left,
       y: entityY + hitbox.top,
