@@ -1,6 +1,6 @@
 # Celeste Tech Checklist (Current Implementation Snapshot)
 
-Source: [Tech - Celeste Wiki](https://celeste.ink/wiki/Tech)
+Tech names and behavior summaries are adapted from [Tech - Celeste Wiki](https://celeste.ink/wiki/Tech), which is available under GPLv3. This checklist uses those names and descriptions to validate behavior, write focused tests, and keep implementation notes grounded.
 
 Legend:
 - `WORKS`: implemented and behavior is broadly correct
@@ -20,7 +20,7 @@ Legend:
 | Fastfalling | WORKS | 160 -> 240 max fall path implemented |
 | Input Buffering | WORKS | Usable jump buffer window matches the expected 5-frame behavior at 60 Hz |
 | Liftboost | EXCLUDED | Core storage exists, but no movers using it |
-| Screen Transition | EXCLUDED | No room transition system |
+| Screen Transition | WORKS | Authored rooms, adjacency lookup, camera scroll transitions, room-local checkpoint updates, dash/stamina refill, and upward-transition bounce are implemented and covered by focused model/gameplay tests; the transition orchestration is a local/speculated implementation rather than behavior derived from the local Celeste reference snapshot |
 
 ## Dash Tech
 
@@ -130,14 +130,14 @@ All items in this section are currently `EXCLUDED` because required entities/sys
 | Technique | Status | Notes |
 | --- | --- | --- |
 | Bino Tech (all variants) | EXCLUDED | No binocular system |
-| Bubsdrop | EXCLUDED | Requires screen transitions/room routing |
+| Bubsdrop | EXCLUDED | Room routing and upward-transition bounce exist, but bubsdrop-specific momentum cancellation during the transition, return-to-original-room flow, and nearest-available re-entry spawn behavior are not implemented or tested |
 | Cassette Raise | EXCLUDED | No cassette blocks |
 | Cutscene Warps | EXCLUDED | No cutscene state machine |
 | Half Stamina Climbing | EXCLUDED | Requires a tighter audit of wallboost/climbjump timing than the local reference snapshot currently supports |
-| Kermit Dash | EXCLUDED | Requires transition cancellation behavior |
+| Kermit Dash | EXCLUDED | Room transitions exist, but Celeste-style dash cancellation while preserving dashattack behavior is not implemented/tested; the relevant target entities such as dream blocks, Kevins, and break blocks are also missing |
 | Pause Buffering | WORKS | Pause/unpause includes a Celeste-style 10-frame recovery, 6-frame late hold window, and frame-11 repause path |
 | Roboboost | EXCLUDED | Requires moving blocks and advanced interactions |
-| Screen Transition Cassette Offset | EXCLUDED | No cassette/screen transition system |
+| Screen Transition Cassette Offset | EXCLUDED | Room transitions exist, but cassette blocks/color phases and their transition-time pixel offsets are not implemented |
 | Spinner Stunning | EXCLUDED | No spinner entity |
 | Spinner Freeze | EXCLUDED | No spinner/timeactive system |
 | Undemo Dashing | WORKS | Neutral/non-down dash startup can redirect downward before dash motion commits without setting the crouched demo flag, so the downward dash keeps the normal hurtbox |
