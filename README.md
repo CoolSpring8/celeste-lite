@@ -6,6 +6,10 @@ It is a small programming study, not a full game, engine, or content recreation.
 
 This project is not affiliated with, endorsed by, or associated with Maddy Makes Games, Inc. or Extremely OK Games, Ltd. It does not include Celeste art, audio, maps, screenshots, commercial game files, or other official game assets.
 
+[![celeste-lite gameplay capture](docs/assets/celeste-lite-player-dash-320x180-60fps.webp)](https://coolspring8.github.io/celeste-lite/)
+
+**Play the demo:** <https://coolspring8.github.io/celeste-lite/>
+
 ## What This Is
 
 - A Phaser 3 prototype with fixed-step platformer movement at a 320x180 pixel-art viewport.
@@ -13,13 +17,31 @@ This project is not affiliated with, endorsed by, or associated with Maddy Makes
 - A test-backed mechanics sandbox. The deeper technique coverage lives in [docs/tech-checklist.md](docs/tech-checklist.md).
 - A code-generated visual prototype. Player glyphs, particles, lighting, tiles, and transition effects are created locally rather than copied from Celeste assets.
 
-## What This Is Not
+## Scope
 
-- Not an official Celeste project.
-- Not a Celeste asset, level, story, or content clone.
-- Not a complete recreation of Celeste's engine or entity catalogue.
-- Not currently a controller or mobile-ready game. The runtime is keyboard-first.
-- Not a claim of exact parity where the available reference material does not support it.
+The goal is to study and implement a narrow slice of Celeste-inspired movement and presentation in a browser-friendly TypeScript codebase. The project leans on reference-backed behavior when the released source material supports it, and keeps local approximations explicit when systems are missing or speculative.
+
+The deeper technique coverage lives in [docs/tech-checklist.md](docs/tech-checklist.md).
+
+Non-goals:
+
+- No official Celeste assets, maps, story content, screenshots, audio, or commercial game files.
+- No claim of complete Celeste engine parity or full entity coverage.
+- No controller or mobile-ready runtime yet. The current playable path is keyboard-first.
+- No claim of exact parity where the local reference surface does not support it.
+
+## Technical Notes
+
+The prototype runs at a 320x180 pixel-art viewport with 8px tiles, which mirrors Celeste's camera resolution and scale. This resolution integer-scales cleanly to common 16:9 display heights.
+
+The code is split around a few main responsibilities:
+
+- `src/player/Player.ts`: movement state machine, timers, collision-facing player behavior, assists, and emitted gameplay effects.
+- `src/entities/`: Monocle-inspired entities, colliders, grids, tracker, hazards, refills, jump-throughs, and camera-related runtime objects.
+- `src/input/`: action-oriented virtual input model, keyboard binding normalization, button buffers, and newer-input resolution.
+- `src/GameScene.ts`: Phaser scene orchestration, fixed-step updates, room flow, pause menus, death/respawn sequences, camera behavior, lighting, and debug overlays.
+- `src/view/`: generated player glyph rendering, hair, particles, pause UI, intro/wipe effects, and death/respawn presentation.
+- `tests/`: focused coverage for mechanics, parity constants, room behavior, input lifecycle, options, lighting, and visual models.
 
 ## Controls
 
@@ -58,7 +80,7 @@ Celeste and related IP belong to their respective owners, including Maddy Makes 
 
 Reference and inspiration sources include:
 
-- [Celeste](https://www.celestegame.com/) by its original creators and team, from [Maddy Makes Games](https://www.mattmakesgames.com/) and [Extremely OK Games](https://exok.com/).
+- [Celeste](https://www.celestegame.com/) by its original creators and team. Related official sites include [Maddy Makes Games](https://www.mattmakesgames.com/) and [Extremely OK Games](https://exok.com/).
 - The publicly released [`Player.cs`](https://github.com/NoelFB/Celeste/blob/master/Source/Player/Player.cs) from [NoelFB/Celeste](https://github.com/NoelFB/Celeste), used as the main technical reference for player movement, states, physics constants, and some visual behavior. That repository presents the released class files as a learning resource and notes that its MIT license applies to the released code, not to the commercial Celeste game or assets.
 - Maddy Thorson's [Monocle Engine](https://github.com/JamesMcMahon/monocle-engine), consulted through a public mirror, which informed parts of the local entity, collider, state machine, actor movement, and virtual input architecture.
 - Noel Berry's public explanation of Madeline's hair implementation on [Reddit](https://www.reddit.com/r/gamedev/comments/9a0cfr/comment/e4rvrg2/) and the [smalleste](https://github.com/CelesteClassic/smalleste/blob/main/smalleste.p8) source, which inspired the optional dynamic hair implementation.
