@@ -1,6 +1,10 @@
+<!-- SPDX-License-Identifier: GPL-3.0-only -->
+
 # Celeste Tech Checklist (Current Implementation Snapshot)
 
-Tech names and behavior summaries are adapted from [Tech - Celeste Wiki](https://celeste.ink/wiki/Tech), which is available under GPLv3. This checklist uses those names and descriptions to validate behavior, write focused tests, and keep implementation notes grounded.
+This checklist is a coverage matrix for this prototype. The technique taxonomy and behavior summaries are adapted from [Tech - Celeste Wiki](https://celeste.ink/wiki/Tech), whose text content is available under the GNU General Public License, version 3 only. This file is marked `GPL-3.0-only` to keep that adapted material's licensing explicit.
+
+The implementation notes describe this prototype's own TypeScript/Phaser behavior. No Celeste game assets, maps, art, audio, screenshots, or commercial game files are included.
 
 Legend:
 - `WORKS`: implemented and behavior is broadly correct
