@@ -21,8 +21,6 @@ This project is not affiliated with, endorsed by, or associated with Maddy Makes
 
 The goal is to study and implement a narrow slice of Celeste-inspired movement and presentation in a browser-friendly TypeScript codebase. The project leans on reference-backed behavior when the released source material supports it, and keeps local approximations explicit when systems are missing or speculative.
 
-The deeper technique coverage lives in [docs/tech-checklist.md](docs/tech-checklist.md).
-
 Non-goals:
 
 - No official Celeste assets, maps, story content, screenshots, audio, or commercial game files.
@@ -76,7 +74,7 @@ The build script runs `tsc --noEmit` before `vite build`, so TypeScript checking
 
 ## Credits and References
 
-Celeste and related IP belong to their respective owners, including Maddy Makes Games, Inc. as stated in the Celeste64 source release. Extremely OK Games, Ltd. is the studio formed by members of the Celeste team for later work. No official endorsement is implied by this repository.
+Celeste is owned by its respective rights holders. This repository is unofficial and is not affiliated with or endorsed by the Celeste team, Maddy Makes Games, or Extremely OK Games.
 
 Reference and inspiration sources include:
 
