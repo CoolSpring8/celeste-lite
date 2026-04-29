@@ -472,6 +472,10 @@ export class PlayerView {
     this.dynamicHairEnabled = enabled;
   }
 
+  setSolidOcclusionMask(mask: Phaser.Display.Masks.GeometryMask): void {
+    this.playerSprite.container.setMask(mask);
+  }
+
   tick(snapshot: PlayerSnapshot, effects: PlayerEffect[], dt: number): void {
     this.syncFacing(snapshot.facing);
     this.applyFastFallScale(snapshot);

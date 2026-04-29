@@ -7,7 +7,7 @@ import { Grid } from "./entities/core/Grid";
 import { Hitbox } from "./entities/core/Hitbox";
 import { JumpThruTilesEntity, type RefillPickupEntity } from "./entities/runtime";
 import { CameraKillboxSpec, CameraLockMode, RefillType } from "./entities/types";
-import { TILE_JUMP_THROUGH, tileAt } from "./grid";
+import { TILE_JUMP_THROUGH, TILE_SOLID, tileAt } from "./grid";
 import {
   DEFAULT_KEY_BINDINGS,
   KEY_BINDING_DEFINITIONS,
@@ -191,6 +191,8 @@ export class GameScene extends Phaser.Scene {
   private freezeTimer = 0;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
+  private playerSolidOcclusionMaskGfx!: Phaser.GameObjects.Graphics;
+  private playerSolidOcclusionMask!: Phaser.Display.Masks.GeometryMask;
   private debugGfx!: Phaser.GameObjects.Graphics;
   private spawnWipe!: Phaser.GameObjects.Graphics;
   private introIris!: Phaser.GameObjects.Graphics;
@@ -221,6 +223,8 @@ export class GameScene extends Phaser.Scene {
 
     this.computeTileDepths();
     this.tileGfx = this.add.graphics();
+    this.playerSolidOcclusionMaskGfx = this.createPlayerSolidOcclusionMaskGraphics();
+    this.playerSolidOcclusionMask = this.playerSolidOcclusionMaskGfx.createGeometryMask();
     this.debugGfx = this.add.graphics().setDepth(9);
     this.debugGfx.setVisible(false);
     this.spawnWipe = this.add.graphics().setDepth(20).setScrollFactor(0);
@@ -232,6 +236,7 @@ export class GameScene extends Phaser.Scene {
     this.player = new Player(this.spawnX, this.spawnY, this.world, PLAYER_CONFIG);
     this.player.setAssistOptions(this.gameOptions);
     this.playerView = new PlayerView(this);
+    this.playerView.setSolidOcclusionMask(this.playerSolidOcclusionMask);
     this.playerView.setDynamicHairEnabled(this.gameOptions.dynamicHair);
     this.ensurePixelTexture();
     this.refillEmitter = this.add.particles(0, 0, "pixel", {
@@ -565,6 +570,8 @@ export class GameScene extends Phaser.Scene {
     this.unpauseRecovery.clear();
     this.playerView?.destroy();
     this.pauseOverlay?.destroy();
+    this.playerSolidOcclusionMask?.destroy();
+    this.playerSolidOcclusionMaskGfx?.destroy();
     this.debugGfx?.destroy();
     this.spawnWipe?.destroy();
     this.introIris?.destroy();
@@ -1375,6 +1382,33 @@ export class GameScene extends Phaser.Scene {
         g.strokeTriangle(a.x, a.y, b.x, b.y, c.x, c.y);
       }
     }
+  }
+
+  private createPlayerSolidOcclusionMaskGraphics(): Phaser.GameObjects.Graphics {
+    const graphics = this.make.graphics({ x: 0, y: 0 }, false);
+    graphics.fillStyle(0xffffff, 1);
+
+    // Fill playable space, so only the live player sprite is clipped when squash/stretch enters solids.
+    for (let row = 0; row < this.world.rows; row++) {
+      let runStart = -1;
+
+      for (let col = 0; col <= this.world.cols; col++) {
+        const visibleToPlayer = col < this.world.cols && tileAt(this.world, col, row) !== TILE_SOLID;
+        if (visibleToPlayer && runStart < 0) {
+          runStart = col;
+        } else if (!visibleToPlayer && runStart >= 0) {
+          graphics.fillRect(
+            runStart * WORLD.tile,
+            row * WORLD.tile,
+            (col - runStart) * WORLD.tile,
+            WORLD.tile,
+          );
+          runStart = -1;
+        }
+      }
+    }
+
+    return graphics;
   }
 
   private renderSpawnWipe(): void {
