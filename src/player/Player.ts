@@ -222,7 +222,7 @@ export class Player extends Actor {
     }
 
     if (input.jumpPressed) {
-      this.jumpPressBufferTimer = toFloat(this.cfg.input.jumpBufferTime);
+      this.jumpPressBufferTimer = toFloat(input.jumpPressBufferTime ?? this.cfg.input.jumpBufferTime);
     } else if (!input.jump) {
       this.jumpPressBufferTimer = 0;
     } else if (this.jumpPressBufferTimer > 0) {
@@ -230,10 +230,10 @@ export class Player extends Actor {
     }
 
     if (input.crouchDashPressed) {
-      this.dashPressBufferTimer = toFloat(this.cfg.input.dashBufferTime);
+      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
       this.dashPressCrouches = true;
     } else if (input.dashPressed) {
-      this.dashPressBufferTimer = toFloat(this.cfg.input.dashBufferTime);
+      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
       this.dashPressCrouches = input.y === 1;
     } else if (!input.dash && !input.crouchDash) {
       this.dashPressBufferTimer = 0;

@@ -11,9 +11,11 @@ export interface InputState {
   aimY: number;
   jump: boolean;
   jumpPressed: boolean;
+  jumpPressBufferTime?: number;
   jumpReleased: boolean;
   dash: boolean;
   dashPressed: boolean;
+  dashPressBufferTime?: number;
   crouchDash: boolean;
   crouchDashPressed: boolean;
   grab: boolean;

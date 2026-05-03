@@ -153,6 +153,13 @@ const MENU_RIGHT_CODES: readonly string[] = ["ArrowRight"];
 const MENU_CONFIRM_CODES: readonly string[] = ["Enter", "NumpadEnter"];
 const MENU_CANCEL_CODES: readonly string[] = ["Escape"];
 const MENU_CLEAR_CODES: readonly string[] = ["Backspace", "Delete"];
+type GameplayButtonAction = "jump" | "dash" | "crouchDash";
+const GAMEPLAY_BUTTON_ACTIONS: readonly GameplayButtonAction[] = ["jump", "dash", "crouchDash"];
+const GAMEPLAY_BUTTON_BUFFER_TIMES: Record<GameplayButtonAction, number> = {
+  jump: PLAYER_CONFIG.input.jumpBufferTime,
+  dash: PLAYER_CONFIG.input.dashBufferTime,
+  crouchDash: PLAYER_CONFIG.input.dashBufferTime,
+};
 const ON_OFF_CHOICES: readonly PauseMenuChoice<boolean>[] = [
   { label: "OFF", value: false },
   { label: "ON", value: true },
@@ -178,6 +185,12 @@ export class GameScene extends Phaser.Scene {
   private readonly heldKeyCodes = new Set<string>();
   private readonly pressedKeyCodes = new Set<string>();
   private readonly releasedKeyCodes = new Set<string>();
+  private readonly sampledGameplayHeldKeyCodes = new Set<string>();
+  private readonly pendingGameplayPressTimers: Record<GameplayButtonAction, number> = {
+    jump: 0,
+    dash: 0,
+    crouchDash: 0,
+  };
   private gameplayEdgesConsumed = false;
   private controls!: PlayerControls;
   private captureKeyBindingAction: KeyBindingAction | null = null;
@@ -222,6 +235,7 @@ export class GameScene extends Phaser.Scene {
 
     this.accumulator = 0;
     this.simulationTime = 0;
+    this.resetGameplayInputSampling();
     this.confirmBufferTimer = 0;
     this.freezeTimer = 0;
     this.effectsPaused = false;
@@ -523,6 +537,7 @@ export class GameScene extends Phaser.Scene {
     let steps = 0;
 
     while (this.freezeTimer > 0 && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.sampleGameplayInput(false);
       this.freezeTimer = stepTimer(this.freezeTimer, this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
@@ -543,6 +558,7 @@ export class GameScene extends Phaser.Scene {
     let steps = 0;
 
     while (this.roomTransition !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.sampleGameplayInput(false);
       this.advanceWorldFixedStep();
       this.updateRoomTransition(this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
@@ -559,10 +575,11 @@ export class GameScene extends Phaser.Scene {
     let steps = 0;
 
     while (this.deathRespawnSequence !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.sampleGameplayInput(false);
       this.playerView.advanceDeathRespawn(this.fixedDt);
       this.updateDeathRespawnSequence(this.fixedDt);
       if (this.deathRespawnSequence !== null && this.deathRespawnSequence.respawnStarted) {
-        this.advancePlayerOnlyFixedStep(effects);
+        this.advancePlayerOnlyFixedStep(effects, false);
       }
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
@@ -655,6 +672,7 @@ export class GameScene extends Phaser.Scene {
     this.heldKeyCodes.clear();
     this.pressedKeyCodes.clear();
     this.releasedKeyCodes.clear();
+    this.resetGameplayInputSampling();
     this.captureKeyBindingAction = null;
     this.controls?.reset();
     this.unpauseRecovery.clear();
@@ -676,12 +694,14 @@ export class GameScene extends Phaser.Scene {
   }
 
   private gatherStepInput(): InputState {
-    if (!this.player.inControl || this.unpauseRecovery.blocksControl) {
+    const canDeliverGameplayInput = this.player.inControl && !this.unpauseRecovery.blocksControl;
+    const sample = this.sampleGameplayInput(canDeliverGameplayInput);
+
+    if (!canDeliverGameplayInput) {
       this.controls.clearTransientState();
       return EMPTY_INPUT;
     }
 
-    const useEdges = !this.gameplayEdgesConsumed;
     this.controls.setCheck("left", this.actionHeld("left"));
     this.controls.setCheck("right", this.actionHeld("right"));
     this.controls.setCheck("up", this.actionHeld("up"));
@@ -691,14 +711,22 @@ export class GameScene extends Phaser.Scene {
     this.controls.setCheck("crouchDash", this.actionHeld("crouchDash"));
     this.controls.setCheck("grab", this.actionHeld("grab"));
 
-    if (useEdges) {
-      this.queueControlEdges("jump", "jump");
-      this.queueControlEdges("dash", "dash");
-      this.queueControlEdges("crouchDash", "crouchDash");
-      this.gameplayEdgesConsumed = true;
+    for (const action of GAMEPLAY_BUTTON_ACTIONS) {
+      this.queueSampledControlEdges(action, sample);
     }
 
-    return this.controls.update(this.fixedDt);
+    const input = this.controls.update(this.fixedDt);
+    if (input.jumpPressed) {
+      input.jumpPressBufferTime = sample.pressBufferTimes.jump ?? PLAYER_CONFIG.input.jumpBufferTime;
+    }
+    if (input.dashPressed) {
+      input.dashPressBufferTime = sample.pressBufferTimes.dash ?? PLAYER_CONFIG.input.dashBufferTime;
+    } else if (input.crouchDashPressed) {
+      input.dashPressBufferTime = sample.pressBufferTimes.crouchDash ?? PLAYER_CONFIG.input.dashBufferTime;
+    }
+    this.gameplayEdgesConsumed = true;
+
+    return input;
   }
 
   private onDebugToggleDown(event: KeyboardEvent): void {
@@ -732,12 +760,70 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private queueControlEdges(action: KeyBindingAction, binding: Parameters<PlayerControls["queuePress"]>[0]): void {
-    if (this.actionPressed(action)) {
-      this.controls.queuePress(binding);
+  private sampleGameplayInput(deliver: boolean): {
+    pressed: Set<GameplayButtonAction>;
+    released: Set<GameplayButtonAction>;
+    pressBufferTimes: Partial<Record<GameplayButtonAction, number>>;
+  } {
+    const pressed = new Set<GameplayButtonAction>();
+    const released = new Set<GameplayButtonAction>();
+    const pressBufferTimes: Partial<Record<GameplayButtonAction, number>> = {};
+
+    for (const action of GAMEPLAY_BUTTON_ACTIONS) {
+      const bufferTime = GAMEPLAY_BUTTON_BUFFER_TIMES[action];
+      this.pendingGameplayPressTimers[action] = stepTimer(this.pendingGameplayPressTimers[action], this.fixedDt);
+
+      const codes = this.bindingCodes(action);
+      const currentlyHeld = codes.some((code) => this.heldKeyCodes.has(code));
+      const justPressed = codes.some((code) =>
+        this.heldKeyCodes.has(code) && !this.sampledGameplayHeldKeyCodes.has(code)
+      );
+      const justReleased = codes.some((code) =>
+        !this.heldKeyCodes.has(code) && this.sampledGameplayHeldKeyCodes.has(code)
+      );
+
+      if (!currentlyHeld) {
+        this.pendingGameplayPressTimers[action] = 0;
+      }
+
+      if (justPressed) {
+        if (deliver) {
+          pressed.add(action);
+          pressBufferTimes[action] = bufferTime;
+        } else {
+          this.pendingGameplayPressTimers[action] = bufferTime;
+        }
+      } else if (deliver && currentlyHeld && this.pendingGameplayPressTimers[action] > 0) {
+        pressed.add(action);
+        pressBufferTimes[action] = this.pendingGameplayPressTimers[action];
+        this.pendingGameplayPressTimers[action] = 0;
+      }
+
+      if (deliver && justReleased) {
+        released.add(action);
+      }
     }
-    if (this.actionReleased(action)) {
-      this.controls.queueRelease(binding);
+
+    this.sampledGameplayHeldKeyCodes.clear();
+    for (const code of this.heldKeyCodes) {
+      this.sampledGameplayHeldKeyCodes.add(code);
+    }
+
+    return { pressed, released, pressBufferTimes };
+  }
+
+  private queueSampledControlEdges(
+    action: GameplayButtonAction,
+    sample: {
+      pressed: Set<GameplayButtonAction>;
+      released: Set<GameplayButtonAction>;
+    },
+  ): void {
+    if (sample.pressed.has(action)) {
+      this.controls.queuePress(action);
+    }
+    if (sample.released.has(action)) {
+      this.controls.queueRelease(action);
     }
   }
 
@@ -793,6 +879,17 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private resetGameplayInputSampling(): void {
+    this.sampledGameplayHeldKeyCodes.clear();
+    for (const code of this.heldKeyCodes) {
+      this.sampledGameplayHeldKeyCodes.add(code);
+    }
+    for (const action of GAMEPLAY_BUTTON_ACTIONS) {
+      this.pendingGameplayPressTimers[action] = 0;
+    }
+    this.gameplayEdgesConsumed = false;
+  }
+
   private spawnInitialPlayer(): void {
     this.startIntroIris();
     this.revivePlayerAtCheckpoint("start", this.spawnX, this.spawnY, introIrisTotalDuration());
@@ -805,6 +902,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.requestDeathShake();
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.setFreezeEffectsPaused(false);
@@ -833,6 +931,7 @@ export class GameScene extends Phaser.Scene {
     this.freezeTimer = 0;
     this.setFreezeEffectsPaused(false);
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.accumulator = 0;
     this.startDeathRespawnSequence({
       kind: "spike",
@@ -885,6 +984,7 @@ export class GameScene extends Phaser.Scene {
     this.world.resetTransientState();
     this.syncRefillViews();
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.playerView.resetDeathRespawn();
     this.roomTransition = null;
     this.accumulator = 0;
@@ -1070,7 +1170,10 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
-  private advancePlayerOnlyFixedStep(effects: PlayerEffect[]): void {
+  private advancePlayerOnlyFixedStep(effects: PlayerEffect[], sampleInput = true): void {
+    if (sampleInput) {
+      this.sampleGameplayInput(false);
+    }
     this.player.update(this.fixedDt, EMPTY_INPUT);
     const stepSnapshot = this.player.getSnapshot();
     const stepEffects = this.player.consumeEffects();
@@ -1124,6 +1227,7 @@ export class GameScene extends Phaser.Scene {
       toScrollY: target.y,
     };
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.setFreezeEffectsPaused(false);
@@ -1155,6 +1259,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.requestDeathShake();
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.accumulator = 0;
     this.freezeTimer = 0;
     this.setFreezeEffectsPaused(false);
@@ -1853,6 +1958,7 @@ export class GameScene extends Phaser.Scene {
   private openPauseMenu(): void {
     this.unpauseRecovery.clear();
     this.controls.clearTransientState();
+    this.resetGameplayInputSampling();
     this.accumulator = 0;
     this.stopScreenShake();
     this.setPauseEffectsPaused(true);
@@ -2173,6 +2279,7 @@ export class GameScene extends Phaser.Scene {
     this.accumulator = addFloat(this.accumulator, frameDt);
 
     while (this.unpauseRecovery.active && this.accumulator >= this.fixedDt) {
+      this.resetGameplayInputSampling();
       const result = this.unpauseRecovery.step(this.currentUnpauseRecoveryHeldState());
 
       if (result.openPause) {
@@ -2220,6 +2327,7 @@ export class GameScene extends Phaser.Scene {
   private resumeFromPauseMenu(): void {
     this.pauseMenu.close();
     this.accumulator = 0;
+    this.resetGameplayInputSampling();
     this.unpauseRecovery.start(this.currentUnpauseRecoveryHeldState());
   }
 

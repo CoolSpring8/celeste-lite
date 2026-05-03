@@ -91,6 +91,12 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
   scene.heldKeyCodes = new Set<string>();
   scene.pressedKeyCodes = new Set<string>();
   scene.releasedKeyCodes = new Set<string>();
+  scene.sampledGameplayHeldKeyCodes = new Set<string>();
+  scene.pendingGameplayPressTimers = {
+    jump: 0,
+    dash: 0,
+    crouchDash: 0,
+  };
   scene.gameplayEdgesConsumed = false;
   scene.confirmBufferTimer = 0;
   scene.accumulator = 0;
@@ -144,6 +150,13 @@ function keyDown(code: string): KeyboardEvent {
   return {
     code,
     repeat: false,
+    preventDefault() {},
+  } as KeyboardEvent;
+}
+
+function keyUp(code: string): KeyboardEvent {
+  return {
+    code,
     preventDefault() {},
   } as KeyboardEvent;
 }
@@ -206,6 +219,52 @@ function installFixedStepGameplayStubs(scene: Record<string, unknown>) {
 }
 
 describe("GameScene input edge lifecycle", () => {
+  test("gameplay ignores a complete press and release between fixed samples", async () => {
+    const scene = await createSceneHarness();
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
+    (scene.onKeyUp as (event: KeyboardEvent) => void)(keyUp("KeyJ"));
+
+    const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
+    expect(input.jump).toBeFalse();
+    expect(input.jumpPressed).toBeFalse();
+    expect(input.jumpReleased).toBeFalse();
+  });
+
+  test("held gameplay press sampled across a fixed step produces one press edge", async () => {
+    const scene = await createSceneHarness();
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
+    const first = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
+    const second = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
+
+    expect(first.jump).toBeTrue();
+    expect(first.jumpPressed).toBeTrue();
+    expect(second.jump).toBeTrue();
+    expect(second.jumpPressed).toBeFalse();
+  });
+
+  test("catch-up fixed steps do not repeat one sampled gameplay press", async () => {
+    const scene = await createSceneHarness();
+    installFixedStepGameplayStubs(scene);
+    const inputs: ReturnType<PlayerControls["update"]>[] = [];
+    (scene.player as { update: (dt: number, input: ReturnType<PlayerControls["update"]>) => void }).update = (
+      _dt,
+      input,
+    ) => {
+      inputs.push(input);
+    };
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 30;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 30);
+
+    expect(inputs).toHaveLength(2);
+    expect(inputs[0].jumpPressed).toBeTrue();
+    expect(inputs[1].jumpPressed).toBeFalse();
+    expect(inputs[1].jump).toBeTrue();
+  });
+
   test("fixed accumulator uses raw loop delta while presentation systems receive Phaser delta", async () => {
     const scene = await createSceneHarness();
     const counters = installFixedStepGameplayStubs(scene);
@@ -227,17 +286,21 @@ describe("GameScene input edge lifecycle", () => {
     expect(counters.worldUpdates).toBe(1);
   });
 
-  test("room transitions preserve gameplay press edges until the next fixed-step input gather", async () => {
+  test("room transitions preserve buffered gameplay presses while held", async () => {
     const scene = await createSceneHarness();
+    installFixedStepGameplayStubs(scene);
 
     (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
     scene.roomTransition = {};
-    (scene.update as (time: number, delta: number) => void)(0, 16);
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 60;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
 
     scene.roomTransition = null;
     const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
     expect(input.jump).toBeTrue();
     expect(input.jumpPressed).toBeTrue();
+    expect(input.jumpPressBufferTime).toBeGreaterThan(0);
+    expect(input.jumpPressBufferTime).toBeLessThan(0.08);
 
     (scene.clearTransientKeyEdges as () => void)();
     const held = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
@@ -266,31 +329,54 @@ describe("GameScene input edge lifecycle", () => {
     expect(input.jumpPressed).toBeTrue();
   });
 
-  test("freeze frames preserve dash press edges for the first resumed gameplay step", async () => {
+  test("freeze frames preserve buffered dash presses while held", async () => {
     const scene = await createSceneHarness();
 
     (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyK"));
     scene.freezeTimer = 0.05;
-    (scene.update as (time: number, delta: number) => void)(0, 16);
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 60;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
 
     scene.freezeTimer = 0;
     const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
     expect(input.dash).toBeTrue();
     expect(input.dashPressed).toBeTrue();
+    expect(input.dashPressBufferTime).toBeGreaterThan(0);
+    expect(input.dashPressBufferTime).toBeLessThan(0.08);
   });
 
-  test("player time-pause frames preserve gameplay press edges for the first resumed gameplay step", async () => {
+  test("freeze frames clear buffered gameplay presses after release", async () => {
+    const scene = await createSceneHarness();
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyK"));
+    scene.freezeTimer = 0.05;
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 60;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
+
+    (scene.onKeyUp as (event: KeyboardEvent) => void)(keyUp("KeyK"));
+    (scene.update as (time: number, delta: number) => void)(1000 / 60, 1000 / 60);
+
+    scene.freezeTimer = 0;
+    const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
+    expect(input.dash).toBeFalse();
+    expect(input.dashPressed).toBeFalse();
+  });
+
+  test("player time-pause frames preserve buffered gameplay presses while held", async () => {
     const scene = await createSceneHarness();
     const player = scene.player as { timePaused: boolean };
 
     (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
     player.timePaused = true;
-    (scene.update as (time: number, delta: number) => void)(0, 16);
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 60;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
 
     player.timePaused = false;
     const input = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
     expect(input.jump).toBeTrue();
     expect(input.jumpPressed).toBeTrue();
+    expect(input.jumpPressBufferTime).toBeGreaterThan(0);
+    expect(input.jumpPressBufferTime).toBeLessThan(0.08);
   });
 
   test("pause stays blocked through death and wipe until respawn starts", async () => {
