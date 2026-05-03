@@ -92,7 +92,12 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
   scene.pressedKeyCodes = new Set<string>();
   scene.releasedKeyCodes = new Set<string>();
   scene.gameplayEdgesConsumed = false;
-  scene.confirmBufferedFrames = 0;
+  scene.confirmBufferTimer = 0;
+  scene.accumulator = 0;
+  scene.simulationTime = 0;
+  scene.fixedDt = 1 / 60;
+  scene.maxSteps = 6;
+  scene.game = { loop: { rawDelta: 16 } };
   scene.pauseMenu = { isOpen: false };
   scene.unpauseRecovery = { active: false };
   scene.pauseOverlay = { hide() {} };
@@ -100,18 +105,29 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
     inControl: true,
     timePaused: false,
     canRetry: true,
+    update() {},
+    consumeFreezeRequest: () => 0,
+    consumeEffects: () => [],
+    getHurtboxBounds: () => ({ x: 0, y: 0, w: 8, h: 8 }),
     getSnapshot: () => ({ dead: false, state: "normal" }),
   };
   scene.playerView = {
     render() {},
+    tick() {},
     advanceDeathRespawn() {},
+    pauseEffects() {},
+    resumeEffects() {},
   };
   scene.cameras = { main: {} };
   scene.roomTransition = null;
   scene.deathRespawnSequence = null;
   scene.freezeTimer = 0;
+  scene.effectsPaused = false;
+  scene.effectsPausedForPause = false;
+  scene.effectsPausedForFreeze = false;
   scene.forceCameraUpdate = false;
   scene.displacement = { update() {} };
+  scene.refillEmitter = { pause() {}, resume() {} };
   scene.renderLighting = () => {};
   scene.updateHUD = () => {};
   scene.renderDebugOverlay = () => {};
@@ -120,7 +136,6 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
   scene.updateRoomTransition = () => {};
   scene.updateDeathRespawnSequence = () => {};
   scene.updateCamera = () => {};
-  scene.advancePlayerOnly = () => {};
   scene.renderPassiveFrame = () => {};
   return scene;
 }
@@ -133,7 +148,85 @@ function keyDown(code: string): KeyboardEvent {
   } as KeyboardEvent;
 }
 
+function installFixedStepGameplayStubs(scene: Record<string, unknown>) {
+  let worldUpdates = 0;
+  let playerUpdates = 0;
+
+  const snapshot = {
+    dead: false,
+    state: "normal",
+    vx: 0,
+    vy: 0,
+    top: 0,
+    bottom: 8,
+    left: 0,
+    right: 8,
+    centerX: 4,
+    centerY: 4,
+  };
+
+  scene.world = {
+    update() {
+      worldUpdates++;
+    },
+    collidesWithSpike: () => null,
+  };
+  scene.player = {
+    inControl: true,
+    timePaused: false,
+    canRetry: true,
+    update() {
+      playerUpdates++;
+    },
+    consumeFreezeRequest: () => 0,
+    consumeEffects: () => [],
+    getHurtboxBounds: () => ({ x: 0, y: 0, w: 8, h: 8 }),
+    getSnapshot: () => snapshot,
+  };
+  scene.playerView = {
+    render() {},
+    tick() {},
+    advanceDeathRespawn() {},
+    pauseEffects() {},
+    resumeEffects() {},
+  };
+  scene.updateRefills = () => 0;
+  scene.enforceCurrentRoomTopLimit = () => {};
+  scene.tryStartRoomTransition = () => false;
+  scene.tryHandleBottomFallout = () => false;
+
+  return {
+    get playerUpdates() {
+      return playerUpdates;
+    },
+    get worldUpdates() {
+      return worldUpdates;
+    },
+  };
+}
+
 describe("GameScene input edge lifecycle", () => {
+  test("fixed accumulator uses raw loop delta while presentation systems receive Phaser delta", async () => {
+    const scene = await createSceneHarness();
+    const counters = installFixedStepGameplayStubs(scene);
+    let displacementDt = 0;
+    scene.displacement = {
+      update(dt: number) {
+        displacementDt = dt;
+      },
+    };
+
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 120;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
+    expect(displacementDt).toBeCloseTo(1 / 60, 5);
+    expect(counters.playerUpdates).toBe(0);
+    expect(counters.worldUpdates).toBe(0);
+
+    (scene.update as (time: number, delta: number) => void)(1000 / 120, 1000 / 60);
+    expect(counters.playerUpdates).toBe(1);
+    expect(counters.worldUpdates).toBe(1);
+  });
+
   test("room transitions preserve gameplay press edges until the next fixed-step input gather", async () => {
     const scene = await createSceneHarness();
 

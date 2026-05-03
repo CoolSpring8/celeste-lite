@@ -120,6 +120,8 @@ const JUMP_THRU_BODY_HEIGHT = Math.max(1, Math.round(WORLD.tile * 0.1875));
 const REFILL_GLOW_SIZE = Math.max(7, Math.round(WORLD.tile * 0.875));
 const REFILL_BODY_SIZE = Math.max(4, Math.round(WORLD.tile * 0.5));
 const REFILL_CONSUME_FREEZE_TIME = 0.05;
+const MAX_FRAME_DELTA = 0.1;
+const CONFIRM_SKIP_BUFFER_FRAMES = 2;
 const DEATH_SHAKE_DURATION_MS = 120;
 const DEATH_SHAKE_INTENSITY = 0.0026;
 const PLAYER_LIGHT_OFFSET_Y = {
@@ -179,16 +181,20 @@ export class GameScene extends Phaser.Scene {
   private gameplayEdgesConsumed = false;
   private controls!: PlayerControls;
   private captureKeyBindingAction: KeyBindingAction | null = null;
-  private confirmBufferedFrames = 0;
+  private confirmBufferTimer = 0;
   private readonly pauseMenu = new PauseMenuController();
   private readonly unpauseRecovery = new UnpauseRecovery();
   private pauseOverlay!: PauseOverlay;
   private gameOptions: GameOptions = loadGameOptions();
 
   private accumulator = 0;
+  private simulationTime = 0;
   private readonly fixedDt = toFloat(1 / 60);
   private readonly maxSteps = 6;
   private freezeTimer = 0;
+  private effectsPaused = false;
+  private effectsPausedForPause = false;
+  private effectsPausedForFreeze = false;
 
   private tileGfx!: Phaser.GameObjects.Graphics;
   private playerSolidOcclusionMaskGfx!: Phaser.GameObjects.Graphics;
@@ -213,6 +219,14 @@ export class GameScene extends Phaser.Scene {
 
   create(): void {
     this.events.once(Phaser.Scenes.Events.SHUTDOWN, this.shutdown, this);
+
+    this.accumulator = 0;
+    this.simulationTime = 0;
+    this.confirmBufferTimer = 0;
+    this.freezeTimer = 0;
+    this.effectsPaused = false;
+    this.effectsPausedForPause = false;
+    this.effectsPausedForFreeze = false;
 
     const level = parseLevel();
     this.world = level.world;
@@ -291,12 +305,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   update(_time: number, delta: number): void {
-    const rawFrameDt = toFloat(Math.min(delta / 1000, 0.1));
-    this.displacement.update(rawFrameDt);
+    const presentationFrameDt = this.clampedDeltaSeconds(delta);
+    const simulationFrameDt = this.clampedRawDeltaSeconds(delta);
+    this.displacement.update(presentationFrameDt);
     this.gameplayEdgesConsumed = false;
-    if (this.confirmBufferedFrames > 0) {
-      this.confirmBufferedFrames--;
-    }
+    this.stepConfirmBuffer(simulationFrameDt);
 
     if (!this.pauseMenu.isOpen && !this.unpauseRecovery.active && this.actionPressed("pause")) {
       if (this.canOpenPauseMenu()) {
@@ -327,10 +340,10 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.pauseOverlay.hide();
-    this.advanceIntroIris(rawFrameDt);
+    this.advanceIntroIris(presentationFrameDt);
 
     if (this.actionPressed("confirm")) {
-      this.confirmBufferedFrames = 2;
+      this.confirmBufferTimer = toFloat(this.fixedDt * CONFIRM_SKIP_BUFFER_FRAMES);
       if (this.deathRespawnSequence !== null) {
         this.requestDeathRespawnSkip();
       }
@@ -339,7 +352,7 @@ export class GameScene extends Phaser.Scene {
     let accumulatorPrimed = false;
     if (this.unpauseRecovery.active) {
       accumulatorPrimed = true;
-      if (this.advanceUnpauseRecovery(rawFrameDt)) {
+      if (this.advanceUnpauseRecovery(simulationFrameDt)) {
         this.renderPassiveFrame();
         this.clearTransientKeyEdges();
         return;
@@ -349,7 +362,7 @@ export class GameScene extends Phaser.Scene {
     const effects: PlayerEffect[] = [];
 
     if (this.roomTransition) {
-      this.updateRoomTransition(rawFrameDt);
+      this.advanceRoomTransition(simulationFrameDt);
       let snapshot = this.player.getSnapshot();
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
@@ -360,17 +373,12 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.playerView.advanceDeathRespawn(rawFrameDt);
-
     if (this.deathRespawnSequence !== null) {
-      this.updateDeathRespawnSequence(rawFrameDt);
-      if (this.deathRespawnSequence !== null && this.deathRespawnSequence.respawnStarted) {
-        this.advancePlayerOnly(rawFrameDt, effects);
-      }
+      this.advanceDeathRespawn(simulationFrameDt, effects);
       if (this.deathRespawnSequence !== null) {
         const snapshot = this.player.getSnapshot();
         if (this.forceCameraUpdate || this.deathRespawnSequence.revealStarted) {
-          this.updateCamera(snapshot, rawFrameDt);
+          this.updateCamera(snapshot, presentationFrameDt);
         }
         this.playerView.render(snapshot);
         this.renderLighting(snapshot);
@@ -384,9 +392,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.player.timePaused) {
-      this.advancePlayerOnly(rawFrameDt, effects);
+      this.advancePlayerOnly(simulationFrameDt, effects);
       const snapshot = this.player.getSnapshot();
-      this.updateCamera(snapshot, rawFrameDt);
+      this.updateCamera(snapshot, presentationFrameDt);
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
       this.updateHUD(snapshot, effects);
@@ -397,10 +405,11 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (this.freezeTimer > 0) {
-      this.freezeTimer = stepTimer(this.freezeTimer, rawFrameDt);
+      this.setFreezeEffectsPaused(true);
+      this.advanceFreeze(simulationFrameDt);
       const snapshot = this.player.getSnapshot();
       if (this.forceCameraUpdate) {
-        this.updateCamera(snapshot, rawFrameDt);
+        this.updateCamera(snapshot, presentationFrameDt);
       }
       this.playerView.render(snapshot);
       this.renderLighting(snapshot);
@@ -412,12 +421,12 @@ export class GameScene extends Phaser.Scene {
     }
 
     if (!accumulatorPrimed) {
-      this.accumulator = addFloat(this.accumulator, rawFrameDt);
+      this.accumulator = addFloat(this.accumulator, simulationFrameDt);
     }
     let steps = 0;
 
     while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
-      this.world.update(this.fixedDt, this.time.now / 1000);
+      this.advanceWorldFixedStep();
       this.player.update(this.fixedDt, this.gatherStepInput());
       this.enforceCurrentRoomTopLimit();
       const freeze = this.player.consumeFreezeRequest();
@@ -461,6 +470,7 @@ export class GameScene extends Phaser.Scene {
       const stepFreeze = maxFloat(freeze, refillFreeze);
       if (stepFreeze > 0) {
         this.freezeTimer = maxFloat(this.freezeTimer, stepFreeze);
+        this.setFreezeEffectsPaused(true);
         this.accumulator = 0;
         break;
       }
@@ -480,6 +490,86 @@ export class GameScene extends Phaser.Scene {
     this.renderIntroIris(snapshot);
     if (this.gameplayEdgesConsumed) {
       this.clearTransientKeyEdges();
+    }
+  }
+
+  private clampedDeltaSeconds(deltaMs: number): number {
+    return toFloat(Math.min(Math.max(deltaMs, 0) / 1000, MAX_FRAME_DELTA));
+  }
+
+  private clampedRawDeltaSeconds(fallbackDeltaMs: number): number {
+    const rawDelta = this.game?.loop?.rawDelta;
+    const deltaMs = typeof rawDelta === "number" && Number.isFinite(rawDelta)
+      ? rawDelta
+      : fallbackDeltaMs;
+    return this.clampedDeltaSeconds(deltaMs);
+  }
+
+  private stepConfirmBuffer(dt: number): void {
+    if (this.confirmBufferTimer <= 0) {
+      return;
+    }
+
+    this.confirmBufferTimer = stepTimer(this.confirmBufferTimer, dt);
+  }
+
+  private advanceWorldFixedStep(): void {
+    this.simulationTime = addFloat(this.simulationTime, this.fixedDt);
+    this.world.update(this.fixedDt, this.simulationTime);
+  }
+
+  private advanceFreeze(frameDt: number): void {
+    this.accumulator = addFloat(this.accumulator, frameDt);
+    let steps = 0;
+
+    while (this.freezeTimer > 0 && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.freezeTimer = stepTimer(this.freezeTimer, this.fixedDt);
+      this.accumulator = subFloat(this.accumulator, this.fixedDt);
+      steps++;
+    }
+
+    if (steps === this.maxSteps) {
+      this.accumulator = 0;
+    }
+
+    if (this.freezeTimer <= 0) {
+      this.freezeTimer = 0;
+      this.setFreezeEffectsPaused(false);
+    }
+  }
+
+  private advanceRoomTransition(frameDt: number): void {
+    this.accumulator = addFloat(this.accumulator, frameDt);
+    let steps = 0;
+
+    while (this.roomTransition !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.advanceWorldFixedStep();
+      this.updateRoomTransition(this.fixedDt);
+      this.accumulator = subFloat(this.accumulator, this.fixedDt);
+      steps++;
+    }
+
+    if (steps === this.maxSteps) {
+      this.accumulator = 0;
+    }
+  }
+
+  private advanceDeathRespawn(frameDt: number, effects: PlayerEffect[]): void {
+    this.accumulator = addFloat(this.accumulator, frameDt);
+    let steps = 0;
+
+    while (this.deathRespawnSequence !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.playerView.advanceDeathRespawn(this.fixedDt);
+      this.updateDeathRespawnSequence(this.fixedDt);
+      if (this.deathRespawnSequence !== null && this.deathRespawnSequence.respawnStarted) {
+        this.advancePlayerOnlyFixedStep(effects);
+      }
+      this.accumulator = subFloat(this.accumulator, this.fixedDt);
+      steps++;
+    }
+
+    if (steps === this.maxSteps) {
+      this.accumulator = 0;
     }
   }
 
@@ -717,6 +807,7 @@ export class GameScene extends Phaser.Scene {
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.freezeTimer = 0;
+    this.setFreezeEffectsPaused(false);
     this.roomTransition = null;
     this.startDeathRespawnSequence({
       kind: "normal",
@@ -740,6 +831,7 @@ export class GameScene extends Phaser.Scene {
     }
     this.requestDeathShake();
     this.freezeTimer = 0;
+    this.setFreezeEffectsPaused(false);
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.startDeathRespawnSequence({
@@ -797,6 +889,7 @@ export class GameScene extends Phaser.Scene {
     this.roomTransition = null;
     this.accumulator = 0;
     this.freezeTimer = 0;
+    this.setFreezeEffectsPaused(false);
     this.syncCurrentRoomToPoint(this.spawnX, this.spawnY);
     const spawnRoom = findRoomAtPoint(this.rooms, this.spawnX, this.spawnY) ?? this.currentRoom;
     const facingCenterX = spawnRoom.bounds.x + spawnRoom.bounds.w * 0.5;
@@ -952,17 +1045,36 @@ export class GameScene extends Phaser.Scene {
   }
 
   private tryApplyBufferedSkip(): void {
-    if (this.confirmBufferedFrames > 0) {
+    if (this.confirmBufferTimer > 0) {
       this.requestDeathRespawnSkip();
     }
   }
 
-  private advancePlayerOnly(dt: number, effects: PlayerEffect[]): void {
+  private advancePlayerOnly(frameDt: number, effects: PlayerEffect[]): void {
     this.controls.clearTransientState();
-    this.player.update(dt, EMPTY_INPUT);
+    this.accumulator = addFloat(this.accumulator, frameDt);
+    let steps = 0;
+
+    while (this.accumulator >= this.fixedDt && steps < this.maxSteps) {
+      this.advancePlayerOnlyFixedStep(effects);
+      this.accumulator = subFloat(this.accumulator, this.fixedDt);
+      steps++;
+
+      if (!this.player.timePaused && this.deathRespawnSequence === null) {
+        break;
+      }
+    }
+
+    if (steps === this.maxSteps) {
+      this.accumulator = 0;
+    }
+  }
+
+  private advancePlayerOnlyFixedStep(effects: PlayerEffect[]): void {
+    this.player.update(this.fixedDt, EMPTY_INPUT);
     const stepSnapshot = this.player.getSnapshot();
     const stepEffects = this.player.consumeEffects();
-    this.playerView.tick(stepSnapshot, stepEffects, dt);
+    this.playerView.tick(stepSnapshot, stepEffects, this.fixedDt);
     this.applyDisplacementEffects(stepSnapshot, stepEffects);
     effects.push(...stepEffects);
   }
@@ -1014,6 +1126,7 @@ export class GameScene extends Phaser.Scene {
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.freezeTimer = 0;
+    this.setFreezeEffectsPaused(false);
     return true;
   }
 
@@ -1044,6 +1157,7 @@ export class GameScene extends Phaser.Scene {
     this.controls.clearTransientState();
     this.accumulator = 0;
     this.freezeTimer = 0;
+    this.setFreezeEffectsPaused(false);
     this.roomTransition = null;
     this.startDeathRespawnSequence({
       kind: "normal",
@@ -1097,7 +1211,6 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    this.world.update(dt, this.time.now / 1000);
     this.syncRefillViews();
 
     transition.elapsed = Math.min(transition.duration, transition.elapsed + dt);
@@ -1740,9 +1853,9 @@ export class GameScene extends Phaser.Scene {
   private openPauseMenu(): void {
     this.unpauseRecovery.clear();
     this.controls.clearTransientState();
+    this.accumulator = 0;
     this.stopScreenShake();
-    this.refillEmitter.pause();
-    this.playerView.pauseEffects();
+    this.setPauseEffectsPaused(true);
     this.pauseMenu.open(this.createPauseRootMenu());
   }
 
@@ -2056,8 +2169,8 @@ export class GameScene extends Phaser.Scene {
     this.renderIntroIris(snapshot);
   }
 
-  private advanceUnpauseRecovery(rawFrameDt: number): boolean {
-    this.accumulator = addFloat(this.accumulator, rawFrameDt);
+  private advanceUnpauseRecovery(frameDt: number): boolean {
+    this.accumulator = addFloat(this.accumulator, frameDt);
 
     while (this.unpauseRecovery.active && this.accumulator >= this.fixedDt) {
       const result = this.unpauseRecovery.step(this.currentUnpauseRecoveryHeldState());
@@ -2106,6 +2219,7 @@ export class GameScene extends Phaser.Scene {
 
   private resumeFromPauseMenu(): void {
     this.pauseMenu.close();
+    this.accumulator = 0;
     this.unpauseRecovery.start(this.currentUnpauseRecoveryHeldState());
   }
 
@@ -2115,7 +2229,32 @@ export class GameScene extends Phaser.Scene {
   }
 
   private resumePauseManagedEffects(): void {
-    this.refillEmitter.resume();
-    this.playerView.resumeEffects();
+    this.setPauseEffectsPaused(false);
+  }
+
+  private setPauseEffectsPaused(paused: boolean): void {
+    this.effectsPausedForPause = paused;
+    this.refreshEffectsPaused();
+  }
+
+  private setFreezeEffectsPaused(paused: boolean): void {
+    this.effectsPausedForFreeze = paused;
+    this.refreshEffectsPaused();
+  }
+
+  private refreshEffectsPaused(): void {
+    const shouldPause = this.effectsPausedForPause || this.effectsPausedForFreeze;
+    if (shouldPause === this.effectsPaused) {
+      return;
+    }
+
+    this.effectsPaused = shouldPause;
+    if (shouldPause) {
+      this.refillEmitter.pause();
+      this.playerView.pauseEffects();
+    } else {
+      this.refillEmitter.resume();
+      this.playerView.resumeEffects();
+    }
   }
 }
