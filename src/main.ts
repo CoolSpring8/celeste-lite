@@ -11,7 +11,6 @@ const config: Phaser.Types.Core.GameConfig = {
   pixelArt: true,
   fps: {
     target: 60,
-    forceSetTimeOut: true,
   },
   scale: {
     mode: Phaser.Scale.FIT,
