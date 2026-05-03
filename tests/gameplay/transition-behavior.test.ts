@@ -45,6 +45,48 @@ describe("Transition behavior", () => {
     expect(result.snapshot.vx).toBeLessThan(0);
   });
 
+  test("passive transition ticks expire existing jump and dash buffers", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 100, 100);
+    const internals = player as unknown as {
+      jumpPressBufferTimer: number;
+      dashPressBufferTimer: number;
+      dashPressCrouches: boolean;
+    };
+
+    internals.jumpPressBufferTimer = PLAYER_CONFIG.input.jumpBufferTime;
+    internals.dashPressBufferTimer = PLAYER_CONFIG.input.dashBufferTime;
+    internals.dashPressCrouches = true;
+
+    for (let frame = 0; frame < 5; frame++) {
+      player.tickInputBuffers(1 / 60, { jump: true, dash: false, crouchDash: true });
+    }
+
+    expect(internals.jumpPressBufferTimer).toBe(0);
+    expect(internals.dashPressBufferTimer).toBe(0);
+    expect(internals.dashPressCrouches).toBeFalse();
+  });
+
+  test("passive transition clears existing buffers on release", () => {
+    const world = buildWorld([]);
+    const player = createPlayer(world, 100, 100);
+    const internals = player as unknown as {
+      jumpPressBufferTimer: number;
+      dashPressBufferTimer: number;
+      dashPressCrouches: boolean;
+    };
+
+    internals.jumpPressBufferTimer = PLAYER_CONFIG.input.jumpBufferTime;
+    internals.dashPressBufferTimer = PLAYER_CONFIG.input.dashBufferTime;
+    internals.dashPressCrouches = true;
+
+    player.tickInputBuffers(1 / 60, { jump: false, dash: false, crouchDash: false });
+
+    expect(internals.jumpPressBufferTimer).toBe(0);
+    expect(internals.dashPressBufferTimer).toBe(0);
+    expect(internals.dashPressCrouches).toBeFalse();
+  });
+
   test("top limit clamps the player like a ceiling", () => {
     const world = buildWorld([]);
     const player = createPlayer(world, 100, 30);

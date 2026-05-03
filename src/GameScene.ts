@@ -538,6 +538,7 @@ export class GameScene extends Phaser.Scene {
 
     while (this.freezeTimer > 0 && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
       this.sampleGameplayInput(false);
+      this.player.tickInputBuffers(this.fixedDt, this.currentGameplayBufferHeldState());
       this.freezeTimer = stepTimer(this.freezeTimer, this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
       steps++;
@@ -559,6 +560,7 @@ export class GameScene extends Phaser.Scene {
 
     while (this.roomTransition !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
       this.sampleGameplayInput(false);
+      this.player.tickInputBuffers(this.fixedDt, this.currentGameplayBufferHeldState());
       this.advanceWorldFixedStep();
       this.updateRoomTransition(this.fixedDt);
       this.accumulator = subFloat(this.accumulator, this.fixedDt);
@@ -576,6 +578,7 @@ export class GameScene extends Phaser.Scene {
 
     while (this.deathRespawnSequence !== null && this.accumulator >= this.fixedDt && steps < this.maxSteps) {
       this.sampleGameplayInput(false);
+      this.player.tickInputBuffers(this.fixedDt, this.currentGameplayBufferHeldState());
       this.playerView.advanceDeathRespawn(this.fixedDt);
       this.updateDeathRespawnSequence(this.fixedDt);
       if (this.deathRespawnSequence !== null && this.deathRespawnSequence.respawnStarted) {
@@ -837,6 +840,14 @@ export class GameScene extends Phaser.Scene {
 
   private actionReleased(action: KeyBindingAction): boolean {
     return this.bindingCodes(action).some((code) => this.releasedKeyCodes.has(code));
+  }
+
+  private currentGameplayBufferHeldState(): Pick<InputState, "jump" | "dash" | "crouchDash"> {
+    return {
+      jump: this.actionHeld("jump"),
+      dash: this.actionHeld("dash"),
+      crouchDash: this.actionHeld("crouchDash"),
+    };
   }
 
   private menuPressed(action: KeyBindingAction, fallbackCodes: readonly string[]): boolean {

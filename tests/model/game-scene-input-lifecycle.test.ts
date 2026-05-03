@@ -112,6 +112,7 @@ async function createSceneHarness(): Promise<InstanceType<GameSceneConstructor> 
     timePaused: false,
     canRetry: true,
     update() {},
+    tickInputBuffers() {},
     consumeFreezeRequest: () => 0,
     consumeEffects: () => [],
     getHurtboxBounds: () => ({ x: 0, y: 0, w: 8, h: 8 }),
@@ -191,6 +192,7 @@ function installFixedStepGameplayStubs(scene: Record<string, unknown>) {
     update() {
       playerUpdates++;
     },
+    tickInputBuffers() {},
     consumeFreezeRequest: () => 0,
     consumeEffects: () => [],
     getHurtboxBounds: () => ({ x: 0, y: 0, w: 8, h: 8 }),
@@ -306,6 +308,26 @@ describe("GameScene input edge lifecycle", () => {
     const held = (scene.gatherStepInput as () => ReturnType<PlayerControls["update"]>)();
     expect(held.jump).toBeTrue();
     expect(held.jumpPressed).toBeFalse();
+  });
+
+  test("room transitions tick existing player-owned buffers with current held state", async () => {
+    const scene = await createSceneHarness();
+    installFixedStepGameplayStubs(scene);
+    const ticks: Array<{ dt: number; input: { jump: boolean; dash: boolean; crouchDash: boolean } }> = [];
+    (scene.player as {
+      tickInputBuffers: (dt: number, input: { jump: boolean; dash: boolean; crouchDash: boolean }) => void;
+    }).tickInputBuffers = (dt, input) => {
+      ticks.push({ dt, input });
+    };
+
+    (scene.onKeyDown as (event: KeyboardEvent) => void)(keyDown("KeyJ"));
+    scene.roomTransition = {};
+    (scene.game as { loop: { rawDelta: number } }).loop.rawDelta = 1000 / 60;
+    (scene.update as (time: number, delta: number) => void)(0, 1000 / 60);
+
+    expect(ticks).toHaveLength(1);
+    expect(ticks[0].dt).toBeCloseTo(1 / 60, 5);
+    expect(ticks[0].input).toEqual({ jump: true, dash: false, crouchDash: false });
   });
 
   test("pause pressed during a room transition is consumed without opening the pause menu", async () => {

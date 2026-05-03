@@ -221,29 +221,7 @@ export class Player extends Actor {
       this.moveXInput = input.x;
     }
 
-    if (input.jumpPressed) {
-      this.jumpPressBufferTimer = toFloat(input.jumpPressBufferTime ?? this.cfg.input.jumpBufferTime);
-    } else if (!input.jump) {
-      this.jumpPressBufferTimer = 0;
-    } else if (this.jumpPressBufferTimer > 0) {
-      this.jumpPressBufferTimer = stepTimer(this.jumpPressBufferTimer, dt);
-    }
-
-    if (input.crouchDashPressed) {
-      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
-      this.dashPressCrouches = true;
-    } else if (input.dashPressed) {
-      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
-      this.dashPressCrouches = input.y === 1;
-    } else if (!input.dash && !input.crouchDash) {
-      this.dashPressBufferTimer = 0;
-      this.dashPressCrouches = false;
-    } else if (this.dashPressBufferTimer > 0) {
-      this.dashPressBufferTimer = stepTimer(this.dashPressBufferTimer, dt);
-      if (this.dashPressBufferTimer <= 0) {
-        this.dashPressCrouches = false;
-      }
-    }
+    this.updateInputBuffers(dt, input);
 
     if (this.wallSlideDir !== 0) {
       this.wallSlideTimer = stepTimer(this.wallSlideTimer, dt);
@@ -625,6 +603,13 @@ export class Player extends Actor {
 
   forceState(state: PlayerState): void {
     this.stateMachine.forceState(state);
+  }
+
+  tickInputBuffers(
+    dt: number,
+    input: Pick<InputState, "jump" | "dash" | "crouchDash">,
+  ): void {
+    this.tickExistingInputBuffers(toFloat(dt), input);
   }
 
   onTransition(): void {
@@ -1773,6 +1758,52 @@ export class Player extends Actor {
 
   private hasJumpPress(): boolean {
     return this.jumpPressBufferTimer > 0;
+  }
+
+  private updateInputBuffers(dt: number, input: InputState): void {
+    if (input.jumpPressed) {
+      this.jumpPressBufferTimer = toFloat(input.jumpPressBufferTime ?? this.cfg.input.jumpBufferTime);
+    } else {
+      this.tickJumpPressBuffer(dt, input.jump);
+    }
+
+    if (input.crouchDashPressed) {
+      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
+      this.dashPressCrouches = true;
+    } else if (input.dashPressed) {
+      this.dashPressBufferTimer = toFloat(input.dashPressBufferTime ?? this.cfg.input.dashBufferTime);
+      this.dashPressCrouches = input.y === 1;
+    } else {
+      this.tickDashPressBuffer(dt, input.dash, input.crouchDash);
+    }
+  }
+
+  private tickExistingInputBuffers(
+    dt: number,
+    input: Pick<InputState, "jump" | "dash" | "crouchDash">,
+  ): void {
+    this.tickJumpPressBuffer(dt, input.jump);
+    this.tickDashPressBuffer(dt, input.dash, input.crouchDash);
+  }
+
+  private tickJumpPressBuffer(dt: number, held: boolean): void {
+    if (!held) {
+      this.jumpPressBufferTimer = 0;
+    } else if (this.jumpPressBufferTimer > 0) {
+      this.jumpPressBufferTimer = stepTimer(this.jumpPressBufferTimer, dt);
+    }
+  }
+
+  private tickDashPressBuffer(dt: number, dashHeld: boolean, crouchDashHeld: boolean): void {
+    if (!dashHeld && !crouchDashHeld) {
+      this.dashPressBufferTimer = 0;
+      this.dashPressCrouches = false;
+    } else if (this.dashPressBufferTimer > 0) {
+      this.dashPressBufferTimer = stepTimer(this.dashPressBufferTimer, dt);
+      if (this.dashPressBufferTimer <= 0) {
+        this.dashPressCrouches = false;
+      }
+    }
   }
 
   private consumeJumpPress(): void {
